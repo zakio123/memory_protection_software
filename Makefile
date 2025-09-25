@@ -1,12 +1,9 @@
-# コンパイラ
-CC = gcc
-
-# コンパイルオプション
-CFLAGS = -Wall -I./include
-
-# ソースファイル
-SRCS = app/main.c hw_model/hardware_model.c bridge/mmio.c sim_main.c
-
+# C++コンパイラ
+CXX = g++
+# C++コンパイルオプション (-std=c++17を追加)
+CXXFLAGS = -Wall -std=c++17 -I./include
+# ソースファイル (main.cppのみ)
+SRCS = main.cpp
 # 実行ファイル名
 TARGET = simulator
 
@@ -15,7 +12,7 @@ TARGET = simulator
 all: $(TARGET)
 
 $(TARGET): $(SRCS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS)
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(SRCS)
 
 clean:
 	rm -f $(TARGET)
