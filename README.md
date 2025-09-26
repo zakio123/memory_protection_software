@@ -14,7 +14,7 @@
     - 3-55line:とりあえず未使用(ツリーのためにとっておく)
     - 56-63line:管理ビット
 - カウンターライン内のカウンターの構成
-    - カウンターが64個入る
+    - カウンターが32個入る
     - major counter:64bit
-    - minor counter:6bit
-    - tagに64bit空いている
+    - minor counter:8bit
+    - tagのために64bit空いている

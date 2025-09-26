@@ -17,8 +17,8 @@ public:
      * @brief 64bitのMMIO書き込みを処理
      */
     void mmioWrite64(uint32_t offset, uint64_t value) {
-        std::cout << "  [AES HW] MMIO Write64: offset=0x" << std::hex << offset 
-                  << ", value=0x" << value << std::dec << ".\n";
+        // std::cout << "  [AES HW] MMIO Write64: offset=0x" << std::hex << offset 
+        //           << ", value=0x" << value << std::dec << ".\n";
 
         if (offset >= MemoryMap::AesReg::INPUT_0 && offset <= MemoryMap::AesReg::INPUT_7) {
             // 64bitデータを内部の512bitバッファの適切な位置にコピー

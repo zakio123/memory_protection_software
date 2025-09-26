@@ -3,11 +3,19 @@
 
 namespace MemoryMap {
     // 各コンポーネントのベースアドレス
+    constexpr uint64_t PROTECTION_BASE_ADDR = 0x00000000;
+    constexpr uint64_t PROTECTION_SIZE = 0x20000000; // 512MB
+    constexpr uint64_t COUNTER_BASE_ADDR = 0x20000000;
+    constexpr uint64_t COUNTER_SIZE = 1024 * 1024 * 16; // 16MB
+    constexpr uint64_t DATA_TAG_BASE_ADDR = COUNTER_BASE_ADDR + COUNTER_SIZE; // 0x20020000
+    constexpr uint64_t DATA_TAG_SIZE = 1024 * 1024 * 64; // 64MB
+
+
     constexpr uint64_t MMIO_SPM_DMA_BASE_ADDR   = 0x40000000;
-    constexpr uint64_t MMIO_HASH_ACCEL_BASE_ADDR = 0x40010000;
+    constexpr uint64_t MMIO_MAC_BASE_ADDR = 0x40010000;
     constexpr uint64_t MMIO_AES_ACCEL_BASE_ADDR  = 0x40020000;
     constexpr uint64_t MMIO_AXI_MGR_BASE_ADDR   = 0x40030000;
-    constexpr uint64_t MMIO_BASE_ADDR            = MMIO_SPM_DMA_BASE_ADDR;
+    // constexpr uint64_t MMIO_BASE_ADDR            = MMIO_SPM_DMA_BASE_ADDR;
     constexpr uint64_t SPM_BASE_ADDR        = 0x50000000;
     constexpr uint64_t SPM_SIZE               = 0x00001000; // 4KB
 
@@ -21,7 +29,7 @@ namespace MemoryMap {
     }
 
     // HashAccelerator用レジスタ・オフセット
-    namespace MAC_AccelReg {
+    namespace MacReg {
         constexpr uint64_t SPM_ADDR     = 0x00;
         constexpr uint64_t SPM_START    = 0x08;
         constexpr uint64_t COMMAND      = 0x10;

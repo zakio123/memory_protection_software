@@ -9,14 +9,16 @@ public:
     
     // バイト単位のアクセス
     void write(uint64_t addr, const uint8_t* data, uint64_t size) {
+        addr -= MemoryMap::SPM_BASE_ADDR; // ローカルアドレスに変換
         if (addr + size <= SPM_SIZE) {
             std::memcpy(&m_memory[addr], data, size);
         }
     }
 
     void read(uint64_t addr, uint8_t* data, uint64_t size) {
-        if (addr + size <= SPM_SIZE) {
-            std::memcpy(data, &m_memory[addr], size);
+        uint64_t local_addr = addr - MemoryMap::SPM_BASE_ADDR;
+        if (local_addr + size <= SPM_SIZE) {
+            std::memcpy(data, &m_memory[local_addr], size);
         }
     }
     
@@ -43,9 +45,11 @@ public:
      */
     void write64(uint64_t addr, uint64_t data) {
         // アドレスが8バイトの書き込み範囲内にあるかチェック
-        if (addr + 8 <= SPM_SIZE) {
+        uint64_t local_addr = addr - MemoryMap::SPM_BASE_ADDR;
+        std::cout << "[SPM] Write64 to address 0x" << std::hex << addr << " data 0x" << data << std::dec << "\n";
+        if (local_addr + 8 <= SPM_SIZE) {
             // 指定アドレスをuint64_t型ポインタとして解釈し、データを一括で書き込む
-            *reinterpret_cast<uint64_t*>(&m_memory[addr]) = data;
+            *reinterpret_cast<uint64_t*>(&m_memory[local_addr]) = data;
         }
     }
 
@@ -56,9 +60,10 @@ public:
      */
     uint64_t read64(uint64_t addr) {
         // アドレスが8バイトの読み出し範囲内にあるかチェック
-        if (addr + 8 <= SPM_SIZE) {
+        uint64_t local_addr = addr - MemoryMap::SPM_BASE_ADDR;
+        if (local_addr + 8 <= SPM_SIZE) {
             // 指定アドレスをuint64_t型ポインタとして解釈し、データを一括で読み出す
-            return *reinterpret_cast<uint64_t*>(&m_memory[addr]);
+            return *reinterpret_cast<uint64_t*>(&m_memory[local_addr]);
         }
         return 0;
     }

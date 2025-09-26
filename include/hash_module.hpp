@@ -27,19 +27,19 @@ public:
         }
 
         switch (offset) {
-            case MemoryMap::MAC_AccelReg::SPM_ADDR:
+            case MemoryMap::MacReg::SPM_ADDR:
                 m_spm_addr_reg = value;
                 break;
-            case MemoryMap::MAC_AccelReg::SPM_START:
+            case MemoryMap::MacReg::SPM_START:
                 if (value == 1) executeDmaCopy();
                 break;
-            case MemoryMap::MAC_AccelReg::COMMAND:
+            case MemoryMap::MacReg::COMMAND:
                 executeCommand(value);
                 break;
-            case MemoryMap::MAC_AccelReg::START_BIT:
+            case MemoryMap::MacReg::START_BIT:
                 m_start_bit_reg = value;
                 break;
-            case MemoryMap::MAC_AccelReg::END_BIT:
+            case MemoryMap::MacReg::END_BIT:
                 m_end_bit_reg = value;
                 break;
         }
@@ -50,12 +50,12 @@ public:
      */
     uint64_t mmioRead64(uint32_t offset) {
         switch (offset) {
-            case MemoryMap::MAC_AccelReg::STATUS:
+            case MemoryMap::MacReg::STATUS:
                 return m_status;
-            case MemoryMap::MAC_AccelReg::MAC_RESULT:
+            case MemoryMap::MacReg::MAC_RESULT:
                 return m_mac_result;
             // SPM_STARTの読み出し動作は未定義のため0を返す
-            case MemoryMap::MAC_AccelReg::SPM_START:
+            case MemoryMap::MacReg::SPM_START:
                 return 0;
         }
         return 0;
@@ -90,6 +90,7 @@ private:
         }
         if (command & 2) { // UPDATE
             std::cout << "  [Hash HW] Command UPDATE received (Bits " << m_start_bit_reg << " to " << m_end_bit_reg << ").\n";
+            // internalbufferの中身をprint
             for (uint64_t i = m_start_bit_reg; i <= m_end_bit_reg; ++i) {
                 bool bit = getBit(i);
                 // 簡易ハッシュアルゴリズム: 巡回左シフト + XOR

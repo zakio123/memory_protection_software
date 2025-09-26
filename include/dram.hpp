@@ -6,7 +6,7 @@
 
 class Dram {
 public:
-    Dram(size_t size_bytes = 1024 * 1024) : m_memory(size_bytes) {
+    Dram(size_t size_bytes = 1024 * 1024 * 768) : m_memory(size_bytes) { // 768MB
         std::cout << "DRAM: Initializing... (Size: " << size_bytes / 1024 << " KB)\n";
         // テストデータを書き込む
         const char* test_data = "Hello from DRAM!";

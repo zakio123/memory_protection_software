@@ -55,11 +55,12 @@ private:
 // この時点では、コンパイラは全てのクラスの詳細を知っているので、エラーにならない
 inline void Bus::write64(uint32_t addr, uint64_t data) {
     // MMIOアドレス範囲の判定
-        if (addr >= MemoryMap::MMIO_SPM_DMA_BASE_ADDR && addr < MemoryMap::MMIO_HASH_ACCEL_BASE_ADDR) {
+    // std::cout << "[Bus] Write64 to Address 0x" << std::hex << addr << " Data 0x" << data << std::dec << "\n";
+        if (addr >= MemoryMap::MMIO_SPM_DMA_BASE_ADDR && addr < MemoryMap::MMIO_MAC_BASE_ADDR) {
             if (m_spm_mod) m_spm_mod->mmioWrite64(addr - MemoryMap::MMIO_SPM_DMA_BASE_ADDR, data);
         } 
-        else if (addr >= MemoryMap::MMIO_HASH_ACCEL_BASE_ADDR && addr < MemoryMap::MMIO_AES_ACCEL_BASE_ADDR) {
-            if (m_hash_mod) m_hash_mod->mmioWrite64(addr - MemoryMap::MMIO_HASH_ACCEL_BASE_ADDR, data);
+        else if (addr >= MemoryMap::MMIO_MAC_BASE_ADDR && addr < MemoryMap::MMIO_AES_ACCEL_BASE_ADDR) {
+            if (m_hash_mod) m_hash_mod->mmioWrite64(addr - MemoryMap::MMIO_MAC_BASE_ADDR, data);
         }
         else if (addr >= MemoryMap::MMIO_AES_ACCEL_BASE_ADDR && addr < MemoryMap::MMIO_AXI_MGR_BASE_ADDR) {
             if (m_aes_mod) m_aes_mod->mmioWrite64(addr - MemoryMap::MMIO_AES_ACCEL_BASE_ADDR, data);
@@ -68,8 +69,8 @@ inline void Bus::write64(uint32_t addr, uint64_t data) {
             if (m_axi_mgr_mod) m_axi_mgr_mod->mmioWrite64(addr - MemoryMap::MMIO_AXI_MGR_BASE_ADDR, data);
         }
         // SPMデータ領域へのアクセス
-        else if (addr >= MemoryMap::SPM_BASE_ADDR && addr < MemoryMap::SPM_SIZE) { // SPMの終端を仮定
-            m_spm.write64(addr - MemoryMap::SPM_BASE_ADDR, data);
+        else if (addr >= MemoryMap::SPM_BASE_ADDR && addr < (MemoryMap::SPM_SIZE + MemoryMap::SPM_BASE_ADDR)) { // SPMの終端を仮定
+            m_spm.write64(addr, data);
         }
         // DRAMへのアクセス
         else {
@@ -79,11 +80,11 @@ inline void Bus::write64(uint32_t addr, uint64_t data) {
 
 inline uint64_t Bus::read64(uint32_t addr) {
     // MMIOアドレス範囲の判定
-        if (addr >= MemoryMap::MMIO_SPM_DMA_BASE_ADDR && addr < MemoryMap::MMIO_HASH_ACCEL_BASE_ADDR) {
+        if (addr >= MemoryMap::MMIO_SPM_DMA_BASE_ADDR && addr < MemoryMap::MMIO_MAC_BASE_ADDR) {
             if (m_spm_mod) return m_spm_mod->mmioRead64(addr - MemoryMap::MMIO_SPM_DMA_BASE_ADDR);
         }
-        else if (addr >= MemoryMap::MMIO_HASH_ACCEL_BASE_ADDR && addr < MemoryMap::MMIO_AES_ACCEL_BASE_ADDR) {
-            if (m_hash_mod) return m_hash_mod->mmioRead64(addr - MemoryMap::MMIO_HASH_ACCEL_BASE_ADDR);
+        else if (addr >= MemoryMap::MMIO_MAC_BASE_ADDR && addr < MemoryMap::MMIO_AES_ACCEL_BASE_ADDR) {
+            if (m_hash_mod) return m_hash_mod->mmioRead64(addr - MemoryMap::MMIO_MAC_BASE_ADDR);
         }
         else if (addr >= MemoryMap::MMIO_AES_ACCEL_BASE_ADDR && addr < MemoryMap::MMIO_AXI_MGR_BASE_ADDR) {
             if (m_aes_mod) return m_aes_mod->mmioRead64(addr - MemoryMap::MMIO_AES_ACCEL_BASE_ADDR);
@@ -92,8 +93,8 @@ inline uint64_t Bus::read64(uint32_t addr) {
             if (m_axi_mgr_mod) return m_axi_mgr_mod->mmioRead64(addr - MemoryMap::MMIO_AXI_MGR_BASE_ADDR);
         }
         // SPMデータ領域へのアクセス
-        else if (addr >= MemoryMap::SPM_BASE_ADDR && addr < MemoryMap::SPM_SIZE) {
-            return m_spm.read64(addr - MemoryMap::SPM_BASE_ADDR);
+        else if (addr >= MemoryMap::SPM_BASE_ADDR && addr < (MemoryMap::SPM_SIZE + MemoryMap::SPM_BASE_ADDR)) {
+            return m_spm.read64(addr);
         }
         // DRAMへのアクセス
         else {
@@ -101,95 +102,3 @@ inline uint64_t Bus::read64(uint32_t addr) {
         }
         return 0; // 該当なし
 }
-// // --- 前方宣言 ---
-// // Bus自身は各モジュールの詳細を知る必要がないため、前方宣言で循環参照を防ぎます。
-// class Dram;
-// class Spm;
-// class SpmModule;
-// class HashModule;
-// class AesModule;
-// class AxiManagerModule;
-
-// class Bus {
-// public:
-//     /**
-//      * @brief コンストラクタ
-//      * @param dram DRAMオブジェクトへの参照
-//      * @param spm SPMオブジェクトへの参照
-//      */
-//     Bus(Dram& dram, Spm& spm) : m_dram(dram), m_spm(spm) {}
-
-//     // --- MMIOモジュールをバスに接続するためのメソッド ---
-//     void connectSpmModule(SpmModule& mod) { m_spm_mod = &mod; }
-//     void connectHashModule(HashModule& mod) { m_hash_mod = &mod; }
-//     void connectAesModule(AesModule& mod) { m_aes_mod = &mod; }
-//     void connectAxiManagerModule(AxiManagerModule& mod) { m_axi_mgr_mod = &mod; }
-
-//     /**
-//      * @brief 指定アドレスへの64ビット書き込み
-//      * @param addr 書き込み先アドレス
-//      * @param data 書き込むデータ
-//      */
-//     void write64(uint32_t addr, uint64_t data) {
-//         // MMIOアドレス範囲の判定
-//         if (addr >= MemoryMap::MMIO_SPM_DMA_BASE_ADDR && addr < MemoryMap::MMIO_HASH_ACCEL_BASE_ADDR) {
-//             if (m_spm_mod) m_spm_mod->mmioWrite64(addr - MemoryMap::MMIO_SPM_DMA_BASE_ADDR, data);
-//         } 
-//         else if (addr >= MemoryMap::MMIO_HASH_ACCEL_BASE_ADDR && addr < MemoryMap::MMIO_AES_ACCEL_BASE_ADDR) {
-//             if (m_hash_mod) m_hash_mod->mmioWrite64(addr - MemoryMap::MMIO_HASH_ACCEL_BASE_ADDR, data);
-//         }
-//         else if (addr >= MemoryMap::MMIO_AES_ACCEL_BASE_ADDR && addr < MemoryMap::MMIO_AXI_MGR_BASE_ADDR) {
-//             if (m_aes_mod) m_aes_mod->mmioWrite64(addr - MemoryMap::MMIO_AES_ACCEL_BASE_ADDR, data);
-//         }
-//         else if (addr >= MemoryMap::MMIO_AXI_MGR_BASE_ADDR && addr < MemoryMap::SPM_BASE_ADDR) {
-//             if (m_axi_mgr_mod) m_axi_mgr_mod->mmioWrite64(addr - MemoryMap::MMIO_AXI_MGR_BASE_ADDR, data);
-//         }
-//         // SPMデータ領域へのアクセス
-//         else if (addr >= MemoryMap::SPM_BASE_ADDR && addr < MemoryMap::DRAM_SIZE) { // SPMの終端を仮定
-//             m_spm.write64(addr - MemoryMap::SPM_BASE_ADDR, data);
-//         }
-//         // DRAMへのアクセス
-//         else {
-//             m_dram.write64(addr, data);
-//         }
-//     }
-
-//     /**
-//      * @brief 指定アドレスからの64ビット読み出し
-//      * @param addr 読み出し元アドレス
-//      * @return 読み出したデータ
-//      */
-//     uint64_t read64(uint32_t addr) {
-//         // MMIOアドレス範囲の判定
-//         if (addr >= MemoryMap::MMIO_SPM_DMA_BASE_ADDR && addr < MemoryMap::MMIO_HASH_ACCEL_BASE_ADDR) {
-//             if (m_spm_mod) return m_spm_mod->Read64(addr - MemoryMap::MMIO_SPM_DMA_BASE_ADDR);
-//         }
-//         else if (addr >= MemoryMap::MMIO_HASH_ACCEL_BASE_ADDR && addr < MemoryMap::MMIO_AES_ACCEL_BASE_ADDR) {
-//             if (m_hash_mod) return m_hash_mod->Read64(addr - MemoryMap::MMIO_HASH_ACCEL_BASE_ADDR);
-//         }
-//         else if (addr >= MemoryMap::MMIO_AES_ACCEL_BASE_ADDR && addr < MemoryMap::MMIO_AXI_MGR_BASE_ADDR) {
-//             if (m_aes_mod) return m_aes_mod->Read64(addr - MemoryMap::MMIO_AES_ACCEL_BASE_ADDR);
-//         }
-//         else if (addr >= MemoryMap::MMIO_AXI_MGR_BASE_ADDR && addr < MemoryMap::SPM_BASE_ADDR) {
-//             if (m_axi_mgr_mod) return m_axi_mgr_mod->mmioRead64(addr - MemoryMap::MMIO_AXI_MGR_BASE_ADDR);
-//         }
-//         // SPMデータ領域へのアクセス
-//         else if (addr >= MemoryMap::SPM_BASE_ADDR && addr < MemoryMap::SPM_SIZE) {
-//             return m_spm.read64(addr - MemoryMap::SPM_BASE_ADDR);
-//         }
-//         // DRAMへのアクセス
-//         else {
-//             return m_dram.read64(addr);
-//         }
-//         return 0; // 該当なし
-//     }
-
-// private:
-//     // バスに接続されるデバイス
-//     Dram& m_dram;
-//     Spm& m_spm;
-//     SpmModule* m_spm_mod = nullptr;
-//     HashModule* m_hash_mod = nullptr;
-//     AesModule* m_aes_mod = nullptr;
-//     AxiManagerModule* m_axi_mgr_mod = nullptr;
-// };
