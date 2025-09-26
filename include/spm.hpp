@@ -2,32 +2,63 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
-
+#include "memory_map.hpp"
 class Spm {
 public:
-    static constexpr size_t SPM_SIZE = 4096;
-
-    void write(uint32_t addr, const uint8_t* data, uint32_t size) {
+    static constexpr size_t SPM_SIZE = MemoryMap::SPM_SIZE; // 4KB
+    
+    // バイト単位のアクセス
+    void write(uint64_t addr, const uint8_t* data, uint64_t size) {
         if (addr + size <= SPM_SIZE) {
             std::memcpy(&m_memory[addr], data, size);
         }
     }
 
-    void read(uint32_t addr, uint8_t* data, uint32_t size) {
+    void read(uint64_t addr, uint8_t* data, uint64_t size) {
         if (addr + size <= SPM_SIZE) {
             std::memcpy(data, &m_memory[addr], size);
         }
     }
     
-    void write32(uint32_t addr, uint32_t data) {
-        if (addr + 4 <= SPM_SIZE) {
-            *reinterpret_cast<uint32_t*>(&m_memory[addr]) = data;
+        // // 32ビット単位のアクセス
+        // void write32(uint32_t addr, uint32_t data) {
+        //     if (addr + 4 <= SPM_SIZE) {
+        //         *reinterpret_cast<uint32_t*>(&m_memory[addr]) = data;
+        //     }
+        // }
+
+        // uint32_t read32(uint32_t addr) {
+        //     if (addr + 4 <= SPM_SIZE) {
+        //         return *reinterpret_cast<uint32_t*>(&m_memory[addr]);
+        //     }
+        //     return 0;
+        // }
+
+    // --- 64ビット単位のアクセスメソッド (追加) ---
+
+    /**
+     * @brief 指定されたアドレスに64bitデータを書き込む
+     * @param addr 書き込み先アドレス
+     * @param data 書き込む64bitデータ
+     */
+    void write64(uint64_t addr, uint64_t data) {
+        // アドレスが8バイトの書き込み範囲内にあるかチェック
+        if (addr + 8 <= SPM_SIZE) {
+            // 指定アドレスをuint64_t型ポインタとして解釈し、データを一括で書き込む
+            *reinterpret_cast<uint64_t*>(&m_memory[addr]) = data;
         }
     }
 
-    uint32_t read32(uint32_t addr) {
-        if (addr + 4 <= SPM_SIZE) {
-            return *reinterpret_cast<uint32_t*>(&m_memory[addr]);
+    /**
+     * @brief 指定されたアドレスから64bitデータを読み出す
+     * @param addr 読み出し元アドレス
+     * @return 読み出した64bitデータ。範囲外の場合は0を返す。
+     */
+    uint64_t read64(uint64_t addr) {
+        // アドレスが8バイトの読み出し範囲内にあるかチェック
+        if (addr + 8 <= SPM_SIZE) {
+            // 指定アドレスをuint64_t型ポインタとして解釈し、データを一括で読み出す
+            return *reinterpret_cast<uint64_t*>(&m_memory[addr]);
         }
         return 0;
     }

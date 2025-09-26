@@ -2,14 +2,51 @@
 #include <cstdint>
 
 namespace MemoryMap {
-    constexpr uint32_t MMIO_BASE_ADDR = 0x40000000;
-    constexpr uint32_t SPM_BASE_ADDR  = 0x50000000;
+    // 各コンポーネントのベースアドレス
+    constexpr uint64_t MMIO_SPM_DMA_BASE_ADDR   = 0x40000000;
+    constexpr uint64_t MMIO_HASH_ACCEL_BASE_ADDR = 0x40010000;
+    constexpr uint64_t MMIO_AES_ACCEL_BASE_ADDR  = 0x40020000;
+    constexpr uint64_t MMIO_AXI_MGR_BASE_ADDR   = 0x40030000;
+    constexpr uint64_t MMIO_BASE_ADDR            = MMIO_SPM_DMA_BASE_ADDR;
+    constexpr uint64_t SPM_BASE_ADDR        = 0x50000000;
+    constexpr uint64_t SPM_SIZE               = 0x00001000; // 4KB
 
-    namespace DmaReg {
-        constexpr uint32_t DRAM_ADDR   = 0x00;
-        constexpr uint32_t SPM_ADDR    = 0x04;
-        constexpr uint32_t SIZE        = 0x08;
-        constexpr uint32_t DIRECTION   = 0x0C;
-        constexpr uint32_t START       = 0x10;
+    // SpmDmaController用レジスタ・オフセット
+    namespace SPM_Reg {
+        constexpr uint64_t DRAM_ADDR = 0x00;
+        constexpr uint64_t SPM_ADDR  = 0x08;
+        constexpr uint64_t SIZE      = 0x10;
+        constexpr uint64_t DIRECTION = 0x18;
+        constexpr uint64_t START     = 0x20;
+    }
+
+    // HashAccelerator用レジスタ・オフセット
+    namespace MAC_AccelReg {
+        constexpr uint64_t SPM_ADDR     = 0x00;
+        constexpr uint64_t SPM_START    = 0x08;
+        constexpr uint64_t COMMAND      = 0x10;
+        constexpr uint64_t START_BIT    = 0x18;
+        constexpr uint64_t END_BIT      = 0x20;
+        constexpr uint64_t STATUS       = 0x28;
+        constexpr uint64_t MAC_RESULT = 0x30;
+    }
+    namespace AesReg{
+        constexpr uint64_t INPUT_0 = 0x00;
+        constexpr uint64_t INPUT_1 = 0x08;
+        constexpr uint64_t INPUT_2 = 0x10;
+        constexpr uint64_t INPUT_3 = 0x18;
+        constexpr uint64_t INPUT_4 = 0x20;
+        constexpr uint64_t INPUT_5 = 0x28;
+        constexpr uint64_t INPUT_6 = 0x30;
+        constexpr uint64_t INPUT_7 = 0x38;
+        constexpr uint64_t START = 0x40;
+    }
+    namespace AxiManagerReg {
+        constexpr uint64_t STATUS = 0x00;
+        constexpr uint64_t REQ_ADDR = 0x08;
+        constexpr uint64_t REQ_ID = 0x10;
+        constexpr uint64_t SPM_ADDR = 0x18;
+        constexpr uint64_t COMMAND = 0x20;
+        constexpr uint64_t BUSY = 0x28;
     }
 }
