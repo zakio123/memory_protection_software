@@ -40,12 +40,12 @@ public:
     // --- LLCからのインターフェース ---
     void receiveLlcReadRequest(uint64_t addr, uint64_t id, ReadResponseCallback cb) {
         m_request_queue.push({false, addr, id, {}, cb, nullptr});
-        std::cout << "[AXIM] Read Request Queued (Addr: 0x" << std::hex << addr << ").\n" << std::dec;
+        // std::cout << "[AXIM] Read Request Queued (Addr: 0x" << std::hex << addr << ").\n" << std::dec;
     }
 
     void receiveLlcWriteRequest(uint64_t addr, uint64_t id, const DataBlock& data, WriteResponseCallback cb) {
         m_request_queue.push({true, addr, id, data, nullptr, cb});
-        std::cout << "[AXIM] Write Request Queued (Addr: 0x" << std::hex << addr << ").\n" << std::dec;
+        // std::cout << "[AXIM] Write Request Queued (Addr: 0x" << std::hex << addr << ").\n" << std::dec;
         // w_data_bufferにデータをセット
         m_w_buffer = data;
     }
@@ -94,24 +94,10 @@ private:
         std::cout << "  [AXIM HW] Executing Command: 0b" << std::bitset<6>(command) << "\n";
 
         if (command & 1) { // Data Write Back (W Buffer -> SPM)
-            std::cout << "  [AXIM HW] Processing Data Write Back Command.\n";
-            // w_buufferの中身をprint
-            std::cout << "    W Buffer Before Write: ";
-            for (size_t i = 0; i < m_w_buffer.size(); ++i){
-                std::cout << std::hex << static_cast<int>(m_w_buffer[i]) << " ";
-            }
-            std::cout << std::dec << "\n";
             m_spm.write(m_spm_addr_reg, m_w_buffer.data(), m_w_buffer.size());
         }
         if (command & 2) { // Data Copy (SPM -> R Buffer)
-            // m_r_bufferをprint
-            std::cout << "  [AXIM HW] Processing Data Copy Command.\n";
-            
-            
             m_spm.read(m_spm_addr_reg, m_r_buffer.data(), m_r_buffer.size());
-            std::cout << "    SPM Addr: 0x" << std::hex << m_spm_addr_reg << std::dec << "\n";
-            // m_r_bufferの中身をprint
-            std::cout << "    R Buffer Before Copy: ";
             for (size_t i = 0; i < m_r_buffer.size(); ++i) {
                 std::cout << std::hex << static_cast<int>(m_r_buffer[i]) << " ";
             }
@@ -119,22 +105,10 @@ private:
         }
         if (command & 4) { // 暗号化 (OTP xor W Buffer)
             // 暗号化する前のw_bufferをprint
-            std::cout << "  [AXIM HW] Processing Encryption Command.\n";
-            // std::cout << "    W Buffer Before Encryption: ";
-            // for (size_t i = 0; i < m_w_buffer.size(); ++i){
-            //     std::cout << std::hex << static_cast<int>(m_w_buffer[i]) << " ";
-            // }
-            // std::cout << std::dec << "\n";
             for (size_t j = 0; j < 4; ++j) { // 64Bを16Bずつ4回に分けて処理
                 // OTPが足りない場合はスキップ
                 if (!m_otp_fifo.empty()) {
                     auto otp_part = m_otp_fifo.front(); m_otp_fifo.pop();
-                    // otp_partの中身をprint
-                    // std::cout << "    OTP Part Used for Encryption: ";
-                    // for (size_t i = 0; i < otp_part.size(); ++i){
-                    //     std::cout << std::hex << static_cast<int>(otp_part[i]) << " ";
-                    // }
-                    // std::cout << std::dec << "\n";
                     for(size_t i=0; i<16; ++i) m_w_buffer[16*j+i] ^= otp_part[i];
                 }
             }
@@ -151,14 +125,12 @@ private:
         }
         if (command & 16) { // Read Response (R Buffer -> LLC)
             if (!m_request_queue.empty() && !m_request_queue.front().is_write) {
-                std::cout << "  [AXIM HW] Processing Read Response.\n";
                 auto req = m_request_queue.front(); m_request_queue.pop();
                 if(req.read_cb) req.read_cb(m_r_buffer);
             }
         }
         if (command & 32) { // Write Response (ACK -> LLC)
             if (!m_request_queue.empty() && m_request_queue.front().is_write) {
-                std::cout << "  [AXIM HW] Processing Write Response.\n"; 
                 auto req = m_request_queue.front(); m_request_queue.pop();
                 if(req.write_cb) req.write_cb(true); // 常に成功を返す
             }

@@ -4,11 +4,11 @@
 namespace MemoryMap {
     // 各コンポーネントのベースアドレス
     constexpr uint64_t PROTECTION_BASE_ADDR = 0x00000000;
-    constexpr uint64_t PROTECTION_SIZE = 0x20000000; // 512MB
-    constexpr uint64_t COUNTER_BASE_ADDR = 0x20000000;
-    constexpr uint64_t COUNTER_SIZE = 1024 * 1024 * 16; // 16MB
-    constexpr uint64_t DATA_TAG_BASE_ADDR = COUNTER_BASE_ADDR + COUNTER_SIZE; // 0x20020000
-    constexpr uint64_t DATA_TAG_SIZE = 1024 * 1024 * 64; // 64MB
+    constexpr uint64_t PROTECTION_SIZE = 0x04000000; // 64MB
+    constexpr uint64_t DATA_TAG_BASE_ADDR = PROTECTION_BASE_ADDR + PROTECTION_SIZE; // 0x04000000
+    constexpr uint64_t DATA_TAG_SIZE = 1024 * 1024 * 8; // 8MB
+    constexpr uint64_t COUNTER_BASE_ADDR = DATA_TAG_BASE_ADDR + DATA_TAG_SIZE; // 0x04800000
+    constexpr uint64_t COUNTER_SIZE = 1024 * 1024 * 4; // 4MB
 
 
     constexpr uint64_t MMIO_SPM_DMA_BASE_ADDR   = 0x40000000;
@@ -57,4 +57,10 @@ namespace MemoryMap {
         constexpr uint64_t COMMAND = 0x20;
         constexpr uint64_t BUSY = 0x28;
     }
+}
+
+namespace Parameter {
+    constexpr uint64_t BLOCK_SIZE = 64;
+    constexpr uint64_t HEIGHT = 4; // ツリーの高さ
+    constexpr uint64_t BLOCKS_PER_LINE = 32; // 1カウンターラインあたりのカウンター数(=分岐数)
 }

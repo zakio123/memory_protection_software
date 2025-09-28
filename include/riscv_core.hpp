@@ -18,9 +18,7 @@ public:
     void runMainLoop() {
         std::cout << "[Core] Started. Polling for requests from AXI Manager...\n";
         // AXI ManagerのSTATUSレジスタをポーリングし、リクエストがキューに入るのを待つ
-        while ((m_bus.read64(MemoryMap::MMIO_AXI_MGR_BASE_ADDR + MemoryMap::AxiManagerReg::STATUS) & 1) == 0) {
-            // In a real system, the core might enter a low-power state here.
-        }
+        while ((m_bus.read64(MemoryMap::MMIO_AXI_MGR_BASE_ADDR + MemoryMap::AxiManagerReg::STATUS) & 1) == 0) {}
         std::cout << "[Core] Request detected in AXI Manager's queue.\n";
         
         // リクエストを処理するアルゴリズムを実行
@@ -33,6 +31,12 @@ public:
 
 private:
     // --- 1. アドレス計算をまとめるための構造体とメソッド ---
+    std::array<uint64_t, 4> level_base_addr = {
+    (1ULL << (5 *3)) * 64 + (1ULL << (5 *2)) * 64 + (1ULL << (5 *1)) * 64, // height 1
+    (1ULL << (5 *3)) * 64 + (1ULL << (5 *2)) * 64 , // height 2
+    (1ULL << (5 *3)) * 64, // height 3
+    0, // height 4
+    };
     struct AddressContext {
         uint64_t request_addr;
         uint64_t counterblock_addr, datamacblock_addr;
@@ -44,22 +48,19 @@ private:
     AddressContext setupAddressContext() {
         AddressContext ctx;
         ctx.request_addr = m_bus.read64(MemoryMap::MMIO_AXI_MGR_BASE_ADDR + MemoryMap::AxiManagerReg::REQ_ADDR);
-        
         // DRAMアドレス
-        ctx.counterblock_addr = MemoryMap::COUNTER_BASE_ADDR + ((ctx.request_addr / (64 * 64))) * 64;
+        ctx.counterblock_addr = MemoryMap::COUNTER_BASE_ADDR + ((ctx.request_addr / (64 * 32))) * 64;
         ctx.datamacblock_addr = MemoryMap::DATA_TAG_BASE_ADDR + ((ctx.request_addr / (64 * 8))) * 64;
-        
         // オフセット
-        ctx.counter_bit_offset = 64 + (ctx.request_addr / 64) % 64 * 4;
+        ctx.counter_bit_offset = 64 + (ctx.request_addr / 64) % 32 * 8;
         ctx.dmac_byte_offset = (ctx.request_addr / 64) % 8 * 8;
 
         // SPMアドレス
-        ctx.spm_data = MemoryMap::SPM_BASE_ADDR + 0x000;
-        ctx.spm_mac_block = MemoryMap::SPM_BASE_ADDR + 0x040;
-        ctx.spm_counter_block = MemoryMap::SPM_BASE_ADDR + 0x080;
-        ctx.spm_counter_manage = MemoryMap::SPM_BASE_ADDR + (1+56)*8;
-        ctx.spm_mac_manage = MemoryMap::SPM_BASE_ADDR + (2+56)*8;
-        
+        ctx.spm_data = MemoryMap::SPM_BASE_ADDR + 0x040;
+        ctx.spm_mac_block = MemoryMap::SPM_BASE_ADDR + 0x080;
+        ctx.spm_counter_block = MemoryMap::SPM_BASE_ADDR + 0x0C0;
+        ctx.spm_mac_manage = MemoryMap::SPM_BASE_ADDR + 56 * 64 + 1*8;
+        ctx.spm_counter_manage = MemoryMap::SPM_BASE_ADDR + 56 * 64 + 2*8;
         return ctx;
     }
     // --- 2. SPMキャッシュ管理ロジックを共通化 ---
@@ -75,9 +76,6 @@ private:
         bool is_valid = (current_block_info & 1) != 0;
         bool is_dirty = (current_block_info & 2) != 0;
         uint64_t current_block_addr = (current_block_info >> 6) << 6;
-        // manage情報をプリンt
-        std::cout << "[Core FW] " << block_name << " Block Management Info - Valid: " << is_valid 
-                  << ", Dirty: " << is_dirty << ", Current Block Addr: 0x" << std::hex << current_block_addr << std::dec << "\n";
         // SPM上のブロックが目的のブロックと違う場合、入れ替え処理を行う
         if (!is_valid || current_block_addr != required_block_addr) {
             std::cout << "[Core FW] " << block_name << " block miss in SPM. Required: 0x" << std::hex << required_block_addr << std::dec << "\n";
@@ -101,7 +99,12 @@ private:
     void pollUntilReady(uint64_t status_addr) {
         while(m_bus.read64(status_addr) != 0) {}
     }
-
+    bool tag_check(uint64_t spm_management_addr, uint64_t block_addr) {
+        uint64_t current_block_info = m_bus.read64(spm_management_addr);
+        bool is_valid = (current_block_info & 1) != 0;
+        uint64_t current_block_addr = (current_block_info >> 6) << 6;
+        return is_valid && (current_block_addr == block_addr);
+    }
     void startSpmDma(uint64_t dram_addr, uint64_t spm_addr, uint64_t size, uint64_t direction) {
         pollUntilReady(MemoryMap::MMIO_SPM_DMA_BASE_ADDR + MemoryMap::SPM_Reg::START);
         m_bus.write64(MemoryMap::MMIO_SPM_DMA_BASE_ADDR + MemoryMap::SPM_Reg::DRAM_ADDR, dram_addr);
@@ -138,13 +141,65 @@ private:
         m_bus.write64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::COMMAND, 2); // 2: MAC Update
         while(m_bus.read64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::STATUS) != 0) {}
     }
-    // SPM内の特別な配置 64B * 64lines(0x0000 - 0x7FFFのアドレス空間)
-    // - 0x000-0x03F: 暗号文(64B)
-    // - 0x040-0x07F: MAC(64B)
-    // - 0x080-0x27F: カウンターブロック(64B * 8 = 512B)
-    // - 0x600-0x7FF: その他のデータ領域
+    bool verifyTreePath(const std::array<uint64_t, 4>& path_indices) {
+        std::cout << "[Core FW] --- Verifying Merkle Tree Path ---\n";
+        for (int i = 0; i < Parameter::HEIGHT; ++i) {
+            uint64_t height = i + 1;
+            uint64_t spm_addr = MemoryMap::SPM_BASE_ADDR + (6 - i) * 64;
+            uint64_t spm_manage = MemoryMap::SPM_BASE_ADDR + 56 * 64 + (6 - i) * 8;
+            // DRAM上のノードアドレスを計算
+            uint64_t dram_addr = MemoryMap::COUNTER_BASE_ADDR + path_indices[i] / 32 * 64;
+            dram_addr += level_base_addr[i];
+            // 必要なノードをSPMにロード
+            ensureBlockInSpm(dram_addr, spm_addr, spm_manage, "Tree Level " + std::to_string(height));
+
+            // --- MAC計算 ---
+            // MACを初期化
+            pollUntilReady(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::STATUS);
+            m_bus.write64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::COMMAND, 1); // INIT
+            pollUntilReady(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::STATUS);
+
+            // 現在のノードデータをハッシュ入力に設定
+            setMacBuffer(spm_addr, 0, 448 - 1); // 448bit
+
+            // 親ノードのハッシュをハッシュ入力に設定
+            if (i == 0) { // 最下層ノードの場合、親はルート
+                setMacBuffer(MemoryMap::SPM_BASE_ADDR, 0, 63);
+            } else {
+                uint64_t parent_spm_addr = spm_addr + 64; // SPM上では直前の階層
+                uint64_t parent_offset_in_node = (path_indices[i - 1] % 32) * 8;
+                setMacBuffer(parent_spm_addr, 64 + parent_offset_in_node, 64 + parent_offset_in_node + 7);
+            }
+
+            // MAC計算を完了
+            m_bus.write64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::COMMAND, 4); // FINALIZE
+            pollUntilReady(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::STATUS);
+            
+            // --- MAC検証 ---
+            uint64_t computed_mac = m_bus.read64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::MAC_RESULT);
+            uint64_t expected_mac = m_bus.read64(spm_addr + 56); // 56Byte目にMACがある
+            
+            std::cout << "[Core FW] Level " << height << " - Computed MAC: 0x" << std::hex << computed_mac
+                      << ", Expected MAC: 0x" << expected_mac << std::dec << "\n";
+
+            if (computed_mac != expected_mac) {
+                std::cout << "[Core FW] Verification failed at level " << height << ". Aborting.\n";
+                return false; // 検証失敗
+            }
+        }
+        std::cout << "[Core FW] --- Merkle Tree Path Verified Successfully ---\n";
+        return true; // 全ての階層で検証成功
+    }
     /**
-     * @brief コア上で実行されるファームウェア/ドライバに相当するアルゴリズム
+     * @brief ある階層の整合性を検証する
+     * @param sibling_head_addr 隣接するノードのヘッダーアドレス
+     * @param parent_head_addr 親ノードのヘッダーアドレス
+     * @param parent_offset 親ノード内のオフセット
+     * @param height 階層の高さ
+     * @return true: 整合性が確認された, false: 整合性が確認できなかった
+     */
+    /**
+     * @brief コア上で実行されるファームウェア/ドライバに相当する認証アルゴリズム
      */
     void runAuthentication() {
         std::cout << "[Core FW] --- Authentication Start ---\n";
@@ -156,37 +211,116 @@ private:
         // --- 手順1: SPMからカウンターを読み取り、インクリメントしてSPMに書き戻し ---
         // 初めにspmにあるカウンターのアドレスを確認する
         std::cout << "[Core FW] Step 1: Handling counter block in SPM...\n";
-        ensureBlockInSpm(ctx.counterblock_addr, ctx.spm_counter_block, ctx.spm_counter_manage, "Counter");
-        // カウンターを読み取り、インクリメントして書き戻す
+        bool hit = tag_check(ctx.spm_counter_manage, ctx.counterblock_addr);
+        // まずはverificationを行う
+        std::array<uint64_t,4> path_index; // 先頭は階層1
+        for (int i=0;i<4;i++){
+            path_index[3-i] = (ctx.request_addr / (64 * (1ULL << (5 * i))));
+        }
+        // print path_index
+        std::cout << "[Core FW] Path Indices: ";
+        for (int i=0;i<4;i++){
+            std::cout << path_index[i] << " ";
+        }
+        std::cout << "\n";
+        if (hit == false) {
+            ensureBlockInSpm(ctx.counterblock_addr, ctx.spm_counter_block, ctx.spm_counter_manage, "Counter");
+            uint64_t major_counter = m_bus.read64(ctx.spm_counter_block);
+            uint64_t minor_counter_byte_address = ctx.spm_counter_block + (ctx.counter_bit_offset / 64) * 8;
+            uint64_t minor_counter = m_bus.read64(minor_counter_byte_address);
+            // ここから過去のminor counterを取り出す
+            uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 8) * 8)) & 0xFF;
+            if (minor_counter_value != 0 || major_counter != 0){
+                // メジャーマイナー、どちらかが0でなければ検証を行う
+                // 1. パスの特定=親ノードの物理アドレスをルートまで計算していく。
+                bool verified = verifyTreePath(path_index);
+                if (verified == false){
+                    std::cout << "[Core FW] Authentication failed during counter verification. Aborting.\n";
+                    exit(1);
+                }
+            }
+        }
+        // 手順1.1 : カウンターを読み取り、インクリメントして書き戻しツリーの認証を行う
+        std::cout << "[Core FW] Incrementing minor counter and updating major counter and tree\n";
+        // root update
+        uint64_t spm_root_addr = MemoryMap::SPM_BASE_ADDR + 0 * 64;
+        uint64_t root = m_bus.read64(spm_root_addr);
+        uint64_t new_root = root + 1;
+        m_bus.write64(spm_root_addr, new_root);
+        uint64_t height = 1;
+        for (uint64_t i=0;i<Parameter::HEIGHT;i++){
+            std::cout << "[Core FW] Processing Counter Level " << height << "\n";
+            uint64_t spm_addr = MemoryMap::SPM_BASE_ADDR + (6-i) * 64;
+            uint64_t spm_manage = MemoryMap::SPM_BASE_ADDR + 56 * 64 + (6-i) * 8;
+            uint64_t dram_addr = MemoryMap::COUNTER_BASE_ADDR + path_index[i] / 32 * 64;
+            dram_addr += level_base_addr[i];
+            ensureBlockInSpm(dram_addr, spm_addr, spm_manage, "Counter Level " + std::to_string(height));
+            height += 1;
+            // ここから過去のmajor, minor counterを取り出す
+            uint64_t major_counter = m_bus.read64(spm_addr);
+            uint64_t minor_counter_byte_address = spm_addr + 8 + (path_index[i] % 32) / 8 * 8;
+            uint64_t minor_counter = m_bus.read64(minor_counter_byte_address);
+            // ここから過去のminor counterを取り出す
+            uint8_t minor_counter_value = (minor_counter >> ((path_index[i] % 8) * 8)) & 0xFF;
+            uint8_t new_minor_counter = 0;
+            if (new_minor_counter == 0xff){
+                uint64_t new_major_counter = major_counter + 1;
+                m_bus.write64(spm_addr, new_major_counter);
+                new_minor_counter = 0; // minor counterは0に戻す
+                std::cout << "[Core FW] Minor counter overflow at level " << height-1 << ". Incrementing major counter.\n";
+                // exit(1); // 今回はエラーにする
+            } else {
+                new_minor_counter = minor_counter_value + 1;
+            }
+            uint64_t shift_amount = (path_index[i] % 8) * 8;
+            uint64_t clear_mask = ~(0xFFULL << shift_amount);
+            uint64_t cleared_minor_counter = minor_counter & clear_mask;
+            // --- 新しい値を正しい位置へシフトする ---
+            uint64_t shifted_new_value = static_cast<uint64_t>(new_minor_counter) << shift_amount;
+            uint64_t final_word = cleared_minor_counter | shifted_new_value;
+            // カウンターをprint
+            std::cout << "[Core FW] Loaded Counter - Major: " << major_counter << ", Minor: " << static_cast<uint32_t>(new_minor_counter) << "\n";
+            // 書き戻し
+            m_bus.write64(minor_counter_byte_address, final_word);
+            // ブロックをdirtyに設定する
+            setBlockdirty(spm_manage, dram_addr);
+            // MAC計算を実行
+            // Hash関数を初期化してから当該ブロックをMAC
+            while(m_bus.read64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::STATUS) != 0) {}
+            m_bus.write64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::COMMAND, 1); // 1: Initialize
+            // busy wait
+            while(m_bus.read64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::STATUS) != 0) {}
+            // SPMからこの階層のブロックをコピーし、update
+            setMacBuffer(spm_addr, 0, 448-1); // 448
+            // 親ノードのヘッダーをMACの内部バッファにセット
+            if (i == 0){
+                // 最上位層はrootノードを使う
+                setMacBuffer(MemoryMap::SPM_BASE_ADDR, 0, 63);
+            } else {
+                uint64_t parent_offset = path_index[i-1] % 32 * 8;
+                setMacBuffer(spm_addr + 64, 64 + parent_offset ,64 + parent_offset + 7); 
+            }
+            // MAC計算完了
+            m_bus.write64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::COMMAND, 4); // 4: MAC Finalize
+            while(m_bus.read64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::STATUS) != 0) {}
+            uint64_t mac_result = m_bus.read64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::MAC_RESULT);
+            m_bus.write64(spm_addr + 56, mac_result); // 56BにMACがある
+        }
         uint64_t major_counter = m_bus.read64(ctx.spm_counter_block);
         // minor_counterのload
         // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
         uint64_t minor_counter_byte_address = ctx.spm_counter_block + (ctx.counter_bit_offset / 64) * 8;
         uint64_t minor_counter = m_bus.read64(minor_counter_byte_address);
-        // ここから過去のminor counterを取り出す
         uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 8) * 8)) & 0xFF;
-        uint8_t new_minor_counter = minor_counter_value + 1;
-        uint64_t shift_amount = (ctx.counter_bit_offset % 8) * 8;
-        uint64_t clear_mask = ~(0xFFULL << shift_amount);
-        uint64_t cleared_minor_counter = minor_counter & clear_mask;
-        // --- 新しい値を正しい位置へシフトする ---
-        uint64_t shifted_new_value = static_cast<uint64_t>(new_minor_counter) << shift_amount;
-        uint64_t final_word = cleared_minor_counter | shifted_new_value;
-        // カウンターをprint
-        std::cout << "[Core FW] Loaded Counter - Major: " << major_counter << ", Minor: " << static_cast<uint32_t>(new_minor_counter) << "\n";
-        // 書き戻し
-        m_bus.write64(minor_counter_byte_address, final_word);
-        // ブロックをdirtyに設定する
-        setBlockdirty(ctx.spm_counter_manage, ctx.counterblock_addr);
         // --- 手順2: アドレスとカウンター値を元にSeed値を計算し、AES_moduleに書き込み起動する ---
-        uint64_t seed_0 = 0 + major_counter;
-        uint64_t seed_1 = 1 + static_cast<uint64_t>(new_minor_counter);
-        uint64_t seed_2 = 2 + major_counter;
-        uint64_t seed_3 = 3 + static_cast<uint64_t>(new_minor_counter);
-        uint64_t seed_4 = 4 + major_counter;
-        uint64_t seed_5 = 5 + static_cast<uint64_t>(new_minor_counter);
-        uint64_t seed_6 = 6 + major_counter;
-        uint64_t seed_7 = 7 + static_cast<uint64_t>(new_minor_counter);
+        uint64_t seed_0 = ctx.request_addr + major_counter;
+        uint64_t seed_1 = ctx.request_addr + static_cast<uint64_t>(minor_counter_value);
+        uint64_t seed_2 = ctx.request_addr + 16 + major_counter;
+        uint64_t seed_3 = ctx.request_addr + 16 + static_cast<uint64_t>(minor_counter_value);
+        uint64_t seed_4 = ctx.request_addr + 32 + major_counter;
+        uint64_t seed_5 = ctx.request_addr + 32 + static_cast<uint64_t>(minor_counter_value);
+        uint64_t seed_6 = ctx.request_addr + 48 + major_counter;
+        uint64_t seed_7 = ctx.request_addr + 48 + static_cast<uint64_t>(minor_counter_value);
         m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_0, seed_0);
         m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_1, seed_1);
         m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_2, seed_2);
@@ -238,6 +372,9 @@ private:
 
         std::cout << "[Core FW] --- Authentication Finished ---\n";
     }
+    /**
+     * @brief コア上で実行されるファームウェア/ドライバに相当する検証アルゴリズム
+     */
     void runVerification() {
         std::cout << "[Core FW] --- Verification Start ---\n";
         // uint64_t request_addr = m_bus.read64(MemoryMap::MMIO_AXI_MGR_BASE_ADDR + MemoryMap::AxiManagerReg::REQ_ADDR);
@@ -246,7 +383,23 @@ private:
         // --- 手順1: SPMからカウンターをload ---
         // 初めにspmにあるカウンターのアドレスを確認する
         std::cout << "[Core FW] Step 1: Handling counter block in SPM...\n";
-        ensureBlockInSpm(ctx.counterblock_addr, ctx.spm_counter_block, ctx.spm_counter_manage, "Counter");
+        // bool hit = tag_check(ctx.spm_counter_manage, ctx.counterblock_addr);
+        // --- 手順1.1 : ツリー検証 ---
+        {
+            // missの場合、カウンターブロックの検証が必要
+            // 求めるべきこと
+            // 1. パスの特定=親ノードの物理アドレスをルートまで計算していく。
+            std::array<uint64_t,4> path_index; // 先頭は階層1
+            for (int i=0;i<4;i++){
+                path_index[3-i] = (ctx.request_addr / (64 * (1ULL << (5 * i))));
+            }
+            bool verified = verifyTreePath(path_index);
+            if (verified == false){
+                std::cout << "[Core FW] Verification failed during counter verification. Aborting.\n";
+                exit(1);
+            }
+        }
+        // --- 手順1.2 : ツリーの検証は終了、カウンターのload ---
         uint64_t major_counter = m_bus.read64(ctx.spm_counter_block);
         // minor_counterのload
         // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
@@ -258,14 +411,14 @@ private:
         std::cout << "[Core FW] Loaded Counter - Major: " << major_counter << ", Minor: " << static_cast<uint32_t>(minor_counter_value) << "\n";
         // カウンターをload
         // --- 手順2: アドレスとカウンター値を元にSeed値を計算し、AES_moduleに書き込み起動する ---
-        uint64_t seed_0 = 0 + major_counter;
-        uint64_t seed_1 = 1 + static_cast<uint64_t>(minor_counter_value);
-        uint64_t seed_2 = 2 + major_counter;
-        uint64_t seed_3 = 3 + static_cast<uint64_t>(minor_counter_value);
-        uint64_t seed_4 = 4 + major_counter;
-        uint64_t seed_5 = 5 + static_cast<uint64_t>(minor_counter_value);
-        uint64_t seed_6 = 6 + major_counter;
-        uint64_t seed_7 = 7 + static_cast<uint64_t>(minor_counter_value);
+        uint64_t seed_0 = ctx.request_addr + major_counter;
+        uint64_t seed_1 = ctx.request_addr + static_cast<uint64_t>(minor_counter_value);
+        uint64_t seed_2 = ctx.request_addr + 16 + major_counter;
+        uint64_t seed_3 = ctx.request_addr + 16 + static_cast<uint64_t>(minor_counter_value);
+        uint64_t seed_4 = ctx.request_addr + 32 + major_counter;
+        uint64_t seed_5 = ctx.request_addr + 32 + static_cast<uint64_t>(minor_counter_value);
+        uint64_t seed_6 = ctx.request_addr + 48 + major_counter;
+        uint64_t seed_7 = ctx.request_addr + 48 + static_cast<uint64_t>(minor_counter_value);
         m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_0, seed_0);
         m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_1, seed_1);
         m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_2, seed_2);

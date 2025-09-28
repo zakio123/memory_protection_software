@@ -62,6 +62,7 @@ public:
         // アドレスが8バイトの読み出し範囲内にあるかチェック
         uint64_t local_addr = addr - MemoryMap::SPM_BASE_ADDR;
         if (local_addr + 8 <= SPM_SIZE) {
+            std::cout << "[SPM] Read64 from address 0x" << std::hex << addr << std::dec << "\n";    
             // 指定アドレスをuint64_t型ポインタとして解釈し、データを一括で読み出す
             return *reinterpret_cast<uint64_t*>(&m_memory[local_addr]);
         }

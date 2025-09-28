@@ -16,12 +16,18 @@ public:
     void write(uint64_t addr, const uint8_t* data, uint64_t size) {
         if (addr + size <= m_memory.size()) {
             std::memcpy(&m_memory[addr], data, size);
+        } else {
+            std::cerr << "DRAM: Write out of bounds! Addr: 0x" << std::hex << addr << ", Size: " << std::dec << size << "\n";
+            exit(1);
         }
     }
 
     void read(uint64_t addr, uint8_t* data, uint64_t size) {
         if (addr + size <= m_memory.size()) {
             std::memcpy(data, &m_memory[addr], size);
+        } else {
+            std::cerr << "DRAM: Read out of bounds! Addr: 0x" << std::hex << addr << ", Size: " << std::dec << size << "\n";
+            exit(1);
         }
     }
     void write64(uint32_t addr, uint64_t data) {

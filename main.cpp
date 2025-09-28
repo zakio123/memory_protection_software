@@ -142,16 +142,20 @@ int main() {
     // --- 3. テストシナリオを生成 (40回のランダムなRead/Write) ---
     std::random_device rd;
     std::mt19937 gen(rd());
-    std::uniform_int_distribution<uint32_t> addr_dist(0, 1000);
+    std::uniform_int_distribution<uint32_t> addr_dist(0, 0x04000000 / 64 - 1); // 64Bアラインされたアドレス範囲
     std::uniform_int_distribution<int> op_dist(0, 1);
 
-    const int NUM_TESTS = 80;
+    const int NUM_TESTS = 40000;
     for (int i = 0; i < NUM_TESTS; ++i) {
-        uint64_t addr = 0x10000 + addr_dist(gen) * 64; // 64Bアライン
+        uint64_t addr = addr_dist(gen) * 64; // 64Bアライン
         AxiManagerModule::DataBlock data;
         for(size_t j=0; j<data.size(); ++j) data[j] = i; // 簡単なデータパターン
         tb.addWriteTest(addr, data); // まず書き込みテストを追加
-        // tb.addReadTest(addr, data);  // 続けて読み出しテストを追加
+        tb.addReadTest(addr, data);  // 続けて読み出しテストを追加
+        for(size_t j=0; j<data.size(); ++j) data[j] = i+1; // 簡単なデータパターン
+        tb.addWriteTest(addr, data); // まず書き込みテストを追加
+        tb.addReadTest(addr, data);  // 続けて読み出しテストを追加
+        
     }
     
     // --- 4. テストスイートを実行 ---

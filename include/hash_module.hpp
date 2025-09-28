@@ -62,6 +62,9 @@ public:
     }
 
 private:
+    // FNV-1aハッシュ用の定数 (64bit版)
+    static constexpr uint64_t FNV_PRIME = 0x100000001b3;
+    static constexpr uint64_t FNV_OFFSET_BASIS = 0xcbf29ce484222325;
     void reset() {
         m_spm_addr_reg = 0;
         m_start_bit_reg = 0;
@@ -74,10 +77,10 @@ private:
     // SPMから内部バッファへのDMAコピーを実行
     void executeDmaCopy() {
         m_status = 1; // Busyに設定
-        std::cout << "  [Hash HW] DMA Copy Started (SPM:0x" << std::hex << m_spm_addr_reg
-                  << " -> Internal Buffer, 64 Bytes)\n" << std::dec;
+        // std::cout << "  [Hash HW] DMA Copy Started (SPM:0x" << std::hex << m_spm_addr_reg
+        //           << " -> Internal Buffer, 64 Bytes)\n" << std::dec;
         m_spm.read(m_spm_addr_reg, m_internal_buffer.data(), m_internal_buffer.size());
-        std::cout << "  [Hash HW] DMA Copy Finished.\n";
+        // std::cout << "  [Hash HW] DMA Copy Finished.\n";
         m_status = 0; // Idleに戻す
     }
 
@@ -86,30 +89,39 @@ private:
         m_status = 1; // Busyに設定
         if (command & 1) { // INIT
             std::cout << "  [Hash HW] Command INIT received. MAC state cleared.\n";
-            m_mac_result = 0;
+            m_mac_result = FNV_OFFSET_BASIS;
         }
         if (command & 2) { // UPDATE
-            std::cout << "  [Hash HW] Command UPDATE received (Bits " << m_start_bit_reg << " to " << m_end_bit_reg << ").\n";
-            // internalbufferの中身をprint
-            for (uint64_t i = m_start_bit_reg; i <= m_end_bit_reg; ++i) {
-                bool bit = getBit(i);
-                // 簡易ハッシュアルゴリズム: 巡回左シフト + XOR
-                m_mac_result = ((m_mac_result << 1) | (m_mac_result >> 63)) ^ bit;
+            // std::cout << "  [Hash HW] Command UPDATE received (Bits " << m_start_bit_reg << " to " << m_end_bit_reg << ").\n";
+            
+            // ★変更点: ビット指定をバイト範囲に変換して処理
+            // 指定されたビット範囲を含む最小のバイト範囲を計算
+            uint64_t start_byte = m_start_bit_reg / 8;
+            uint64_t end_byte = (m_end_bit_reg) / 8;
+            if (end_byte >= m_internal_buffer.size() || m_start_bit_reg > m_end_bit_reg) {
+                //  std::cout << "  [Hash HW] ERROR: Invalid bit range.\n";
+            } else {
+                
+                std::cout << "  [Hash HW] Processing bytes from " << start_byte << " to " << end_byte << ".\n";
+                // internal_bufferの指定バイト範囲をprint
+                std::cout << "  [Hash HW] Data: ";
+                for (uint64_t i = start_byte; i <= end_byte; ++i) {
+                    std::cout << std::hex << static_cast<int>(m_internal_buffer[i]) << " ";
+                }
+                std::cout << std::dec << "\n";
+                // FNV-1aアルゴリズムをそのバイト範囲で実行
+
+                for (uint64_t i = start_byte; i <= end_byte; ++i) {
+                    m_mac_result ^= m_internal_buffer[i];
+                    m_mac_result *= FNV_PRIME;
+                }
             }
         }
         if (command & 4) { // DIGEST
-            std::cout << "  [Hash HW] Command DIGEST received. Calculation finalized.\n";
+            // std::cout << "  [Hash HW] Command DIGEST received. Calculation finalized.\n";
             // 実際のハードウェアではパディングなどを行うが、シミュレーションでは何もしない
         }
         m_status = 0; // Idleに戻す
-    }
-
-    // 内部バッファから指定されたインデックスのビットを取得
-    bool getBit(uint64_t bit_index) {
-        if (bit_index >= m_internal_buffer.size() * 8) return false;
-        uint64_t byte_index = bit_index / 8;
-        uint8_t bit_offset = bit_index % 8;
-        return (m_internal_buffer[byte_index] >> bit_offset) & 1;
     }
 
     // --- 依存モジュール ---
