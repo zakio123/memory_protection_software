@@ -141,9 +141,10 @@ private:
         m_bus.write64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::COMMAND, 2); // 2: MAC Update
         while(m_bus.read64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::STATUS) != 0) {}
     }
+    
     bool verifyTreePath(const std::array<uint64_t, 4>& path_indices) {
         std::cout << "[Core FW] --- Verifying Merkle Tree Path ---\n";
-        for (int i = 0; i < Parameter::HEIGHT; ++i) {
+        for (uint64_t i = 0; i < Parameter::HEIGHT; ++i) {
             uint64_t height = i + 1;
             uint64_t spm_addr = MemoryMap::SPM_BASE_ADDR + (6 - i) * 64;
             uint64_t spm_manage = MemoryMap::SPM_BASE_ADDR + 56 * 64 + (6 - i) * 8;
@@ -191,13 +192,27 @@ private:
         return true; // 全ての階層で検証成功
     }
     /**
-     * @brief ある階層の整合性を検証する
-     * @param sibling_head_addr 隣接するノードのヘッダーアドレス
-     * @param parent_head_addr 親ノードのヘッダーアドレス
-     * @param parent_offset 親ノード内のオフセット
-     * @param height 階層の高さ
-     * @return true: 整合性が確認された, false: 整合性が確認できなかった
+     * @brief メジャー・マイナーカウンターとアドレスを元にOTP用のシードを生成しAESアクセラレータに書き込む
      */
+    void makeseed_otp(uint64_t request_addr, uint64_t major_counter, uint8_t minor_counter){
+        uint64_t seed_0 = request_addr + major_counter;
+        uint64_t seed_1 = request_addr + static_cast<uint64_t>(minor_counter);
+        uint64_t seed_2 = request_addr + 16 + major_counter;
+        uint64_t seed_3 = request_addr + 16 + static_cast<uint64_t>(minor_counter);
+        uint64_t seed_4 = request_addr + 32 + major_counter;
+        uint64_t seed_5 = request_addr + 32 + static_cast<uint64_t>(minor_counter);
+        uint64_t seed_6 = request_addr + 48 + major_counter;
+        uint64_t seed_7 = request_addr + 48 + static_cast<uint64_t>(minor_counter);
+        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_0, seed_0);
+        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_1, seed_1);
+        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_2, seed_2);
+        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_3, seed_3);
+        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_4, seed_4);
+        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_5, seed_5);
+        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_6, seed_6);
+        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_7, seed_7);
+        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::START, 1); 
+    }
     /**
      * @brief コア上で実行されるファームウェア/ドライバに相当する認証アルゴリズム
      */
@@ -313,23 +328,7 @@ private:
         uint64_t minor_counter = m_bus.read64(minor_counter_byte_address);
         uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 8) * 8)) & 0xFF;
         // --- 手順2: アドレスとカウンター値を元にSeed値を計算し、AES_moduleに書き込み起動する ---
-        uint64_t seed_0 = ctx.request_addr + major_counter;
-        uint64_t seed_1 = ctx.request_addr + static_cast<uint64_t>(minor_counter_value);
-        uint64_t seed_2 = ctx.request_addr + 16 + major_counter;
-        uint64_t seed_3 = ctx.request_addr + 16 + static_cast<uint64_t>(minor_counter_value);
-        uint64_t seed_4 = ctx.request_addr + 32 + major_counter;
-        uint64_t seed_5 = ctx.request_addr + 32 + static_cast<uint64_t>(minor_counter_value);
-        uint64_t seed_6 = ctx.request_addr + 48 + major_counter;
-        uint64_t seed_7 = ctx.request_addr + 48 + static_cast<uint64_t>(minor_counter_value);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_0, seed_0);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_1, seed_1);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_2, seed_2);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_3, seed_3);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_4, seed_4);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_5, seed_5);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_6, seed_6);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_7, seed_7);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::START, 1); 
+        makeseed_otp(ctx.request_addr, major_counter, minor_counter_value);
         // --- 手順3: AXI ManagerにOTPとともにXORを実行し、暗号化を指示 ---
         std::cout << "[Core FW] Step 3: Commanding AXI Manager to encrypt data...\n";
         // busy wait AESモジュールの計算完了を待つ
@@ -383,11 +382,10 @@ private:
         // --- 手順1: SPMからカウンターをload ---
         // 初めにspmにあるカウンターのアドレスを確認する
         std::cout << "[Core FW] Step 1: Handling counter block in SPM...\n";
-        // bool hit = tag_check(ctx.spm_counter_manage, ctx.counterblock_addr);
+        bool hit = tag_check(ctx.spm_counter_manage, ctx.counterblock_addr);
         // --- 手順1.1 : ツリー検証 ---
-        {
+        if (hit == false) {
             // missの場合、カウンターブロックの検証が必要
-            // 求めるべきこと
             // 1. パスの特定=親ノードの物理アドレスをルートまで計算していく。
             std::array<uint64_t,4> path_index; // 先頭は階層1
             for (int i=0;i<4;i++){
@@ -405,40 +403,21 @@ private:
         // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
         uint64_t minor_counter_byte_address = ctx.spm_counter_block + (ctx.counter_bit_offset / 64) * 8;
         uint64_t minor_counter = m_bus.read64(minor_counter_byte_address);
-        // ここから過去のminor counterを取り出す
         uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 8) * 8)) & 0xFF;
-        // カウンターをprint
         std::cout << "[Core FW] Loaded Counter - Major: " << major_counter << ", Minor: " << static_cast<uint32_t>(minor_counter_value) << "\n";
-        // カウンターをload
         // --- 手順2: アドレスとカウンター値を元にSeed値を計算し、AES_moduleに書き込み起動する ---
-        uint64_t seed_0 = ctx.request_addr + major_counter;
-        uint64_t seed_1 = ctx.request_addr + static_cast<uint64_t>(minor_counter_value);
-        uint64_t seed_2 = ctx.request_addr + 16 + major_counter;
-        uint64_t seed_3 = ctx.request_addr + 16 + static_cast<uint64_t>(minor_counter_value);
-        uint64_t seed_4 = ctx.request_addr + 32 + major_counter;
-        uint64_t seed_5 = ctx.request_addr + 32 + static_cast<uint64_t>(minor_counter_value);
-        uint64_t seed_6 = ctx.request_addr + 48 + major_counter;
-        uint64_t seed_7 = ctx.request_addr + 48 + static_cast<uint64_t>(minor_counter_value);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_0, seed_0);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_1, seed_1);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_2, seed_2);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_3, seed_3);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_4, seed_4);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_5, seed_5);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_6, seed_6);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::INPUT_7, seed_7);
-        m_bus.write64(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::START, 1); 
+        makeseed_otp(ctx.request_addr, major_counter, minor_counter_value);
         // --- 手順3: SPM DMAを起動し、DRAMから暗号文をSPMにコピー ---
         std::cout << "[Core FW] Step 3: Commanding SPM DMA to copy ciphertext from DRAM to SPM...\n";
         startSpmDma(ctx.request_addr, ctx.spm_data, 64, 0); // 0: DRAM -> SPM
         std::cout << "[Core FW] Ciphertext loaded from DRAM to SPM.\n";
         // --- 手順3: AXI ManagerにOTPとともにXORを実行し、復号化を指示 ---
-        // AESの完了を待つ
-        pollUntilReady(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::START);
         // SPMからAXI Managerへ暗号文をコピー
         pollUntilReady(MemoryMap::MMIO_AXI_MGR_BASE_ADDR + MemoryMap::AxiManagerReg::BUSY);
         m_bus.write64(MemoryMap::MMIO_AXI_MGR_BASE_ADDR + MemoryMap::AxiManagerReg::SPM_ADDR, ctx.spm_data);
         m_bus.write64(MemoryMap::MMIO_AXI_MGR_BASE_ADDR + MemoryMap::AxiManagerReg::COMMAND, 2); // 2: Decrypt
+        // AESの完了を待つ
+        pollUntilReady(MemoryMap::MMIO_AES_ACCEL_BASE_ADDR + MemoryMap::AesReg::START);
         // 復号化を指示
         std::cout << "[Core FW] Step 4: Commanding AXI Manager to decrypt ciphertext in SPM...\n";
         // busy wait
@@ -465,15 +444,11 @@ private:
         // SPMに当該MACブロックがあるかを確認。なければコピー。
         ensureBlockInSpm(ctx.datamacblock_addr, ctx.spm_mac_block, ctx.spm_mac_manage, "MAC");
         uint64_t expected_mac = m_bus.read64(ctx.spm_mac_block + ctx.dmac_byte_offset);
-        std::cout << "[Core FW] Expected MAC: 0x" << std::hex << expected_mac << std::dec << "\n";
-        std::cout << "[Core FW] Computed MAC: 0x" << std::hex << mac_result << std::dec << "\n";
         if (mac_result != expected_mac) {
             std::cout << "[Core FW] MAC verification failed. Aborting operation.\n";
             // エラー処理: MAC不一致
-            // AXI Managerにエラーを通知するなど
-            return;
+            exit(1);
         }
-        std::cout << "[Core FW] MAC verification succeeded.\n";
         
         // --- 手順7: AXI managerに対し、read bufferにあるデータをリターンするように指示 ---
         std::cout << "[Core FW] Step 7: Commanding AXI manager to return data in read buffer...\n";
