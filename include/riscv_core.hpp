@@ -113,21 +113,27 @@ private:
         m_bus.write64(MemoryMap::MMIO_SPM_DMA_BASE_ADDR + MemoryMap::SPM_Reg::DIRECTION, direction);
         m_bus.write64(MemoryMap::MMIO_SPM_DMA_BASE_ADDR + MemoryMap::SPM_Reg::START, 1);
     }
+    /*
+     * @brief 指定されたSPM管理アドレスの管理情報を更新し、指定されたブロックをDirtyに設定する
+    */
     void setBlockdirty(uint64_t spm_management_addr, uint64_t block_addr) {
         uint64_t new_info = ((block_addr >> 6) << 6) | 0x3; // ValidとDirtyをセット
         m_bus.write64(spm_management_addr, new_info);
-        // 管理情報をプリント
         uint64_t updated_info = m_bus.read64(spm_management_addr);
         bool is_valid = (updated_info & 1) != 0;
         bool is_dirty = (updated_info & 2) != 0;
         uint64_t current_block_addr = (updated_info >> 6) << 6;
-        std::cout << "[Core FW] Updated Block Management Info - Valid: " << is_valid 
-                  << ", Dirty: " << is_dirty << ", Current Block Addr: 0x" << std::hex << current_block_addr << std::dec << "\n";
     }
+    /**
+     * @brief 指定されたSPM管理アドレスの管理情報を更新し、指定されたブロックのDirtyをクリアする またはValidのみセットする
+    */
     void clearBlockdirty(uint64_t spm_management_addr, uint64_t block_addr) {
         uint64_t new_info = ((block_addr >> 6) << 6) | 0x1; // Validのみセット
         m_bus.write64(spm_management_addr, new_info);
     }
+    /*
+     * @brief MACモジュールのバッファにデータをセットし、計算を指示する
+    */
     void setMacBuffer(uint64_t spm_addr, uint64_t start_bit, uint64_t end_bit){
         // busy wait
         while(m_bus.read64(MemoryMap::MMIO_MAC_BASE_ADDR + MemoryMap::MacReg::STATUS) != 0) {}
