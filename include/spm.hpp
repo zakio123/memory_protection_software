@@ -9,9 +9,12 @@ public:
     
     // バイト単位のアクセス
     void write(uint64_t addr, const uint8_t* data, uint64_t size) {
-        addr -= MemoryMap::SPM_BASE_ADDR; // ローカルアドレスに変換
-        if (addr + size <= SPM_SIZE) {
-            std::memcpy(&m_memory[addr], data, size);
+        uint64_t local_addr = addr - MemoryMap::SPM_BASE_ADDR; // ローカルアドレスに変換
+        if (local_addr + size <= SPM_SIZE) {
+            std::memcpy(&m_memory[local_addr], data, size);
+        } else {
+            std::cerr << "SPM: Write out of bounds! Addr: 0x" << std::hex << addr << ", Size: " << std::dec << size << "\n";
+            exit(1);
         }
     }
 
@@ -19,6 +22,10 @@ public:
         uint64_t local_addr = addr - MemoryMap::SPM_BASE_ADDR;
         if (local_addr + size <= SPM_SIZE) {
             std::memcpy(data, &m_memory[local_addr], size);
+        }
+        else {
+            std::cerr << "SPM: Read out of bounds! Addr: 0x" << std::hex << addr << ", Size: " << std::dec << size << "\n";
+            exit(1);
         }
     }
     
@@ -65,8 +72,11 @@ public:
             std::cout << "[SPM] Read64 from address 0x" << std::hex << addr << std::dec << "\n";    
             // 指定アドレスをuint64_t型ポインタとして解釈し、データを一括で読み出す
             return *reinterpret_cast<uint64_t*>(&m_memory[local_addr]);
+        } else {
+            std::cerr << "SPM: Read64 out of bounds! Addr: 0x" << std::hex << addr << std::dec << "\n";
+            exit(1);
         }
-        return 0;
+        // return 0;
     }
 
 private:

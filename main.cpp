@@ -101,6 +101,12 @@ private:
             } else {
                 std::cout << "  ❌ Data MISMATCH!\n";
                 m_failed_count++;
+                std::cout << "    Expected: ";
+                for (const auto& byte : it->second.data) { std::cout << std::hex << static_cast<int>(byte) << " "; }
+                std::cout << "\n    Received: ";
+                for (const auto& byte : received_data) { std::cout << std::hex << static_cast<int>(byte) << " "; }
+                std::cout << std::dec << "\n";
+                exit(1);
             }
             m_outstanding_requests.erase(it);
         }
@@ -143,21 +149,25 @@ int main() {
     std::random_device rd;
     std::mt19937 gen(rd());
     std::uniform_int_distribution<uint32_t> addr_dist(0, 0x04000000 / 64 - 1); // 64Bアラインされたアドレス範囲
-    std::uniform_int_distribution<int> op_dist(0, 1);
-
+    std::vector<std::pair<uint64_t, AxiManagerModule::DataBlock>> test_plan;
+    std::map<uint64_t, AxiManagerModule::DataBlock> final_memory_state;
     const int NUM_TESTS = 40000;
+    std::cout << "\n[TB] Generating " << NUM_TESTS << " test cases...\n";
     for (int i = 0; i < NUM_TESTS; ++i) {
-        uint64_t addr = addr_dist(gen) * 64; // 64Bアライン
+        uint64_t addr = addr_dist(gen) * 64;
         AxiManagerModule::DataBlock data;
-        for(size_t j=0; j<data.size(); ++j) data[j] = i; // 簡単なデータパターン
-        tb.addWriteTest(addr, data); // まず書き込みテストを追加
-        tb.addReadTest(addr, data);  // 続けて読み出しテストを追加
-        for(size_t j=0; j<data.size(); ++j) data[j] = i+1; // 簡単なデータパターン
-        tb.addWriteTest(addr, data); // まず書き込みテストを追加
-        tb.addReadTest(addr, data);  // 続けて読み出しテストを追加
-        
+        for(size_t j=0; j<data.size(); ++j) data[j] = i+j; // 簡単なデータパターン
+        test_plan.push_back({addr, data});
+        final_memory_state[addr] = data; // 最終的にこのアドレスにはこのデータがあるはず
     }
-    
+    // write
+    for (const auto& test_case : test_plan) {
+        tb.addWriteTest(test_case.first, test_case.second);
+    }
+    // read
+    for (const auto& test_case : test_plan) {
+        tb.addReadTest(test_case.first, final_memory_state[test_case.first]);
+    }
     // --- 4. テストスイートを実行 ---
     tb.run();
     

@@ -83,11 +83,21 @@ private:
         if (m_direction_reg == 0) { // 0: コピー (DRAMからSPM)
             // Dramから一時バッファへ読み出し
             m_dram.read(m_dram_addr_reg, buffer.data(), m_size_reg);
+                    std::cout << "    Data: ";
+        for (size_t i = 0; i < m_size_reg; ++i) {
+            std::cout << std::hex << static_cast<int>(buffer[i]) << " ";
+        }
+        std::cout << std::dec << "\n";  
             // 一時バッファからSpmへ書き込み
             m_spm.write(m_spm_addr_reg, buffer.data(), m_size_reg);
         } else { // 1: ライトバック (SPMからDRAM)
             // Spmから一時バッファへ読み出し
             m_spm.read(m_spm_addr_reg, buffer.data(), m_size_reg);
+                    std::cout << "    Data: ";
+        for (size_t i = 0; i < m_size_reg; ++i) {
+            std::cout << std::hex << static_cast<int>(buffer[i]) << " ";
+        }
+        std::cout << std::dec << "\n";  
             // 一時バッファからDramへ書き込み
             m_dram.write(m_dram_addr_reg, buffer.data(), m_size_reg);
         }

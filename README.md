@@ -1,18 +1,19 @@
 
 構成
 - 64B単位の暗号化と整合性検証
+- 64B単位のメモリアクセスを受け取り、暗号化と整合性保証を行う 
 - 全部で64MBの保護領域 0x0000_0000-0x03FF_FFFF
     - 1M個のキャッシュライン
     - 32K個のカウンターライン
     - 32分木なら高さ4
-        - root : 1
+        - root : 8B
         - height_1 : 32(1line),64B
         - height_2 : 1024(32line),2KB
         - height_3 : 32768(1024line),64KB
         - height_4 : _(),2MB
         - アドレス的には|height_4|height_3|height_2|height_1
 - タグは8B、総量は8MB
-- SPMは4096B=4KB
+- SPMは4096B=4KB容量
     - 64Bごとの保存・格納
     - 8Bで1ラインの情報管理
         - |タグ(58bit)|未使用(4bit)|dirty(1bit)|valid(1bit)|
@@ -20,7 +21,7 @@
     - 0line:root
     - 1line:暗号文
     - 2line:タグ
-    - 3line:カウンター(height_4)
+    - 3line:暗号用カウンター(height_4)
     - 4line-6line:height_3-height_1
     - 56-63line:管理ビット
 - カウンターライン内のカウンターの構成
@@ -29,7 +30,9 @@
     - minor counter:8bit,8*32=256
     - tagのために64bit空いている
 - ツリーのルートはSPM内に保存
-- riscv_coreに検証認証アルゴリズムを書いている
+- Hashアルゴリズム：FNV-1a 64bit
+- 暗号化アルゴリズム：AES-CTR 128bit
+- riscv_core.hppに検証認証アルゴリズムを書いている
     - どちらのアルゴリズムもrootまで辿っている
 
 <!-- システム概要の図を貼りたい -->

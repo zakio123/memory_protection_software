@@ -119,7 +119,15 @@ private:
                     std::cout << "  [AXIM HW] Processing Decryption Command.\n";
                     auto otp_part = m_otp_fifo.front(); m_otp_fifo.pop();
                     for(size_t i=0; i<16; ++i) m_r_buffer[j*16+i] ^= otp_part[i];
+
+                } else {
+                    std::cout << "  [AXIM HW] Warning: OTP FIFO empty during decryption.\n";
+                    exit(1);
                 }
+            }
+            if (!m_otp_fifo.empty()) {
+                std::cout << "  [AXIM HW] Warning: OTP FIFO not empty after decryption.\n";
+                exit(1);
             }
 
         }

@@ -60,7 +60,7 @@ private:
         ctx.spm_mac_block = MemoryMap::SPM_BASE_ADDR + 0x080;
         ctx.spm_counter_block = MemoryMap::SPM_BASE_ADDR + 0x0C0;
         ctx.spm_mac_manage = MemoryMap::SPM_BASE_ADDR + 56 * 64 + 1*8;
-        ctx.spm_counter_manage = MemoryMap::SPM_BASE_ADDR + 56 * 64 + 2*8;
+        ctx.spm_counter_manage = MemoryMap::SPM_BASE_ADDR + 56 * 64 + 3*8;
         return ctx;
     }
     // --- 2. SPMキャッシュ管理ロジックを共通化 ---
@@ -119,10 +119,10 @@ private:
     void setBlockdirty(uint64_t spm_management_addr, uint64_t block_addr) {
         uint64_t new_info = ((block_addr >> 6) << 6) | 0x3; // ValidとDirtyをセット
         m_bus.write64(spm_management_addr, new_info);
-        uint64_t updated_info = m_bus.read64(spm_management_addr);
-        bool is_valid = (updated_info & 1) != 0;
-        bool is_dirty = (updated_info & 2) != 0;
-        uint64_t current_block_addr = (updated_info >> 6) << 6;
+        // uint64_t updated_info = m_bus.read64(spm_management_addr);
+        // bool is_valid = (updated_info & 1) != 0;
+        // bool is_dirty = (updated_info & 2) != 0;
+        // uint64_t current_block_addr = (updated_info >> 6) << 6;
     }
     /**
      * @brief 指定されたSPM管理アドレスの管理情報を更新し、指定されたブロックのDirtyをクリアする またはValidのみセットする
@@ -201,6 +201,8 @@ private:
      * @brief メジャー・マイナーカウンターとアドレスを元にOTP用のシードを生成しAESアクセラレータに書き込む
      */
     void makeseed_otp(uint64_t request_addr, uint64_t major_counter, uint8_t minor_counter){
+        std::cout << "[Core FW] Setting up AES seeds for OTP generation...\n";
+        std::cout << "[Core FW] Major Counter: " << major_counter << ", Minor Counter: " << static_cast<int>(minor_counter) << "\n";
         uint64_t seed_0 = request_addr + major_counter;
         uint64_t seed_1 = request_addr + static_cast<uint64_t>(minor_counter);
         uint64_t seed_2 = request_addr + 16 + major_counter;
@@ -232,8 +234,8 @@ private:
         // --- 手順1: SPMからカウンターを読み取り、インクリメントしてSPMに書き戻し ---
         // 初めにspmにあるカウンターのアドレスを確認する
         std::cout << "[Core FW] Step 1: Handling counter block in SPM...\n";
-        bool hit = tag_check(ctx.spm_counter_manage, ctx.counterblock_addr);
-        // まずはverificationを行う
+        // bool hit = tag_check(ctx.spm_counter_manage, ctx.counterblock_addr);
+        // まずは検証を行う
         std::array<uint64_t,4> path_index; // 先頭は階層1
         for (int i=0;i<4;i++){
             path_index[3-i] = (ctx.request_addr / (64 * (1ULL << (5 * i))));
@@ -244,13 +246,13 @@ private:
             std::cout << path_index[i] << " ";
         }
         std::cout << "\n";
-        if (hit == false) {
+        {
             ensureBlockInSpm(ctx.counterblock_addr, ctx.spm_counter_block, ctx.spm_counter_manage, "Counter");
             uint64_t major_counter = m_bus.read64(ctx.spm_counter_block);
             uint64_t minor_counter_byte_address = ctx.spm_counter_block + (ctx.counter_bit_offset / 64) * 8;
             uint64_t minor_counter = m_bus.read64(minor_counter_byte_address);
             // ここから過去のminor counterを取り出す
-            uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 8) * 8)) & 0xFF;
+            uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 64) )) & 0xFF;
             if (minor_counter_value != 0 || major_counter != 0){
                 // メジャーマイナー、どちらかが0でなければ検証を行う
                 // 1. パスの特定=親ノードの物理アドレスをルートまで計算していく。
@@ -284,7 +286,7 @@ private:
             // ここから過去のminor counterを取り出す
             uint8_t minor_counter_value = (minor_counter >> ((path_index[i] % 8) * 8)) & 0xFF;
             uint8_t new_minor_counter = 0;
-            if (new_minor_counter == 0xff){
+            if (minor_counter_value == 0xFF){
                 uint64_t new_major_counter = major_counter + 1;
                 m_bus.write64(spm_addr, new_major_counter);
                 new_minor_counter = 0; // minor counterは0に戻す
@@ -332,7 +334,7 @@ private:
         // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
         uint64_t minor_counter_byte_address = ctx.spm_counter_block + (ctx.counter_bit_offset / 64) * 8;
         uint64_t minor_counter = m_bus.read64(minor_counter_byte_address);
-        uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 8) * 8)) & 0xFF;
+        uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 64))) & 0xFF;
         // --- 手順2: アドレスとカウンター値を元にSeed値を計算し、AES_moduleに書き込み起動する ---
         makeseed_otp(ctx.request_addr, major_counter, minor_counter_value);
         // --- 手順3: AXI ManagerにOTPとともにXORを実行し、暗号化を指示 ---
@@ -388,9 +390,8 @@ private:
         // --- 手順1: SPMからカウンターをload ---
         // 初めにspmにあるカウンターのアドレスを確認する
         std::cout << "[Core FW] Step 1: Handling counter block in SPM...\n";
-        bool hit = tag_check(ctx.spm_counter_manage, ctx.counterblock_addr);
         // --- 手順1.1 : ツリー検証 ---
-        if (hit == false) {
+        {
             // missの場合、カウンターブロックの検証が必要
             // 1. パスの特定=親ノードの物理アドレスをルートまで計算していく。
             std::array<uint64_t,4> path_index; // 先頭は階層1
@@ -409,7 +410,7 @@ private:
         // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
         uint64_t minor_counter_byte_address = ctx.spm_counter_block + (ctx.counter_bit_offset / 64) * 8;
         uint64_t minor_counter = m_bus.read64(minor_counter_byte_address);
-        uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 8) * 8)) & 0xFF;
+        uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 64) )) & 0xFF;
         std::cout << "[Core FW] Loaded Counter - Major: " << major_counter << ", Minor: " << static_cast<uint32_t>(minor_counter_value) << "\n";
         // --- 手順2: アドレスとカウンター値を元にSeed値を計算し、AES_moduleに書き込み起動する ---
         makeseed_otp(ctx.request_addr, major_counter, minor_counter_value);
