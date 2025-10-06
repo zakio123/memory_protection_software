@@ -81,8 +81,8 @@ void Authentication(){
     for(uint64_t i=0; i<HEIGHT; ++i){
       path_indecis[3-i] = (ctx.request_addr - 0x90000000ULL) / (64 * (1ULL << (5 * i)));
     }
-    printf("[Core FW] --- Starting Authentication ---\n");
-    printf("path: %llu, %llu, %llu, %llu\n", path_indecis[0], path_indecis[1], path_indecis[2], path_indecis[3]);
+    // printf("[Core FW] --- Starting Authentication ---\n");
+    // printf("path: %llu, %llu, %llu, %llu\n", path_indecis[0], path_indecis[1], path_indecis[2], path_indecis[3]);
     {
       ensureBlockInSpm(ctx.counterblock_addr, ctx.spm_counter_block, ctx.spm_counter_manage);
       uint64_t major_counter = spm_ld64(ctx.spm_counter_block);
@@ -121,7 +121,7 @@ void Authentication(){
                 uint64_t new_major_counter = major_counter + 1;
                 spm_sd64(spm_addr, new_major_counter);
                 new_minor_counter = 0; // minor counterは0に戻す
-                printf("Major counter overflow. Incremented major to %llu and reset minor to 0.\n", new_major_counter);
+                // printf("Major counter overflow. Incremented major to %llu and reset minor to 0.\n", new_major_counter);
                 // exit(1); // 今回はエラーにする
             } else {
                 new_minor_counter = minor_counter_value + 1;
@@ -156,7 +156,7 @@ void Authentication(){
             }
             // MAC計算完了
             uint64_t mac_result = mac_final();
-            printf("Level %llu: Updated Major=%llu, Minor=%u, New MAC=%016llx\n", i, major_counter, new_minor_counter, mac_result);
+            // printf("Level %llu: Updated Major=%llu, Minor=%u, New MAC=%016llx\n", i, major_counter, new_minor_counter, mac_result);
             spm_sd64(spm_addr + 56, mac_result); // 56BにMACがある
         }
     uint64_t major_counter = spm_ld64(ctx.spm_counter_block);
@@ -194,16 +194,16 @@ void Authentication(){
     // --- 手順8: AXI managerに対し、write ackの完了を通知 ---
     // busy wait
     axim_write_return();
-    printf("[Core FW] --- Authentication Finished ---\n");
+    // printf("[Core FW] --- Authentication Finished ---\n");
 }
 
 void Verification(){
-  printf("[Core FW] --- Starting Verification ---\n");
+  // printf("[Core FW] --- Starting Verification ---\n");
   struct AddressContext ctx = setupAddressContext();
-  printf("[Core FW] Request Address: 0x%llx\n", ctx.request_addr);
+  // printf("[Core FW] Request Address: 0x%llx\n", ctx.request_addr);
   // --- 手順1: SPMからカウンターをload ---
   // 初めにspmにあるカウンターのアドレスを確認する
-  printf("[Core FW] Step 1: Handling counter block in SPM...\n");
+  // printf("[Core FW] Step 1: Handling counter block in SPM...\n");
   // --- 手順1.1 : ツリー検証 ---
   {
       // missの場合、カウンターブロックの検証が必要
@@ -237,7 +237,7 @@ void Verification(){
   axim_decrypt();
 
   // --- 手順5: HashモジュールにSPM上の暗号文と書き込んだカウンターを元にMAC計算を指示 ---
-  printf("[Core FW] Step 5: Commanding Hash module to compute MAC...\n");
+  // printf("[Core FW] Step 5: Commanding Hash module to compute MAC...\n");
   // SPMから暗号文をコピーし、update
   mac_init();
   mac_buffer_set(ctx.spm_data);
@@ -260,13 +260,13 @@ void Verification(){
   
   // --- 手順7: AXI managerに対し、read bufferにあるデータをリターンするように指示 ---
   // busy wait
-  printf("[Core FW] Step 7: Returning decrypted data...\n");
+  // printf("[Core FW] Step 7: Returning decrypted data...\n");
   axim_read_return();
 }
 
 int main(void){
   /* MEMREQの設定 */
-  memreq_make(1024 * 1024 * 64, 10); // 64B, 1リクエスト
+  memreq_make(1024 * 1024, 40000); // 64B, 400リクエスト
   // printf("[Core FW] MEMREQ configured for 64B transfers.\n");
   while(1){
     for(;;){
