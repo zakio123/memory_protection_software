@@ -1,9 +1,9 @@
 #include <stdint.h>
-#include "spm_reg.h"
-#include "mac_reg.h"
-#include "aes_reg.h"
-#include "axim_reg.h"
-#include "memreq_reg.h"
+#include "mmio_reg/spm_reg.h"
+#include "mmio_reg/mac_reg.h"
+#include "mmio_reg/aes_reg.h"
+#include "mmio_reg/axim_reg.h"
+#include "mmio_reg/memreq_reg.h"
 #include <stdio.h>
 /* 物理DRAMのベース＆アリーナ */
 #define DRAM_BASE   0x80000000ULL

@@ -26,7 +26,7 @@ struct AddressContext {
     uint64_t spm_counter_manage;
     uint64_t spm_mac_manage;
 };
-static const uint64_t level_base_addr[HEIGHT] = {(1ULL << (5*3)) * 64 + (1ULL << (5 * 2)) * 64 + (1ULL << (5 * 1)) * 64, (1ULL << (5*3)) * 64 + (1ULL << (5 * 2)) * 64, (1ULL << (5*3)) * 64, 0};
+// static const uint64_t level_base_addr[HEIGHT] = {(1ULL << (5*3)) * 64 + (1ULL << (5 * 2)) * 64 + (1ULL << (5 * 1)) * 64, (1ULL << (5*3)) * 64 + (1ULL << (5 * 2)) * 64, (1ULL << (5*3)) * 64, 0};
 
 struct AddressContext setupAddressContext() {
     struct AddressContext ctx;
@@ -46,12 +46,24 @@ struct AddressContext setupAddressContext() {
     ctx.spm_counter_manage = 56 * 64 + 3*8;
     return ctx;
 }
+uint64_t calculate_level_base_addr(uint64_t level) {
+    uint64_t offset = 0;
+    // Height4からlevelまでのオフセットを計算
+    // level 1 から (level - 1) までの各階層のサイズを合計する
+    for (uint64_t i = 0; i < HEIGHT; ++i) {
+        if ((HEIGHT - i) == level) break;
+        // レベルiのノード数を計算 (レベルiには32^(i-1)個のノードがある)
+        uint64_t num_nodes_in_level = 1ULL << (5 * (HEIGHT - i - 1));
+        offset += num_nodes_in_level * 64; // 1ノードあたり64B
+    }
+    return offset;
+}
 
 bool verifyTreePath(const uint64_t* path_indecis){
   for(uint64_t i=0; i<HEIGHT; ++i){
     uint64_t spm_addr = (6-i) * 64;
     uint64_t manage_addr = 56 * 64 + (6 - i) * 8;
-    uint64_t dram_addr = COUNTER_BASE + path_indecis[i] / 32 * 64 + level_base_addr[i];
+    uint64_t dram_addr = COUNTER_BASE + path_indecis[i] / 32 * 64 + calculate_level_base_addr(i + 1);
     ensureBlockInSpm(dram_addr, spm_addr, manage_addr);
     // MAC計算
     mac_init();
@@ -81,8 +93,6 @@ void Authentication(){
     for(uint64_t i=0; i<HEIGHT; ++i){
       path_indecis[3-i] = (ctx.request_addr - 0x90000000ULL) / (64 * (1ULL << (5 * i)));
     }
-    // printf("[Core FW] --- Starting Authentication ---\n");
-    // printf("path: %llu, %llu, %llu, %llu\n", path_indecis[0], path_indecis[1], path_indecis[2], path_indecis[3]);
     {
       ensureBlockInSpm(ctx.counterblock_addr, ctx.spm_counter_block, ctx.spm_counter_manage);
       uint64_t major_counter = spm_ld64(ctx.spm_counter_block);
@@ -104,61 +114,61 @@ void Authentication(){
     uint64_t new_root = root + 1;
     spm_sd64(0, new_root);
     for (uint64_t i=0;i<HEIGHT;i++){
-            uint64_t spm_addr = (6-i) * 64;
-            uint64_t spm_manage = 56 * 64 + (6-i) * 8;
-            uint64_t dram_addr = COUNTER_BASE + path_indecis[i] / 32 * 64;
-            dram_addr += level_base_addr[i];
-            ensureBlockInSpm(dram_addr, spm_addr, spm_manage);
-            // height += 1;
-            // ここから過去のmajor, minor counterを取り出す
-            uint64_t major_counter = spm_ld64(spm_addr);
-            uint64_t minor_counter_byte_address = spm_addr + 8 + (path_indecis[i] % 32) / 8 * 8;
-            uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
-            // ここから過去のminor counterを取り出す
-            uint8_t minor_counter_value = (minor_counter >> ((path_indecis[i] % 8) * 8)) & 0xFF;
-            uint8_t new_minor_counter = 0;
-            if (minor_counter_value == 0xFF){
-                uint64_t new_major_counter = major_counter + 1;
-                spm_sd64(spm_addr, new_major_counter);
-                new_minor_counter = 0; // minor counterは0に戻す
-                // printf("Major counter overflow. Incremented major to %llu and reset minor to 0.\n", new_major_counter);
-                // exit(1); // 今回はエラーにする
-            } else {
-                new_minor_counter = minor_counter_value + 1;
-            }
-            uint64_t shift_amount = (path_indecis[i] % 8) * 8;
-            uint64_t clear_mask = ~(0xFFULL << shift_amount);
-            uint64_t cleared_minor_counter = minor_counter & clear_mask;
-            // --- 新しい値を正しい位置へシフトする ---
-            uint64_t shifted_new_value = (new_minor_counter);
-            shifted_new_value <<= shift_amount;
-            uint64_t final_word = cleared_minor_counter | shifted_new_value;
-            // カウンターをprint
-            // 書き戻し
-            spm_sd64(minor_counter_byte_address, final_word);
-            // ブロックをdirtyに設定する
-            setBlockdirty(spm_manage, dram_addr);
-            // MAC計算を実行
-            // Hash関数を初期化してから当該ブロックをMAC
-            mac_init();
-            mac_buffer_set(spm_addr);
-            mac_update(0, 447); // 448bit = 56B
-            // 親ノードのヘッダーをMACの内部バッファにセット
-            if (i == 0){
-                // 最上位層はrootノードを使う
-                mac_buffer_set(0);
-                mac_update(0, 63);
-            } else {
-                uint64_t parent_offset = path_indecis[i-1] % 32 * 8;
-                mac_buffer_set(spm_addr+ 64);
-                uint64_t start_bit = 64 + parent_offset;
-                mac_update(start_bit, start_bit + 7);
-            }
-            // MAC計算完了
-            uint64_t mac_result = mac_final();
-            // printf("Level %llu: Updated Major=%llu, Minor=%u, New MAC=%016llx\n", i, major_counter, new_minor_counter, mac_result);
-            spm_sd64(spm_addr + 56, mac_result); // 56BにMACがある
-        }
+      uint64_t spm_addr = (6-i) * 64;
+      uint64_t spm_manage = 56 * 64 + (6-i) * 8;
+      uint64_t dram_addr = COUNTER_BASE + path_indecis[i] / 32 * 64;
+      dram_addr += calculate_level_base_addr(i + 1);
+      ensureBlockInSpm(dram_addr, spm_addr, spm_manage);
+      // height += 1;
+      // ここから過去のmajor, minor counterを取り出す
+      uint64_t major_counter = spm_ld64(spm_addr);
+      uint64_t minor_counter_byte_address = spm_addr + 8 + (path_indecis[i] % 32) / 8 * 8;
+      uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
+      // ここから過去のminor counterを取り出す
+      uint8_t minor_counter_value = (minor_counter >> ((path_indecis[i] % 8) * 8)) & 0xFF;
+      uint8_t new_minor_counter = 0;
+      if (minor_counter_value == 0xFF){
+          uint64_t new_major_counter = major_counter + 1;
+          spm_sd64(spm_addr, new_major_counter);
+          new_minor_counter = 0; // minor counterは0に戻す
+          // printf("Major counter overflow. Incremented major to %llu and reset minor to 0.\n", new_major_counter);
+          // exit(1); // 今回はエラーにする
+      } else {
+          new_minor_counter = minor_counter_value + 1;
+      }
+      uint64_t shift_amount = (path_indecis[i] % 8) * 8;
+      uint64_t clear_mask = ~(0xFFULL << shift_amount);
+      uint64_t cleared_minor_counter = minor_counter & clear_mask;
+      // --- 新しい値を正しい位置へシフトする ---
+      uint64_t shifted_new_value = (new_minor_counter);
+      shifted_new_value <<= shift_amount;
+      uint64_t final_word = cleared_minor_counter | shifted_new_value;
+      // カウンターをprint
+      // 書き戻し
+      spm_sd64(minor_counter_byte_address, final_word);
+      // ブロックをdirtyに設定する
+      setBlockdirty(spm_manage, dram_addr);
+      // MAC計算を実行
+      // Hash関数を初期化してから当該ブロックをMAC
+      mac_init();
+      mac_buffer_set(spm_addr);
+      mac_update(0, 447); // 448bit = 56B
+      // 親ノードのヘッダーをMACの内部バッファにセット
+      if (i == 0){
+          // 最上位層はrootノードを使う
+          mac_buffer_set(0);
+          mac_update(0, 63);
+      } else {
+          uint64_t parent_offset = path_indecis[i-1] % 32 * 8;
+          mac_buffer_set(spm_addr+ 64);
+          uint64_t start_bit = 64 + parent_offset;
+          mac_update(start_bit, start_bit + 7);
+      }
+      // MAC計算完了
+      uint64_t mac_result = mac_final();
+      // printf("Level %llu: Updated Major=%llu, Minor=%u, New MAC=%016llx\n", i, major_counter, new_minor_counter, mac_result);
+      spm_sd64(spm_addr + 56, mac_result); // 56BにMACがある
+    }
     uint64_t major_counter = spm_ld64(ctx.spm_counter_block);
     // minor_counterのload
     // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
@@ -194,7 +204,6 @@ void Authentication(){
     // --- 手順8: AXI managerに対し、write ackの完了を通知 ---
     // busy wait
     axim_write_return();
-    // printf("[Core FW] --- Authentication Finished ---\n");
 }
 
 void Verification(){

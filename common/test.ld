@@ -1,0 +1,77 @@
+
+
+/*======================================================================*/
+/* Proxy kernel linker script                                           */
+/*======================================================================*/
+/* This is the linker script used when building the proxy kernel. */
+
+/*----------------------------------------------------------------------*/
+/* Setup                                                                */
+/*----------------------------------------------------------------------*/
+
+/* The OUTPUT_ARCH command specifies the machine architecture where the
+   argument is one of the names used in the BFD library. More
+   specifically one of the entires in bfd/cpu-mips.c */
+
+OUTPUT_ARCH( "riscv" )
+ENTRY(_start)
+
+/*----------------------------------------------------------------------*/
+/* Sections                                                             */
+/*----------------------------------------------------------------------*/
+MEMORY {
+  RAM (rwx) : ORIGIN = 0x80000000, LENGTH = 128K
+  SPM (rwx) : ORIGIN = 0x60000000 , LENGTH = 0x10000   /* 例: 64KB */
+}
+SECTIONS
+{
+
+  /* text: test code section */
+  . = 0x80000000;
+  .text.init : { *(.text.init) } > RAM
+
+  . = ALIGN(0x1000);
+  .tohost : { *(.tohost) } > RAM
+
+  . = ALIGN(0x1000);
+  .text : { *(.text) } > RAM
+
+  /* data segment */
+  .data : { *(.data) } > RAM
+
+  .sdata : {
+    __global_pointer$ = . + 0x800;
+    *(.srodata.cst16) *(.srodata.cst8) *(.srodata.cst4) *(.srodata.cst2) *(.srodata*)
+    *(.sdata .sdata.* .gnu.linkonce.s.*)
+  } > RAM
+
+  /* bss segment */
+  .sbss : {
+    *(.sbss .sbss.* .gnu.linkonce.sb.*)
+    *(.scommon)
+  } > RAM
+  .bss : { *(.bss) } > RAM
+
+  /* thread-local data segment */
+  .tdata :
+  {
+    _tdata_begin = .;
+    *(.tdata)
+    _tdata_end = .;
+  } > RAM
+  .tbss :
+  {
+    *(.tbss)
+    _tbss_end = .;
+  } > RAM
+
+  /* End of uninitalized data segement */
+  _end = .;
+
+  /* --- ★追加: SPMへのスタック領域の配置 --- */
+  .stack (NOLOAD) : ALIGN(16) {
+    _stack_bottom = 0x60000000;
+    . += 32K;
+    _stack_start = .;
+  } > SPM
+}
