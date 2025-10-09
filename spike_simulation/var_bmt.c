@@ -8,11 +8,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
+// BMTスタイルの検証木
+
 #define PROTECTION_BASE 0x90000000ULL
 #define PROTECTION_SIZE 0x04000000ULL // 64MB
-#define DATA_TAG_BASE  PROTECTION_BASE + PROTECTION_SIZE // 0x94000000
+#define DATA_TAG_BASE  (PROTECTION_BASE + PROTECTION_SIZE) // 0x94000000
 #define DATA_TAG_SIZE 1024 * 1024 * 8 // 8MB
-#define COUNTER_BASE DATA_TAG_BASE + DATA_TAG_SIZE // 0x94800000
+#define COUNTER_BASE (DATA_TAG_BASE + DATA_TAG_SIZE) // 0x94800000
 #define HEIGHT 4
 struct AddressContext {
     uint64_t request_addr;
@@ -182,7 +184,7 @@ void Authentication(){
     // busy wait AESモジュールの計算完了を待つ
     axim_encrypt();
     // --- 手順4: AXI Managerに暗号文をSPMにwrite backするよう指示 ---
-    axim_copy(ctx.spm_data);
+    axim_write_back(ctx.spm_data);
     // --- 手順5: HashモジュールにSPM上の暗号文と書き込んだカウンターを元にMAC計算を指示 ---
     // ハッシュ関数の内部状態を初期化
     mac_init();
@@ -242,7 +244,7 @@ void Verification(){
   spm_copy_to_local(ctx.request_addr, ctx.spm_data, 64);
   // --- 手順3: AXI ManagerにOTPとともにXORを実行し、復号化を指示 ---
   // SPMからAXI Managerへ暗号文をコピー
-  axim_write(ctx.spm_data);
+  axim_copy(ctx.spm_data);
   axim_decrypt();
 
   // --- 手順5: HashモジュールにSPM上の暗号文と書き込んだカウンターを元にMAC計算を指示 ---
@@ -272,30 +274,10 @@ void Verification(){
   // printf("[Core FW] Step 7: Returning decrypted data...\n");
   axim_read_return();
 }
-// カウンターがオーバーフローした場合の再暗号化とデータMACの再計算
-void Reencryption(uint64_t block_addr, uint64_t major_counter, uint8_t old_minor_counter, uint64_t block_manage, uint64_t mac_manage){
-    ensureBlockInSpm(block_addr, 0x1 * 64, block_manage);
-    
-    // 復号化
-    set_seed(major_counter, old_minor_counter, block_addr);
-    // AXI Managerに暗号文をコピーし、XORを実行して復号化
 
-    // 次に、暗号化
-    set_seed(major_counter + 1, 0, block_addr);
-    // AXI Managerに平文とOTPをコピーし、XORを実行して暗号化
-    // SPMに書き戻し
-    // データMACの再計算
-    mac_init();
-    mac_buffer_set(0x1 * 64);
-    mac_update(0, 511);
-    mac_buffer_set(0x0C0);
-    mac_update(64, 71);
-    uint64_t new_mac = mac_final();
-
-}
 int main(void){
   /* MEMREQの設定 */
-  memreq_make(1024 * 1024 * 64, 40000); // 64B, 4リクエスト
+  memreq_make(1024 * 1024, 40000); // 64B, 400リクエスト
   // printf("[Core FW] MEMREQ configured for 64B transfers.\n");
   while(1){
     for(;;){

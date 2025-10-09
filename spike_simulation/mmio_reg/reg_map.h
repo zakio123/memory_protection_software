@@ -19,6 +19,7 @@
 #define SPM_REG_DIRECTION    0x18ULL /* 0/1 */
 #define SPM_REG_START        0x20ULL /* write 1=start / read: busy */
 #define SPM_REG_STATUS       0x28ULL
+#define SPM_REG_DESTINATION  0x30ULL /* 1:DRAM 2:MAC, 4:AXIManager (OR可) */
 
 /* データ窓のベース */
 #define SPM_MEM_BASE   (SPM_BASE + SPM_CTRL_SIZE)
@@ -33,6 +34,7 @@
 #define SPM_DIRECTION      SPM_REG64(SPM_REG_DIRECTION)
 #define SPM_START          SPM_REG64(SPM_REG_START)
 #define SPM_STATUS         SPM_REG64(SPM_REG_STATUS)
+#define SPM_DESTINATION    SPM_REG64(SPM_REG_DESTINATION) /* 1:DRAM 2:MAC, 4:AXIManager (OR可) */
 #endif // SPM_ADDRMAP_H
 
 #ifndef MAC_ADDRMAP_H

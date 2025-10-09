@@ -17,6 +17,7 @@ static inline void spm_copy_to_local(uint64_t dram_pa, uint64_t local_off, uint6
   SPM_LOCAL_ADDRESS = local_off;   /* SPM_MEM_BASE からの相対(バイト) */
   SPM_SIZE_REG      = size;
   SPM_DIRECTION     = 0;
+  SPM_DESTINATION   = 1;           /* DRAM */
   SPM_START         = 1;           /* GO */
   spm_wait_idle();
 }
@@ -28,6 +29,7 @@ static inline void spm_write_back(uint64_t local_off, uint64_t dram_pa, uint64_t
   SPM_LOCAL_ADDRESS = local_off;
   SPM_SIZE_REG      = size;
   SPM_DIRECTION     = 1;
+  SPM_DESTINATION   = 1;           /* DRAM */
   SPM_START         = 1;
   spm_wait_idle();
 }
