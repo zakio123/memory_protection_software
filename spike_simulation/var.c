@@ -4,6 +4,7 @@
 #include "mmio_reg/aes_reg.h"
 #include "mmio_reg/axim_reg.h"
 #include "mmio_reg/memreq_reg.h"
+#include "mmio_reg/xor_reg.h"
 #include "mmio_reg/reg_map.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -180,9 +181,13 @@ void Authentication(){
     set_seed(major_counter, minor_counter_value, ctx.request_addr);
     // --- 手順3: AXI ManagerにOTPとともにXORを実行し、暗号化を指示 ---
     // busy wait AESモジュールの計算完了を待つ
-    axim_encrypt();
-    // --- 手順4: AXI Managerに暗号文をSPMにwrite backするよう指示 ---
     axim_copy(ctx.spm_data);
+    write_xor(ctx.spm_data);
+    xor_start();
+    copy_xor(ctx.spm_data);
+    // axim_encrypt();
+    // // --- 手順4: AXI Managerに暗号文をSPMにwrite backするよう指示 ---
+    // axim_copy(ctx.spm_data);
     // --- 手順5: HashモジュールにSPM上の暗号文と書き込んだカウンターを元にMAC計算を指示 ---
     // ハッシュ関数の内部状態を初期化
     mac_init();
@@ -241,9 +246,10 @@ void Verification(){
   // --- 手順3: SPM DMAを起動し、DRAMから暗号文をSPMにコピー ---
   spm_copy_to_local(ctx.request_addr, ctx.spm_data, 64);
   // --- 手順3: AXI ManagerにOTPとともにXORを実行し、復号化を指示 ---
-  // SPMからAXI Managerへ暗号文をコピー
-  axim_write(ctx.spm_data);
-  axim_decrypt();
+  // SPMからXORへ暗号文をコピー
+  // axim_write(ctx.spm_data);
+  // axim_decrypt();
+
 
   // --- 手順5: HashモジュールにSPM上の暗号文と書き込んだカウンターを元にMAC計算を指示 ---
   // printf("[Core FW] Step 5: Commanding Hash module to compute MAC...\n");
@@ -270,6 +276,10 @@ void Verification(){
   // --- 手順7: AXI managerに対し、read bufferにあるデータをリターンするように指示 ---
   // busy wait
   // printf("[Core FW] Step 7: Returning decrypted data...\n");
+  write_xor(ctx.spm_data);
+  xor_start();
+  copy_xor(ctx.spm_data);
+  axim_write(ctx.spm_data);
   axim_read_return();
 }
 // カウンターがオーバーフローした場合の再暗号化とデータMACの再計算
@@ -295,11 +305,10 @@ void Reencryption(uint64_t block_addr, uint64_t major_counter, uint8_t old_minor
 }
 int main(void){
   /* MEMREQの設定 */
-  memreq_make(1024 * 1024 * 64, 40000); // 64B, 4リクエスト
+  memreq_make(1024 * 1024 * 64, 4000); // 64B, 4リクエスト
   // printf("[Core FW] MEMREQ configured for 64B transfers.\n");
   while(1){
     for(;;){
-      // printf("Waiting for request...\n");
       if(AXIM_STATUS_REG & 1) break; // リクエストが来るまで待つ
     }
     if(AXIM_STATUS_REG & 2){ // writeリクエスト
