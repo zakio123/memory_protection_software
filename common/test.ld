@@ -68,10 +68,5 @@ SECTIONS
   /* End of uninitalized data segement */
   _end = .;
 
-  /* --- ★追加: SPMへのスタック領域の配置 --- */
-  .stack (NOLOAD) : ALIGN(16) {
-    _stack_bottom = 0x60000000;
-    . += 32K;
-    _stack_start = .;
-  } > SPM
+
 }

@@ -116,7 +116,7 @@ _start:
   la gp, __global_pointer$
 .option pop
 
-  la  tp, _stack_start
+  la  tp, _end
   and tp, tp, -64
 
   # get core id
