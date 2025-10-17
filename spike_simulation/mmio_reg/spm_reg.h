@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include "reg_map.h"
 
 
@@ -56,19 +57,3 @@ static inline void clearBlockdirty(uint64_t manage_addr, uint64_t block_addr){
      * @param spm_block_addr SPM上の格納先アドレス
      * @param spm_management_addr SPM上の管理情報のアドレス
 */
-static inline void ensureBlockInSpm(uint64_t required_block_addr, uint64_t spm_offset, uint64_t manage_addr){
-  uint64_t info = spm_ld64(manage_addr);
-  bool valid = info & 1;
-  bool dirty = info & 2;
-  uint64_t current_block_addr = (info >> 6) << 6;
-  if (!valid || current_block_addr != required_block_addr) {
-      // Dirtyビットが立っていれば、現在のブロックをDRAMに書き戻す
-      if (valid && dirty) {
-        spm_write_back(spm_offset, current_block_addr, 64);
-      }
-      // 新しいブロックをDRAMからSPMに読み込む
-      spm_copy_to_local(required_block_addr, spm_offset, 64);
-      // 管理情報を更新 (Valid=1, Dirty=0)
-      clearBlockdirty(manage_addr, required_block_addr);
-  } 
-}

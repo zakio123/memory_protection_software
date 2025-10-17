@@ -43,8 +43,6 @@ def mkAXIManager():
     spm_stream_in = vthread.AXIStreamIn(m, 'axis_in_axim', clk, rst, datawidth=128)
     # 3. SPM用 AXI stream out (128bit幅)
     spm_stream_out = vthread.AXIStreamOut(m, 'axis_out_axim', clk, rst, datawidth=128)
-    # # 4. AES用 AXI stream in
-    # aes_stream_in = vthread.AXIStreamIn(m, 's_axis_aes', clk, rst, datawidth=128)
     # 5. 外部から来るAXI slave
     llc_saxi = axi.AxiSlave(m, 'axi_s_llc', clk, rst, datawidth=128, addrwidth=32)
 
@@ -94,7 +92,7 @@ def mkAXIManager():
                     # print("Reading data from SPM")
                     for i in range(4):
                         read_data[i].value = spm_stream_in.read()[0]
-                        # print("Reading data %d: %x" % (i, read_data[i].value))
+                        print("Reading data %d: %x" % (i, read_data[i].value))
                     req_complete.value = 1
                     th_status.value = 2
                 elif saxi.read(AXIM_COMMAND) == 32:

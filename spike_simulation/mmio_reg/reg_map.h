@@ -7,26 +7,26 @@
 #ifndef SPM_ADDRMAP_H
 #define SPM_ADDRMAP_H
 /* --- SPM アドレスマップ（定数マクロに統一） --- */
-#define SPM_BASE        0x40000000ULL
+#define SPM_BASE        0x60000000ULL
 #define SPM_CTRL_SIZE   0x00001000ULL /* 4 KiB */
 #define SPM_MEM_SIZE    0x00010000ULL /* 64 KiB */
 #define SPM_TOTAL_SIZE  (SPM_CTRL_SIZE + SPM_MEM_SIZE)
 
 /* 64-bit レジスタオフセット（SPM_BASEからの相対） */
-#define SPM_REG_DRAM_ADDR    0x00ULL
-#define SPM_REG_LOCAL_ADDR   0x08ULL /* SPMデータ窓先頭からのバイトオフセット */
-#define SPM_REG_SIZE         0x10ULL
-#define SPM_REG_DIRECTION    0x18ULL /* 0/1 */
-#define SPM_REG_START        0x20ULL /* write 1=start / read: busy */
-#define SPM_REG_STATUS       0x28ULL
-#define SPM_REG_DESTINATION  0x30ULL /* 1:DRAM 2:MAC, 4:AXIManager (OR可) */
+#define SPM_CTRL_BASE  (SPM_BASE + SPM_MEM_SIZE) /* レジスタ空間のベース */
+#define SPM_REG_DRAM_ADDR    (SPM_CTRL_BASE + 0x00ULL)
+#define SPM_REG_LOCAL_ADDR   (SPM_CTRL_BASE + 0x08ULL) /* SPMデータ窓先頭からのバイトオフセット */
+#define SPM_REG_SIZE         (SPM_CTRL_BASE + 0x10ULL)
+#define SPM_REG_DIRECTION    (SPM_CTRL_BASE + 0x18ULL) /* 0/1 */
+#define SPM_REG_START        (SPM_CTRL_BASE + 0x20ULL) /* write 1=start / read: busy */
+#define SPM_REG_STATUS       (SPM_CTRL_BASE + 0x28ULL)
+#define SPM_REG_DESTINATION  (SPM_CTRL_BASE + 0x30ULL) /* 1:DRAM 2:MAC, 4:AXIManager (OR可) */
 
 /* データ窓のベース */
-#define SPM_MEM_BASE   (SPM_BASE + SPM_CTRL_SIZE)
-
+#define SPM_MEM_BASE   (SPM_BASE)
 /* --- MMIO アクセスヘルパ --- */
 /* 注意: 8Bアクセスは8バイト境界に合わせること（未アラインで例外） */
-#define SPM_REG64(off)   (*(volatile uint64_t *)((uintptr_t)(SPM_BASE + (off))))
+#define SPM_REG64(off)   (*(volatile uint64_t *)((uintptr_t)((off))))
 
 #define SPM_DRAM_ADDRESS   SPM_REG64(SPM_REG_DRAM_ADDR)
 #define SPM_LOCAL_ADDRESS  SPM_REG64(SPM_REG_LOCAL_ADDR)
@@ -42,7 +42,7 @@
 
 
 // ベースアドレスとサイズ
-#define MAC_BASE        0x50000000ULL
+#define MAC_BASE        (SPM_BASE + SPM_TOTAL_SIZE)
 #define MAC_CTRL_SIZE   0x00001000ULL  // 4 KiB
 
 // レジスタオフセット（BASEからの相対）
@@ -71,9 +71,8 @@
 
 
 // ベースアドレスとサイズ
-#define AES_BASE        0x50001000ULL
+#define AES_BASE        (MAC_BASE + MAC_CTRL_SIZE)
 #define AES_CTRL_SIZE   0x00001000ULL  // 4 KiB
-
 // レジスタオフセット（BASEからの相対）
 #define AES_INPUT_0    0x00
 #define AES_INPUT_1    0x08
@@ -122,10 +121,19 @@
 
 #endif // AXIM_ADDRMAP_H
 
+// XOR
+#ifndef XOR_ADDRMAP_H
+#define XOR_ADDRMAP_H
+#define XOR_BASE         (AXIM_BASE + AXIM_CTRL_SIZE)
+#define XOR_CTRL_SIZE    0x00001000ULL
+#define XOR_START        0x00ULL
+#define XOR_START_REG    REG64(XOR_BASE, XOR_START)
+#endif // XOR_ADDRMAP_H
+
+/* MEMREQ */
 #ifndef MEMREQ_ADDRMAP_H
 #define MEMREQ_ADDRMAP_H
-/* MEMREQ */
-#define MEMREQ_BASE         (AXIM_BASE + AXIM_CTRL_SIZE)
+#define MEMREQ_BASE         (XOR_BASE + XOR_CTRL_SIZE)
 #define MEMREQ_CTRL_SIZE    0x00001000ULL
 #define MEMREQ_MEM_SIZE     0x00ULL
 #define MEMREQ_NUM          0x08ULL
@@ -134,12 +142,3 @@
 #define MEMREQ_MEM_SIZE_REG REG64(MEMREQ_BASE, MEMREQ_MEM_SIZE)
 #define MEMREQ_NUM_REG      REG64(MEMREQ_BASE, MEMREQ_NUM)
 #endif // MEMREQ_ADDRMAP_H
-
-// XOR
-#ifndef XOR_ADDRMAP_H
-#define XOR_ADDRMAP_H
-#define XOR_BASE         (MEMREQ_BASE + MEMREQ_CTRL_SIZE)
-#define XOR_CTRL_SIZE    0x00001000ULL
-#define XOR_START        0x00ULL
-#define XOR_START_REG    REG64(XOR_BASE, XOR_START)
-#endif // XOR_ADDRMAP_H

@@ -1664,30 +1664,6 @@ module axim
         _axi_s_ctrl_axim_register_5 <= 1;
         _axi_s_ctrl_axim_flag_5 <= 0;
       end 
-      if((spm_thread == 41) && 0) begin
-        _axi_s_ctrl_axim_register_0 <= 0;
-        _axi_s_ctrl_axim_flag_0 <= 0;
-      end 
-      if((spm_thread == 41) && 0) begin
-        _axi_s_ctrl_axim_register_1 <= 0;
-        _axi_s_ctrl_axim_flag_1 <= 0;
-      end 
-      if((spm_thread == 41) && 0) begin
-        _axi_s_ctrl_axim_register_2 <= 0;
-        _axi_s_ctrl_axim_flag_2 <= 0;
-      end 
-      if((spm_thread == 41) && 0) begin
-        _axi_s_ctrl_axim_register_3 <= 0;
-        _axi_s_ctrl_axim_flag_3 <= 0;
-      end 
-      if((spm_thread == 41) && 1) begin
-        _axi_s_ctrl_axim_register_4 <= 0;
-        _axi_s_ctrl_axim_flag_4 <= 0;
-      end 
-      if((spm_thread == 41) && 0) begin
-        _axi_s_ctrl_axim_register_5 <= 0;
-        _axi_s_ctrl_axim_flag_5 <= 0;
-      end 
       if((spm_thread == 42) && 0) begin
         _axi_s_ctrl_axim_register_0 <= 0;
         _axi_s_ctrl_axim_flag_0 <= 0;
@@ -1703,60 +1679,84 @@ module axim
       if((spm_thread == 42) && 0) begin
         _axi_s_ctrl_axim_register_3 <= 0;
         _axi_s_ctrl_axim_flag_3 <= 0;
-      end 
-      if((spm_thread == 42) && 0) begin
-        _axi_s_ctrl_axim_register_4 <= 0;
-        _axi_s_ctrl_axim_flag_4 <= 0;
       end 
       if((spm_thread == 42) && 1) begin
+        _axi_s_ctrl_axim_register_4 <= 0;
+        _axi_s_ctrl_axim_flag_4 <= 0;
+      end 
+      if((spm_thread == 42) && 0) begin
         _axi_s_ctrl_axim_register_5 <= 0;
         _axi_s_ctrl_axim_flag_5 <= 0;
       end 
-      if((spm_thread == 49) && 1) begin
+      if((spm_thread == 43) && 0) begin
+        _axi_s_ctrl_axim_register_0 <= 0;
+        _axi_s_ctrl_axim_flag_0 <= 0;
+      end 
+      if((spm_thread == 43) && 0) begin
+        _axi_s_ctrl_axim_register_1 <= 0;
+        _axi_s_ctrl_axim_flag_1 <= 0;
+      end 
+      if((spm_thread == 43) && 0) begin
+        _axi_s_ctrl_axim_register_2 <= 0;
+        _axi_s_ctrl_axim_flag_2 <= 0;
+      end 
+      if((spm_thread == 43) && 0) begin
+        _axi_s_ctrl_axim_register_3 <= 0;
+        _axi_s_ctrl_axim_flag_3 <= 0;
+      end 
+      if((spm_thread == 43) && 0) begin
+        _axi_s_ctrl_axim_register_4 <= 0;
+        _axi_s_ctrl_axim_flag_4 <= 0;
+      end 
+      if((spm_thread == 43) && 1) begin
+        _axi_s_ctrl_axim_register_5 <= 0;
+        _axi_s_ctrl_axim_flag_5 <= 0;
+      end 
+      if((spm_thread == 50) && 1) begin
         _axi_s_ctrl_axim_register_0 <= status_17;
         _axi_s_ctrl_axim_flag_0 <= 0;
       end 
-      if((spm_thread == 49) && 0) begin
+      if((spm_thread == 50) && 0) begin
         _axi_s_ctrl_axim_register_1 <= status_17;
         _axi_s_ctrl_axim_flag_1 <= 0;
       end 
-      if((spm_thread == 49) && 0) begin
+      if((spm_thread == 50) && 0) begin
         _axi_s_ctrl_axim_register_2 <= status_17;
         _axi_s_ctrl_axim_flag_2 <= 0;
       end 
-      if((spm_thread == 49) && 0) begin
+      if((spm_thread == 50) && 0) begin
         _axi_s_ctrl_axim_register_3 <= status_17;
         _axi_s_ctrl_axim_flag_3 <= 0;
       end 
-      if((spm_thread == 49) && 0) begin
+      if((spm_thread == 50) && 0) begin
         _axi_s_ctrl_axim_register_4 <= status_17;
         _axi_s_ctrl_axim_flag_4 <= 0;
       end 
-      if((spm_thread == 49) && 0) begin
+      if((spm_thread == 50) && 0) begin
         _axi_s_ctrl_axim_register_5 <= status_17;
         _axi_s_ctrl_axim_flag_5 <= 0;
       end 
-      if((spm_thread == 50) && 0) begin
+      if((spm_thread == 51) && 0) begin
         _axi_s_ctrl_axim_register_0 <= 0;
         _axi_s_ctrl_axim_flag_0 <= 0;
       end 
-      if((spm_thread == 50) && 1) begin
+      if((spm_thread == 51) && 1) begin
         _axi_s_ctrl_axim_register_1 <= 0;
         _axi_s_ctrl_axim_flag_1 <= 0;
       end 
-      if((spm_thread == 50) && 0) begin
+      if((spm_thread == 51) && 0) begin
         _axi_s_ctrl_axim_register_2 <= 0;
         _axi_s_ctrl_axim_flag_2 <= 0;
       end 
-      if((spm_thread == 50) && 0) begin
+      if((spm_thread == 51) && 0) begin
         _axi_s_ctrl_axim_register_3 <= 0;
         _axi_s_ctrl_axim_flag_3 <= 0;
       end 
-      if((spm_thread == 50) && 0) begin
+      if((spm_thread == 51) && 0) begin
         _axi_s_ctrl_axim_register_4 <= 0;
         _axi_s_ctrl_axim_flag_4 <= 0;
       end 
-      if((spm_thread == 50) && 0) begin
+      if((spm_thread == 51) && 0) begin
         _axi_s_ctrl_axim_register_5 <= 0;
         _axi_s_ctrl_axim_flag_5 <= 0;
       end 
@@ -2002,6 +2002,7 @@ module axim
   localparam spm_thread_50 = 50;
   localparam spm_thread_51 = 51;
   localparam spm_thread_52 = 52;
+  localparam spm_thread_53 = 53;
 
   always @(posedge CLK) begin
     if(RST) begin
@@ -2022,7 +2023,7 @@ module axim
           if(1) begin
             spm_thread <= spm_thread_2;
           end else begin
-            spm_thread <= spm_thread_52;
+            spm_thread <= spm_thread_53;
           end
         end
         spm_thread_2: begin
@@ -2066,13 +2067,13 @@ module axim
           spm_thread <= spm_thread_11;
         end
         spm_thread_11: begin
-          spm_thread <= spm_thread_51;
+          spm_thread <= spm_thread_52;
         end
         spm_thread_12: begin
           if(th_status_18 == 1) begin
             spm_thread <= spm_thread_13;
           end else begin
-            spm_thread <= spm_thread_44;
+            spm_thread <= spm_thread_45;
           end
         end
         spm_thread_13: begin
@@ -2135,13 +2136,13 @@ module axim
           spm_thread <= spm_thread_21;
         end
         spm_thread_25: begin
-          spm_thread <= spm_thread_41;
+          spm_thread <= spm_thread_42;
         end
         spm_thread_26: begin
           if(_axi_s_ctrl_axim_register_4 == 16) begin
             spm_thread <= spm_thread_27;
           end else begin
-            spm_thread <= spm_thread_36;
+            spm_thread <= spm_thread_37;
           end
         end
         spm_thread_27: begin
@@ -2152,7 +2153,7 @@ module axim
           if(_spm_thread_i_0 < 4) begin
             spm_thread <= spm_thread_29;
           end else begin
-            spm_thread <= spm_thread_33;
+            spm_thread <= spm_thread_34;
           end
         end
         spm_thread_29: begin
@@ -2176,84 +2177,88 @@ module axim
           spm_thread <= spm_thread_32;
         end
         spm_thread_32: begin
+          $display("Reading data %d: %x", _spm_thread_i_0, read_data[_spm_thread_i_0]);
+          spm_thread <= spm_thread_33;
+        end
+        spm_thread_33: begin
           _spm_thread_i_0 <= _spm_thread_i_0 + 1;
           spm_thread <= spm_thread_28;
         end
-        spm_thread_33: begin
-          req_complete <= 1;
-          spm_thread <= spm_thread_34;
-        end
         spm_thread_34: begin
-          th_status_18 <= 2;
+          req_complete <= 1;
           spm_thread <= spm_thread_35;
         end
         spm_thread_35: begin
-          spm_thread <= spm_thread_41;
+          th_status_18 <= 2;
+          spm_thread <= spm_thread_36;
         end
         spm_thread_36: begin
-          if(_axi_s_ctrl_axim_register_4 == 32) begin
-            spm_thread <= spm_thread_37;
-          end else begin
-            spm_thread <= spm_thread_40;
-          end
+          spm_thread <= spm_thread_42;
         end
         spm_thread_37: begin
-          req_complete <= 1;
-          spm_thread <= spm_thread_38;
+          if(_axi_s_ctrl_axim_register_4 == 32) begin
+            spm_thread <= spm_thread_38;
+          end else begin
+            spm_thread <= spm_thread_41;
+          end
         end
         spm_thread_38: begin
-          th_status_18 <= 2;
+          req_complete <= 1;
           spm_thread <= spm_thread_39;
         end
         spm_thread_39: begin
-          spm_thread <= spm_thread_41;
+          th_status_18 <= 2;
+          spm_thread <= spm_thread_40;
         end
         spm_thread_40: begin
-          $display("Unknown command: %d", _axi_s_ctrl_axim_register_4);
-          spm_thread <= spm_thread_41;
+          spm_thread <= spm_thread_42;
         end
         spm_thread_41: begin
+          $display("Unknown command: %d", _axi_s_ctrl_axim_register_4);
           spm_thread <= spm_thread_42;
         end
         spm_thread_42: begin
           spm_thread <= spm_thread_43;
         end
         spm_thread_43: begin
-          spm_thread <= spm_thread_51;
+          spm_thread <= spm_thread_44;
         end
         spm_thread_44: begin
-          if(th_status_18 == 2) begin
-            spm_thread <= spm_thread_45;
-          end else begin
-            spm_thread <= spm_thread_51;
-          end
+          spm_thread <= spm_thread_52;
         end
         spm_thread_45: begin
-          if(req_accept == 0) begin
+          if(th_status_18 == 2) begin
             spm_thread <= spm_thread_46;
           end else begin
-            spm_thread <= spm_thread_51;
+            spm_thread <= spm_thread_52;
           end
         end
         spm_thread_46: begin
-          th_status_18 <= 0;
-          spm_thread <= spm_thread_47;
+          if(req_accept == 0) begin
+            spm_thread <= spm_thread_47;
+          end else begin
+            spm_thread <= spm_thread_52;
+          end
         end
         spm_thread_47: begin
-          req_complete <= 0;
+          th_status_18 <= 0;
           spm_thread <= spm_thread_48;
         end
         spm_thread_48: begin
-          status_17 <= 0;
+          req_complete <= 0;
           spm_thread <= spm_thread_49;
         end
         spm_thread_49: begin
+          status_17 <= 0;
           spm_thread <= spm_thread_50;
         end
         spm_thread_50: begin
           spm_thread <= spm_thread_51;
         end
         spm_thread_51: begin
+          spm_thread <= spm_thread_52;
+        end
+        spm_thread_52: begin
           spm_thread <= spm_thread_1;
         end
       endcase

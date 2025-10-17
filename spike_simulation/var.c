@@ -9,12 +9,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
-#define PROTECTION_BASE 0x90000000ULL
+#define PROTECTION_BASE 0x00000000ULL
 #define PROTECTION_SIZE 0x04000000ULL // 64MB
-#define DATA_TAG_BASE  PROTECTION_BASE + PROTECTION_SIZE // 0x94000000
+#define DATA_TAG_BASE  PROTECTION_BASE + PROTECTION_SIZE // 0x04000000
 #define DATA_TAG_SIZE 1024 * 1024 * 8 // 8MB
-#define COUNTER_BASE DATA_TAG_BASE + DATA_TAG_SIZE // 0x94800000
+#define COUNTER_BASE DATA_TAG_BASE + DATA_TAG_SIZE // 0x04800000
 #define HEIGHT 4
+void ensureBlockInSpm(uint64_t required_block_addr, uint64_t spm_offset, uint64_t manage_addr){
+  // printf("aaa");
+  // printf("[Core FW] Ensuring block 0x%016llx is in SPM at offset 0x%016llx and management address 0x%016llx\n", required_block_addr, spm_offset, manage_addr);
+  uint64_t info = spm_ld64(manage_addr);
+  // printf("SPM管理情報: %016llx", info);
+  // uint64_t info = 3;
+  bool valid = 3 & 1;
+  bool dirty = 3 & 2;
+  uint64_t current_block_addr = (info >> 6) << 6;
+  if (!valid || current_block_addr != required_block_addr) {
+      // Dirtyビットが立っていれば、現在のブロックをDRAMに書き戻す
+      if (valid && dirty) {
+        spm_write_back(spm_offset, current_block_addr, 64);
+      }
+      // 新しいブロックをDRAMからSPMに読み込む
+      spm_copy_to_local(required_block_addr, spm_offset, 64);
+      // 管理情報を更新 (Valid=1, Dirty=0)
+      clearBlockdirty(manage_addr, required_block_addr);
+  } 
+}
+
 struct AddressContext {
     uint64_t request_addr;
     uint64_t counterblock_addr;
@@ -92,25 +113,26 @@ void Authentication(){
    struct AddressContext ctx = setupAddressContext();
    uint64_t path_indecis[HEIGHT];
     for(uint64_t i=0; i<HEIGHT; ++i){
-      path_indecis[3-i] = (ctx.request_addr - 0x90000000ULL) / (64 * (1ULL << (5 * i)));
+      path_indecis[3-i] = ctx.request_addr / (64 * (1ULL << (5 * i)));
     }
-    {
-      ensureBlockInSpm(ctx.counterblock_addr, ctx.spm_counter_block, ctx.spm_counter_manage);
-      uint64_t major_counter = spm_ld64(ctx.spm_counter_block);
-      uint64_t minor_counter_byte_address = ctx.spm_counter_block + (ctx.counter_bit_offset / 64) * 8;
-      uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
-      // ここから過去のminor counterを取り出す
-      uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 64) )) & 0xFF;
-      if (minor_counter_value != 0 || major_counter != 0){
-          // メジャーマイナー、どちらかが0でなければ検証を行う
-          // 1. パスの特定=親ノードの物理アドレスをルートまで計算していく。
-          bool verified = verifyTreePath(path_indecis);
-          if (verified == false){
-              printf("[Core FW] Authentication failed during counter verification. Aborting.\n");
-              exit(1);
-          }
-      }
+    ensureBlockInSpm(ctx.counterblock_addr, ctx.spm_counter_block, ctx.spm_counter_manage);
+    printf("[Core FW] Authentication for address 0x%016llx\n", ctx.request_addr);
+    uint64_t major_counter = spm_ld64(ctx.spm_counter_block);
+    uint64_t minor_counter_byte_address = ctx.spm_counter_block + (ctx.counter_bit_offset / 64) * 8;
+    uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
+    // ここから過去のminor counterを取り出す
+    uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 64) )) & 0xFF;
+    // printf("[Core FW] Current Major Counter: %llu, Minor Counter: %u\n", major_counter, minor_counter_value);
+    if (minor_counter_value != 0 || major_counter != 0){
+        // メジャーマイナー、どちらかが0でなければ検証を行う
+        // 1. パスの特定=親ノードの物理アドレスをルートまで計算していく。
+        bool verified = verifyTreePath(path_indecis);
+        if (verified == false){
+            printf("[Core FW] Authentication failed during counter verification. Aborting.\n");
+            exit(1);
+        }
     }
+    // printf("[Core FW] Authentication succeeded. Proceeding to update counters and encrypt data.\n");
     uint64_t root = spm_ld64(0);
     uint64_t new_root = root + 1;
     spm_sd64(0, new_root);
@@ -170,14 +192,14 @@ void Authentication(){
       // printf("Level %llu: Updated Major=%llu, Minor=%u, New MAC=%016llx\n", i, major_counter, new_minor_counter, mac_result);
       spm_sd64(spm_addr + 56, mac_result); // 56BにMACがある
     }
-    uint64_t major_counter = spm_ld64(ctx.spm_counter_block);
+    major_counter = spm_ld64(ctx.spm_counter_block);
     // minor_counterのload
     // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
-    uint64_t minor_counter_byte_address = ctx.spm_counter_block + (ctx.counter_bit_offset / 64) * 8;
-    uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
-    uint8_t minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 64))) & 0xFF;
+    minor_counter_byte_address = ctx.spm_counter_block + (ctx.counter_bit_offset / 64) * 8;
+    minor_counter = spm_ld64(minor_counter_byte_address);
+    minor_counter_value = (minor_counter >> ((ctx.counter_bit_offset % 64))) & 0xFF;
     // --- 手順2: アドレスとカウンター値を元にSeed値を計算し、AES_moduleに書き込み起動する ---
-    printf("[Core FW] Major Counter: %llu, Minor Counter: %u, Request Address: 0x%llx\n", major_counter, minor_counter_value, ctx.request_addr);
+    // printf("[Core FW] Major Counter: %llu, Minor Counter: %u, Request Address: 0x%llx\n", major_counter, minor_counter_value, ctx.request_addr);
     set_seed(major_counter, minor_counter_value, ctx.request_addr);
     // --- 手順3: AXI ManagerにOTPとともにXORを実行し、暗号化を指示 ---
     // busy wait AESモジュールの計算完了を待つ
@@ -200,6 +222,7 @@ void Authentication(){
     // --- 手順6: Hashモジュールの計算完了を待ち、結果をSPMに保存 ---
     // SPMに当該MACブロックがあればそのままmodify,なければ今あるブロックをDRAMにwrite backしてから適切なブロックをSPMにDRAMコピー
     ensureBlockInSpm(ctx.datamacblock_addr, ctx.spm_mac_block, ctx.spm_mac_manage);
+    printf("[Core FW] Computed MAC: %016llx\n", computed_mac);
     spm_sd64(ctx.spm_mac_block + ctx.dmac_byte_offset, computed_mac);
     // SPM上のMACブロックをDirtyに設定する
     setBlockdirty(ctx.spm_mac_manage, ctx.datamacblock_addr);
@@ -224,7 +247,7 @@ void Verification(){
       // 1. パスの特定=親ノードの物理アドレスをルートまで計算していく。
       uint64_t path_index[4]; // 先頭は階層1
       for(uint64_t i=0; i<HEIGHT; ++i){
-          path_index[3-i] = (ctx.request_addr - 0x90000000ULL) / (64 * (1ULL << (5 * i)));
+          path_index[3-i] = (ctx.request_addr) / (64 * (1ULL << (5 * i)));
       }
       bool verified = verifyTreePath(path_index);
       if (verified == false){
@@ -245,6 +268,10 @@ void Verification(){
   set_seed(major_counter, minor_counter_value, ctx.request_addr);
   // --- 手順3: SPM DMAを起動し、DRAMから暗号文をSPMにコピー ---
   spm_copy_to_local(ctx.request_addr, ctx.spm_data, 64);
+  // for (uint64_t i=0;i<8;i++){
+  //   uint64_t tmp = spm_ld64(ctx.spm_data + i * 8);
+  //   printf("Data Block[%llu]: %016llx\n", i, tmp);
+  // }
   // --- 手順3: AXI ManagerにOTPとともにXORを実行し、復号化を指示 ---
   // SPMからXORへ暗号文をコピー
   // axim_write(ctx.spm_data);
@@ -305,13 +332,20 @@ void Reencryption(uint64_t block_addr, uint64_t major_counter, uint8_t old_minor
 }
 int main(void){
   /* MEMREQの設定 */
-  memreq_make(1024 * 1024 * 64, 4000); // 64B, 4リクエスト
-  // printf("[Core FW] MEMREQ configured for 64B transfers.\n");
+  memreq_make(1024 * 1024 * 64, 16); // 64B, 1リクエスト
+  for (uint64_t i=0; i<512; i++){
+    spm_sd64(i*8, 0); // SPMの初期化
+  }
+  // カウンターの初期化
+  for (uint64_t i=0; i<3 * 1024 * 1024 / 512; i++){
+    spm_write_back(0,COUNTER_BASE+i*512,512);
+  }
   while(1){
     for(;;){
       if(AXIM_STATUS_REG & 1) break; // リクエストが来るまで待つ
     }
     if(AXIM_STATUS_REG & 2){ // writeリクエスト
+      printf("[Core FW] --- Starting Authentication ---\n");
       Authentication();
     } else {
       Verification();

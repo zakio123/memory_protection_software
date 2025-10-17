@@ -46,7 +46,8 @@ def mkSMP():
     # 1. 制御用 AXI-Lite Slave (64bit幅)
     saxi = vthread.AXISLiteRegister(m, 'axi_s_ctrl_spm', clk, rst, datawidth=64, length=7)
     # 2. DRAM用 AXI Master (128bit幅)
-    d_axim = vthread.AXIM(m, 'axi_m_dram', clk, rst, datawidth=128, addrwidth=32)
+    d_axim = vthread.AXIM(m, 'axi_m_dram', clk, rst, datawidth=64, addrwidth=32,waddr_id_width=4, wdata_id_width=4, wresp_id_width=4,
+                 raddr_id_width=4, rdata_id_width=4,)
     # 3. MAC用 AXI Master (128bit幅)
     m_axi_stream_out = vthread.AXIStreamOut(m, 'axis_out_mac_spm', clk, rst, datawidth=128, with_last=True)
     # 4. AXI-Manager用 AXI (128bit幅)
@@ -78,12 +79,12 @@ def mkSMP():
             direction.value = saxi.read(SPM_DIRECTION)
             destination.value = saxi.read(SPM_DESTINATION)
             saxi.write(SPM_STATUS, 1) # BUSYフラグセット
-            print("SPM operation: dram_addr=%x, spm_addr=%x, size=%d, direction=%d, destination=%d" % (dram_addr.value, spm_addr.value, size.value, direction.value, destination.value))
+            # print("SPM operation: dram_addr=%x, spm_addr=%x, size=%d, direction=%d, destination=%d" % (dram_addr.value, spm_addr.value, size.value, direction.value, destination.value))
             # --- SPM操作 ---
             # DRAM
             if destination.value == 1:
                 if direction.value == 0:
-                    d_axim.dma_read(spm_ram,global_addr=dram_addr.value, local_addr=spm_addr.value // 8, local_size=8,port=0)
+                    d_axim.dma_read(spm_ram,global_addr=dram_addr.value, local_addr=spm_addr.value // 8, local_size=size.value // 8,port=0)
                 else :
                     # print("DMA Write to DRAM from SPM")
                     # for i in range(8):
@@ -137,7 +138,7 @@ def mkTest(memimg_name=None):
     stream_in.connect(ports, 'axis_out_mac_spm')
     stream_out.connect(ports, 'axis_in_axim_spm')
     read_data = m.TmpReg(128, initval=0, prefix='read_data')
-    memory = axi.AxiMemoryModel(m, 'memory', clk, rst, memimg_name=memimg_name,datawidth=128)
+    memory = axi.AxiMemoryModel(m, 'memory', clk, rst, memimg_name=memimg_name,datawidth=64)
     memory.connect(ports, 'axi_m_dram')
     write_data = m.TmpReg(128, initval=0, prefix='write_data')
     complete = m.Reg("complete",1, initval=0)

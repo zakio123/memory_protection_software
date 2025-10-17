@@ -32,7 +32,7 @@ def mkMemReq():
     # --- インターフェース定義 ---
     # 1. 制御用 AXI-Lite Slave (64bit幅)
     saxi = vthread.AXISLiteRegister(m, 'axi_s_ctrl_memreq', clk, rst, datawidth=64, length=7)
-    # 2. Memory リクエスト用 AXI Master (128bit幅)
+    # 2. Memory リクエスト用 AXI Master (64bit幅)
     axi_m_llc = vthread.AXIM(m, 'axi_m_llc', clk, rst, 128, addrwidth=32)
     num = m.TmpReg(64, initval=0, prefix='num')
     mem_range = m.TmpReg(64, initval=0, prefix='mem_range')
@@ -43,6 +43,7 @@ def mkMemReq():
     receive_ram = vthread.RAM(m, 'receive_ram', clk, rst, 128, addrwidth=addrwidth)
     # LLCへデータを書き込むテスト
     read_llc_data = m.TmpReg(128, initval=0, prefix='read_llc_data')
+    test_data = m.TmpReg(128, initval=0, prefix='test_data')
     a = m.TmpReg(64, initval=0, prefix='a')
     c = m.TmpReg(64, initval=0, prefix='c')
     N = m.TmpReg(64, initval=0, prefix='N')
@@ -75,15 +76,23 @@ def mkMemReq():
         a.value = 1664525
         c.value = 1013904223
         N.value = num.value
+        for i in range(num.value):
+            x.value = i
+            lcg_random()
+            for j in range(4):
+                request_ram.write(y.value * 4 + j, (i+j)*2)
+            axi_m_llc.dma_write(request_ram, global_addr=y.value * memreq_range.value, local_size=4, local_addr=y.value * 4)
         for i in range(N.value):
             x.value = i
             lcg_random()
             axi_m_llc.dma_read(receive_ram, global_addr=y.value * memreq_range.value, local_size=4, local_addr=y.value * 4)
         for i in range(4 * num.value):
             read_llc_data.value = receive_ram.read(i)
-            if read_llc_data.value != i*2:
+            test_data.value = request_ram.read(i)
+            if read_llc_data.value != test_data.value:
                 print("LLC data mismatch %d: %x" % (i, read_llc_data.value))
-        print("MEMREQ done")
+        # print("MEMREQ done")
+        vthread.finish()
     th = vthread.Thread(m, 'memreq_thread', clk, rst, memreq)
     th.start()
     return m
@@ -99,7 +108,7 @@ def mkTest(memimg_name=None):
     rst = ports['RST']
     maxi = vthread.AXIMLite(m, 'maxi_memreq', clk, rst, 64,addrwidth=32,noio=True)
     maxi.connect(ports, 'axi_s_ctrl_memreq')
-    memory = axi.AxiMemoryModel(m, 'memory', clk, rst, datawidth=128, addrwidth=32)
+    memory = axi.AxiMemoryModel(m, 'memory_request', clk, rst, datawidth=128, addrwidth=32)
     memory.connect(ports, 'axi_m_llc')
 
     def ctrl():

@@ -28,6 +28,7 @@ module test_spm
   wire [2-1:0] axi_s_ctrl_spm_rresp;
   wire axi_s_ctrl_spm_rvalid;
   reg axi_s_ctrl_spm_rready;
+  wire [4-1:0] axi_m_dram_awid;
   wire [32-1:0] axi_m_dram_awaddr;
   wire [8-1:0] axi_m_dram_awlen;
   wire [3-1:0] axi_m_dram_awsize;
@@ -39,14 +40,16 @@ module test_spm
   wire [2-1:0] axi_m_dram_awuser;
   wire axi_m_dram_awvalid;
   reg axi_m_dram_awready;
-  wire [128-1:0] axi_m_dram_wdata;
-  wire [16-1:0] axi_m_dram_wstrb;
+  wire [64-1:0] axi_m_dram_wdata;
+  wire [8-1:0] axi_m_dram_wstrb;
   wire axi_m_dram_wlast;
   wire axi_m_dram_wvalid;
   reg axi_m_dram_wready;
+  reg [4-1:0] axi_m_dram_bid;
   reg [2-1:0] axi_m_dram_bresp;
   reg axi_m_dram_bvalid;
   wire axi_m_dram_bready;
+  wire [4-1:0] axi_m_dram_arid;
   wire [32-1:0] axi_m_dram_araddr;
   wire [8-1:0] axi_m_dram_arlen;
   wire [3-1:0] axi_m_dram_arsize;
@@ -58,7 +61,8 @@ module test_spm
   wire [2-1:0] axi_m_dram_aruser;
   wire axi_m_dram_arvalid;
   reg axi_m_dram_arready;
-  reg [128-1:0] axi_m_dram_rdata;
+  reg [4-1:0] axi_m_dram_rid;
+  reg [64-1:0] axi_m_dram_rdata;
   reg [2-1:0] axi_m_dram_rresp;
   reg axi_m_dram_rlast;
   reg axi_m_dram_rvalid;
@@ -432,8 +436,8 @@ module test_spm
   wire [2-1:0] memory_awuser;
   wire memory_awvalid;
   reg memory_awready;
-  wire [128-1:0] memory_wdata;
-  wire [16-1:0] memory_wstrb;
+  wire [64-1:0] memory_wdata;
+  wire [8-1:0] memory_wstrb;
   wire memory_wlast;
   wire memory_wvalid;
   wire memory_wready;
@@ -452,7 +456,7 @@ module test_spm
   wire [2-1:0] memory_aruser;
   wire memory_arvalid;
   reg memory_arready;
-  reg [128-1:0] memory_rdata;
+  reg [64-1:0] memory_rdata;
   wire [2-1:0] memory_rresp;
   reg memory_rlast;
   reg memory_rvalid;
@@ -517,11 +521,11 @@ module test_spm
 
   reg [4-1:0] count__memory_rreq_fifo;
   wire _memory_wdata_fifo_enq;
-  wire [145-1:0] _memory_wdata_fifo_wdata;
+  wire [73-1:0] _memory_wdata_fifo_wdata;
   wire _memory_wdata_fifo_full;
   wire _memory_wdata_fifo_almost_full;
   wire _memory_wdata_fifo_deq;
-  wire [145-1:0] _memory_wdata_fifo_rdata;
+  wire [73-1:0] _memory_wdata_fifo_rdata;
   wire _memory_wdata_fifo_empty;
   wire _memory_wdata_fifo_almost_empty;
 
@@ -542,13 +546,13 @@ module test_spm
 
   reg [4-1:0] count__memory_wdata_fifo;
   assign memory_wready = !_memory_wdata_fifo_almost_full;
-  wire [128-1:0] pack_write_data_wdata_52;
-  wire [16-1:0] pack_write_data_wstrb_53;
+  wire [64-1:0] pack_write_data_wdata_52;
+  wire [8-1:0] pack_write_data_wstrb_53;
   wire [1-1:0] pack_write_data_wlast_54;
   assign pack_write_data_wdata_52 = memory_wdata;
   assign pack_write_data_wstrb_53 = memory_wstrb;
   assign pack_write_data_wlast_54 = memory_wlast;
-  wire [145-1:0] pack_write_data_packed_55;
+  wire [73-1:0] pack_write_data_packed_55;
   assign pack_write_data_packed_55 = { pack_write_data_wlast_54, pack_write_data_wstrb_53, pack_write_data_wdata_52 };
   assign _memory_wdata_fifo_wdata = (memory_wvalid && memory_wready)? pack_write_data_packed_55 : 'hx;
   assign _memory_wdata_fifo_enq = (memory_wvalid && memory_wready)? memory_wvalid && memory_wready && !_memory_wdata_fifo_almost_full : 0;
@@ -585,12 +589,12 @@ module test_spm
   assign unpack_write_req_global_addr_63 = _memory_wreq_fifo_rdata[40:9];
   assign unpack_write_req_size_64 = _memory_wreq_fifo_rdata[8:0];
   assign _memory_wreq_fifo_deq = ((_memory_wdata_fsm == 0) && !_memory_wreq_fifo_empty && !_memory_wreq_fifo_empty)? 1 : 0;
-  wire [128-1:0] pack_write_data_wdata_65;
-  wire [16-1:0] pack_write_data_wstrb_66;
+  wire [64-1:0] pack_write_data_wdata_65;
+  wire [8-1:0] pack_write_data_wstrb_66;
   wire [1-1:0] pack_write_data_wlast_67;
-  assign pack_write_data_wdata_65 = _memory_wdata_fifo_rdata[127:0];
-  assign pack_write_data_wstrb_66 = _memory_wdata_fifo_rdata[143:128];
-  assign pack_write_data_wlast_67 = _memory_wdata_fifo_rdata[144];
+  assign pack_write_data_wdata_65 = _memory_wdata_fifo_rdata[63:0];
+  assign pack_write_data_wstrb_66 = _memory_wdata_fifo_rdata[71:64];
+  assign pack_write_data_wlast_67 = _memory_wdata_fifo_rdata[72];
   wire write_data_wvalid_68;
   assign write_data_wvalid_68 = !_memory_wdata_fifo_empty;
   wire write_data_wready_69;
@@ -643,18 +647,25 @@ module test_spm
     axi_m_dram_wready = _tmp_78;
   end
 
-  wire [2-1:0] _tmp_79;
-  assign _tmp_79 = memory_bresp;
+  wire [4-1:0] _tmp_79;
+  assign _tmp_79 = 0;
 
   always @(*) begin
-    axi_m_dram_bresp = _tmp_79;
+    axi_m_dram_bid = _tmp_79;
   end
 
-  wire _tmp_80;
-  assign _tmp_80 = memory_bvalid;
+  wire [2-1:0] _tmp_80;
+  assign _tmp_80 = memory_bresp;
 
   always @(*) begin
-    axi_m_dram_bvalid = _tmp_80;
+    axi_m_dram_bresp = _tmp_80;
+  end
+
+  wire _tmp_81;
+  assign _tmp_81 = memory_bvalid;
+
+  always @(*) begin
+    axi_m_dram_bvalid = _tmp_81;
   end
 
   assign memory_bready = axi_m_dram_bready;
@@ -668,48 +679,55 @@ module test_spm
   assign memory_arqos = axi_m_dram_arqos;
   assign memory_aruser = axi_m_dram_aruser;
   assign memory_arvalid = axi_m_dram_arvalid;
-  wire _tmp_81;
-  assign _tmp_81 = memory_arready;
+  wire _tmp_82;
+  assign _tmp_82 = memory_arready;
 
   always @(*) begin
-    axi_m_dram_arready = _tmp_81;
+    axi_m_dram_arready = _tmp_82;
   end
 
-  wire [128-1:0] _tmp_82;
-  assign _tmp_82 = memory_rdata;
+  wire [4-1:0] _tmp_83;
+  assign _tmp_83 = 0;
 
   always @(*) begin
-    axi_m_dram_rdata = _tmp_82;
+    axi_m_dram_rid = _tmp_83;
   end
 
-  wire [2-1:0] _tmp_83;
-  assign _tmp_83 = memory_rresp;
+  wire [64-1:0] _tmp_84;
+  assign _tmp_84 = memory_rdata;
 
   always @(*) begin
-    axi_m_dram_rresp = _tmp_83;
+    axi_m_dram_rdata = _tmp_84;
   end
 
-  wire _tmp_84;
-  assign _tmp_84 = memory_rlast;
+  wire [2-1:0] _tmp_85;
+  assign _tmp_85 = memory_rresp;
 
   always @(*) begin
-    axi_m_dram_rlast = _tmp_84;
+    axi_m_dram_rresp = _tmp_85;
   end
 
-  wire _tmp_85;
-  assign _tmp_85 = memory_rvalid;
+  wire _tmp_86;
+  assign _tmp_86 = memory_rlast;
 
   always @(*) begin
-    axi_m_dram_rvalid = _tmp_85;
+    axi_m_dram_rlast = _tmp_86;
+  end
+
+  wire _tmp_87;
+  assign _tmp_87 = memory_rvalid;
+
+  always @(*) begin
+    axi_m_dram_rvalid = _tmp_87;
   end
 
   assign memory_rready = axi_m_dram_rready;
-  reg [128-1:0] write_data_86;
+  reg [128-1:0] write_data_88;
   reg [1-1:0] complete;
   reg [32-1:0] th_ctrl;
   localparam th_ctrl_init = 0;
   reg _maxi_spm_raddr_cond_0_1;
-  reg signed [64-1:0] axim_rdata_87;
+  reg signed [64-1:0] axim_rdata_89;
   reg _maxi_spm_waddr_cond_0_1;
   reg _maxi_spm_wdata_cond_0_1;
   reg _maxi_spm_waddr_cond_1_1;
@@ -722,10 +740,10 @@ module test_spm
   reg _maxi_spm_wdata_cond_4_1;
   reg _maxi_spm_waddr_cond_5_1;
   reg _maxi_spm_wdata_cond_5_1;
-  reg signed [32-1:0] _th_ctrl_i_1;
+  reg signed [32-1:0] _th_ctrl_i_0;
   reg _m_axis_spm_cond_0_1;
   reg _maxi_spm_raddr_cond_1_1;
-  reg signed [64-1:0] axim_rdata_88;
+  reg signed [64-1:0] axim_rdata_90;
   reg _maxi_spm_waddr_cond_6_1;
   reg _maxi_spm_wdata_cond_6_1;
   reg _maxi_spm_waddr_cond_7_1;
@@ -739,14 +757,14 @@ module test_spm
   reg _maxi_spm_waddr_cond_11_1;
   reg _maxi_spm_wdata_cond_11_1;
   reg _maxi_spm_raddr_cond_2_1;
-  reg signed [64-1:0] axim_rdata_89;
+  reg signed [64-1:0] axim_rdata_91;
   assign _maxi_spm_rready_sb_0 = (th_ctrl == 4) || (th_ctrl == 48) || (th_ctrl == 86);
   reg [32-1:0] fsm;
   localparam fsm_init = 0;
-  reg signed [32-1:0] rdata_90;
-  reg signed [32-1:0] rdata_91;
   reg signed [32-1:0] rdata_92;
   reg signed [32-1:0] rdata_93;
+  reg signed [32-1:0] rdata_94;
+  reg signed [32-1:0] rdata_95;
 
   spm
   uut
@@ -774,6 +792,7 @@ module test_spm
     .axi_s_ctrl_spm_rresp(axi_s_ctrl_spm_rresp),
     .axi_s_ctrl_spm_rvalid(axi_s_ctrl_spm_rvalid),
     .axi_s_ctrl_spm_rready(axi_s_ctrl_spm_rready),
+    .axi_m_dram_awid(axi_m_dram_awid),
     .axi_m_dram_awaddr(axi_m_dram_awaddr),
     .axi_m_dram_awlen(axi_m_dram_awlen),
     .axi_m_dram_awsize(axi_m_dram_awsize),
@@ -790,9 +809,11 @@ module test_spm
     .axi_m_dram_wlast(axi_m_dram_wlast),
     .axi_m_dram_wvalid(axi_m_dram_wvalid),
     .axi_m_dram_wready(axi_m_dram_wready),
+    .axi_m_dram_bid(axi_m_dram_bid),
     .axi_m_dram_bresp(axi_m_dram_bresp),
     .axi_m_dram_bvalid(axi_m_dram_bvalid),
     .axi_m_dram_bready(axi_m_dram_bready),
+    .axi_m_dram_arid(axi_m_dram_arid),
     .axi_m_dram_araddr(axi_m_dram_araddr),
     .axi_m_dram_arlen(axi_m_dram_arlen),
     .axi_m_dram_arsize(axi_m_dram_arsize),
@@ -804,6 +825,7 @@ module test_spm
     .axi_m_dram_aruser(axi_m_dram_aruser),
     .axi_m_dram_arvalid(axi_m_dram_arvalid),
     .axi_m_dram_arready(axi_m_dram_arready),
+    .axi_m_dram_rid(axi_m_dram_rid),
     .axi_m_dram_rdata(axi_m_dram_rdata),
     .axi_m_dram_rresp(axi_m_dram_rresp),
     .axi_m_dram_rlast(axi_m_dram_rlast),
@@ -903,11 +925,11 @@ module test_spm
     __tmp_74_1 = 0;
     _d1__memory_rdata_fsm = _memory_rdata_fsm_init;
     __memory_rdata_fsm_cond_11_0_1 = 0;
-    write_data_86 = 0;
+    write_data_88 = 0;
     complete = 0;
     th_ctrl = th_ctrl_init;
     _maxi_spm_raddr_cond_0_1 = 0;
-    axim_rdata_87 = 0;
+    axim_rdata_89 = 0;
     _maxi_spm_waddr_cond_0_1 = 0;
     _maxi_spm_wdata_cond_0_1 = 0;
     _maxi_spm_waddr_cond_1_1 = 0;
@@ -920,10 +942,10 @@ module test_spm
     _maxi_spm_wdata_cond_4_1 = 0;
     _maxi_spm_waddr_cond_5_1 = 0;
     _maxi_spm_wdata_cond_5_1 = 0;
-    _th_ctrl_i_1 = 0;
+    _th_ctrl_i_0 = 0;
     _m_axis_spm_cond_0_1 = 0;
     _maxi_spm_raddr_cond_1_1 = 0;
-    axim_rdata_88 = 0;
+    axim_rdata_90 = 0;
     _maxi_spm_waddr_cond_6_1 = 0;
     _maxi_spm_wdata_cond_6_1 = 0;
     _maxi_spm_waddr_cond_7_1 = 0;
@@ -937,12 +959,12 @@ module test_spm
     _maxi_spm_waddr_cond_11_1 = 0;
     _maxi_spm_wdata_cond_11_1 = 0;
     _maxi_spm_raddr_cond_2_1 = 0;
-    axim_rdata_89 = 0;
+    axim_rdata_91 = 0;
     fsm = fsm_init;
-    rdata_90 = 0;
-    rdata_91 = 0;
     rdata_92 = 0;
     rdata_93 = 0;
+    rdata_94 = 0;
+    rdata_95 = 0;
     #100;
     RST = 1;
     #100;
@@ -1401,9 +1423,9 @@ module test_spm
         m_axis_spm_tlast <= 0;
       end 
       if((th_ctrl == 43) && (m_axis_spm_tready || !m_axis_spm_tvalid)) begin
-        m_axis_spm_tdata <= write_data_86;
+        m_axis_spm_tdata <= write_data_88;
         m_axis_spm_tvalid <= 1;
-        m_axis_spm_tlast <= _th_ctrl_i_1 == 3;
+        m_axis_spm_tlast <= _th_ctrl_i_0 == 3;
       end 
       _m_axis_spm_cond_0_1 <= 1;
       if(m_axis_spm_tvalid && !m_axis_spm_tready) begin
@@ -1483,30 +1505,6 @@ module test_spm
       end 
       if((_memory_wdata_fsm == 1) && write_data_wvalid_68 && write_data_wready_69 && pack_write_data_wstrb_66[7]) begin
         _memory_mem[_write_addr + 7] <= pack_write_data_wdata_65[63:56];
-      end 
-      if((_memory_wdata_fsm == 1) && write_data_wvalid_68 && write_data_wready_69 && pack_write_data_wstrb_66[8]) begin
-        _memory_mem[_write_addr + 8] <= pack_write_data_wdata_65[71:64];
-      end 
-      if((_memory_wdata_fsm == 1) && write_data_wvalid_68 && write_data_wready_69 && pack_write_data_wstrb_66[9]) begin
-        _memory_mem[_write_addr + 9] <= pack_write_data_wdata_65[79:72];
-      end 
-      if((_memory_wdata_fsm == 1) && write_data_wvalid_68 && write_data_wready_69 && pack_write_data_wstrb_66[10]) begin
-        _memory_mem[_write_addr + 10] <= pack_write_data_wdata_65[87:80];
-      end 
-      if((_memory_wdata_fsm == 1) && write_data_wvalid_68 && write_data_wready_69 && pack_write_data_wstrb_66[11]) begin
-        _memory_mem[_write_addr + 11] <= pack_write_data_wdata_65[95:88];
-      end 
-      if((_memory_wdata_fsm == 1) && write_data_wvalid_68 && write_data_wready_69 && pack_write_data_wstrb_66[12]) begin
-        _memory_mem[_write_addr + 12] <= pack_write_data_wdata_65[103:96];
-      end 
-      if((_memory_wdata_fsm == 1) && write_data_wvalid_68 && write_data_wready_69 && pack_write_data_wstrb_66[13]) begin
-        _memory_mem[_write_addr + 13] <= pack_write_data_wdata_65[111:104];
-      end 
-      if((_memory_wdata_fsm == 1) && write_data_wvalid_68 && write_data_wready_69 && pack_write_data_wstrb_66[14]) begin
-        _memory_mem[_write_addr + 14] <= pack_write_data_wdata_65[119:112];
-      end 
-      if((_memory_wdata_fsm == 1) && write_data_wvalid_68 && write_data_wready_69 && pack_write_data_wstrb_66[15]) begin
-        _memory_mem[_write_addr + 15] <= pack_write_data_wdata_65[127:120];
       end 
     end
   end
@@ -1605,7 +1603,7 @@ module test_spm
         end
         _memory_wdata_fsm_1: begin
           if(write_data_wvalid_68 && write_data_wready_69) begin
-            _write_addr <= _write_addr + 16;
+            _write_addr <= _write_addr + 8;
             _write_count <= _write_count - 1;
           end 
           if(write_data_wvalid_68 && write_data_wready_69 && (_write_count == 1)) begin
@@ -1683,14 +1681,6 @@ module test_spm
       memory_rdata[47:40] <= (0 >> 40) & { 8{ 1'd1 } };
       memory_rdata[55:48] <= (0 >> 48) & { 8{ 1'd1 } };
       memory_rdata[63:56] <= (0 >> 56) & { 8{ 1'd1 } };
-      memory_rdata[71:64] <= (0 >> 64) & { 8{ 1'd1 } };
-      memory_rdata[79:72] <= (0 >> 72) & { 8{ 1'd1 } };
-      memory_rdata[87:80] <= (0 >> 80) & { 8{ 1'd1 } };
-      memory_rdata[95:88] <= (0 >> 88) & { 8{ 1'd1 } };
-      memory_rdata[103:96] <= (0 >> 96) & { 8{ 1'd1 } };
-      memory_rdata[111:104] <= (0 >> 104) & { 8{ 1'd1 } };
-      memory_rdata[119:112] <= (0 >> 112) & { 8{ 1'd1 } };
-      memory_rdata[127:120] <= (0 >> 120) & { 8{ 1'd1 } };
       memory_rvalid <= 0;
       memory_rlast <= 0;
       __memory_rdata_fsm_cond_11_0_1 <= 0;
@@ -1770,33 +1760,9 @@ module test_spm
           if(memory_rready | !memory_rvalid) begin
             memory_rdata[63:56] <= _memory_mem[_read_addr + 7];
           end 
-          if(memory_rready | !memory_rvalid) begin
-            memory_rdata[71:64] <= _memory_mem[_read_addr + 8];
-          end 
-          if(memory_rready | !memory_rvalid) begin
-            memory_rdata[79:72] <= _memory_mem[_read_addr + 9];
-          end 
-          if(memory_rready | !memory_rvalid) begin
-            memory_rdata[87:80] <= _memory_mem[_read_addr + 10];
-          end 
-          if(memory_rready | !memory_rvalid) begin
-            memory_rdata[95:88] <= _memory_mem[_read_addr + 11];
-          end 
-          if(memory_rready | !memory_rvalid) begin
-            memory_rdata[103:96] <= _memory_mem[_read_addr + 12];
-          end 
-          if(memory_rready | !memory_rvalid) begin
-            memory_rdata[111:104] <= _memory_mem[_read_addr + 13];
-          end 
-          if(memory_rready | !memory_rvalid) begin
-            memory_rdata[119:112] <= _memory_mem[_read_addr + 14];
-          end 
-          if(memory_rready | !memory_rvalid) begin
-            memory_rdata[127:120] <= _memory_mem[_read_addr + 15];
-          end 
           if((_sleep_interval_count < 15) && (_read_count > 0) && memory_rready | !memory_rvalid) begin
             memory_rvalid <= 1;
-            _read_addr <= _read_addr + 16;
+            _read_addr <= _read_addr + 8;
             _read_count <= _read_count - 1;
           end 
           if((_sleep_interval_count < 15) && (_read_count == 1) && memory_rready | !memory_rvalid) begin
@@ -1963,11 +1929,11 @@ module test_spm
   always @(posedge CLK) begin
     if(RST) begin
       th_ctrl <= th_ctrl_init;
-      axim_rdata_87 <= 0;
-      _th_ctrl_i_1 <= 0;
-      write_data_86 <= 0;
-      axim_rdata_88 <= 0;
       axim_rdata_89 <= 0;
+      _th_ctrl_i_0 <= 0;
+      write_data_88 <= 0;
+      axim_rdata_90 <= 0;
+      axim_rdata_91 <= 0;
       complete <= 0;
     end else begin
       case(th_ctrl)
@@ -1993,14 +1959,14 @@ module test_spm
         end
         th_ctrl_4: begin
           if(_maxi_spm_rvalid_sb_0) begin
-            axim_rdata_87 <= _maxi_spm_rdata_sb_0;
+            axim_rdata_89 <= _maxi_spm_rdata_sb_0;
           end 
           if(_maxi_spm_rvalid_sb_0) begin
             th_ctrl <= th_ctrl_5;
           end 
         end
         th_ctrl_5: begin
-          if(axim_rdata_87 == 0) begin
+          if(axim_rdata_89 == 0) begin
             th_ctrl <= th_ctrl_6;
           end else begin
             th_ctrl <= th_ctrl_7;
@@ -2013,7 +1979,7 @@ module test_spm
           th_ctrl <= th_ctrl_1;
         end
         th_ctrl_8: begin
-          // $display("DMA Read from AXI Manager");
+          $display("DMA Read from AXI Manager");
           th_ctrl <= th_ctrl_9;
         end
         th_ctrl_9: begin
@@ -2167,18 +2133,18 @@ module test_spm
           end 
         end
         th_ctrl_39: begin
-          _th_ctrl_i_1 <= 0;
+          _th_ctrl_i_0 <= 0;
           th_ctrl <= th_ctrl_40;
         end
         th_ctrl_40: begin
-          if(_th_ctrl_i_1 < 4) begin
+          if(_th_ctrl_i_0 < 4) begin
             th_ctrl <= th_ctrl_41;
           end else begin
             th_ctrl <= th_ctrl_45;
           end
         end
         th_ctrl_41: begin
-          write_data_86 <= _th_ctrl_i_1 + 4096 + (_th_ctrl_i_1 << 32) + (_th_ctrl_i_1 << 64) + (_th_ctrl_i_1 << 96);
+          write_data_88 <= _th_ctrl_i_0 + 4096 + (_th_ctrl_i_0 << 32) + (_th_ctrl_i_0 << 64) + (_th_ctrl_i_0 << 96);
           th_ctrl <= th_ctrl_42;
         end
         th_ctrl_42: begin
@@ -2192,7 +2158,7 @@ module test_spm
           end 
         end
         th_ctrl_44: begin
-          _th_ctrl_i_1 <= _th_ctrl_i_1 + 1;
+          _th_ctrl_i_0 <= _th_ctrl_i_0 + 1;
           th_ctrl <= th_ctrl_40;
         end
         th_ctrl_45: begin
@@ -2214,14 +2180,14 @@ module test_spm
         end
         th_ctrl_48: begin
           if(_maxi_spm_rvalid_sb_0) begin
-            axim_rdata_88 <= _maxi_spm_rdata_sb_0;
+            axim_rdata_90 <= _maxi_spm_rdata_sb_0;
           end 
           if(_maxi_spm_rvalid_sb_0) begin
             th_ctrl <= th_ctrl_49;
           end 
         end
         th_ctrl_49: begin
-          if(axim_rdata_88 == 0) begin
+          if(axim_rdata_90 == 0) begin
             th_ctrl <= th_ctrl_50;
           end else begin
             th_ctrl <= th_ctrl_51;
@@ -2234,7 +2200,7 @@ module test_spm
           th_ctrl <= th_ctrl_45;
         end
         th_ctrl_52: begin
-          // $display("DMA Write to DRAM");
+          $display("DMA Write to DRAM");
           th_ctrl <= th_ctrl_53;
         end
         th_ctrl_53: begin
@@ -2406,14 +2372,14 @@ module test_spm
         end
         th_ctrl_86: begin
           if(_maxi_spm_rvalid_sb_0) begin
-            axim_rdata_89 <= _maxi_spm_rdata_sb_0;
+            axim_rdata_91 <= _maxi_spm_rdata_sb_0;
           end 
           if(_maxi_spm_rvalid_sb_0) begin
             th_ctrl <= th_ctrl_87;
           end 
         end
         th_ctrl_87: begin
-          if(axim_rdata_89 == 0) begin
+          if(axim_rdata_91 == 0) begin
             th_ctrl <= th_ctrl_88;
           end else begin
             th_ctrl <= th_ctrl_89;
@@ -2426,7 +2392,7 @@ module test_spm
           th_ctrl <= th_ctrl_83;
         end
         th_ctrl_90: begin
-          // $display("DMA Write to DRAM completed");
+          $display("DMA Write to DRAM completed");
           th_ctrl <= th_ctrl_91;
         end
         th_ctrl_91: begin
@@ -2448,10 +2414,10 @@ module test_spm
   always @(posedge CLK) begin
     if(RST) begin
       fsm <= fsm_init;
-      rdata_90 <= 0;
-      rdata_91 <= 0;
       rdata_92 <= 0;
       rdata_93 <= 0;
+      rdata_94 <= 0;
+      rdata_95 <= 0;
     end else begin
       case(fsm)
         fsm_init: begin
@@ -2464,33 +2430,33 @@ module test_spm
         end
         fsm_2: begin
           if(fsm == 2) begin
-            rdata_90 <= { _memory_mem[4099], _memory_mem[4098], _memory_mem[4097], _memory_mem[4096] };
+            rdata_92 <= { _memory_mem[4099], _memory_mem[4098], _memory_mem[4097], _memory_mem[4096] };
           end 
           fsm <= fsm_3;
         end
         fsm_3: begin
-          $display("memory[0x1000] = %x", rdata_90);
+          $display("memory[0x1000] = %x", rdata_92);
           if(fsm == 3) begin
-            rdata_91 <= { _memory_mem[4103], _memory_mem[4102], _memory_mem[4101], _memory_mem[4100] };
+            rdata_93 <= { _memory_mem[4103], _memory_mem[4102], _memory_mem[4101], _memory_mem[4100] };
           end 
           fsm <= fsm_4;
         end
         fsm_4: begin
-          $display("memory[0x1004] = %x", rdata_91);
+          $display("memory[0x1004] = %x", rdata_93);
           if(fsm == 4) begin
-            rdata_92 <= { _memory_mem[4107], _memory_mem[4106], _memory_mem[4105], _memory_mem[4104] };
+            rdata_94 <= { _memory_mem[4107], _memory_mem[4106], _memory_mem[4105], _memory_mem[4104] };
           end 
           fsm <= fsm_5;
         end
         fsm_5: begin
-          $display("memory[0x1008] = %x", rdata_92);
+          $display("memory[0x1008] = %x", rdata_94);
           if(fsm == 5) begin
-            rdata_93 <= { _memory_mem[4159], _memory_mem[4158], _memory_mem[4157], _memory_mem[4156] };
+            rdata_95 <= { _memory_mem[4159], _memory_mem[4158], _memory_mem[4157], _memory_mem[4156] };
           end 
           fsm <= fsm_6;
         end
         fsm_6: begin
-          $display("memory[0x100c] = %x", rdata_93);
+          $display("memory[0x100c] = %x", rdata_95);
           fsm <= fsm_7;
         end
       endcase
@@ -2719,16 +2685,16 @@ module _memory_wdata_fifo
   input CLK,
   input RST,
   input _memory_wdata_fifo_enq,
-  input [145-1:0] _memory_wdata_fifo_wdata,
+  input [73-1:0] _memory_wdata_fifo_wdata,
   output _memory_wdata_fifo_full,
   output _memory_wdata_fifo_almost_full,
   input _memory_wdata_fifo_deq,
-  output [145-1:0] _memory_wdata_fifo_rdata,
+  output [73-1:0] _memory_wdata_fifo_rdata,
   output _memory_wdata_fifo_empty,
   output _memory_wdata_fifo_almost_empty
 );
 
-  reg [145-1:0] mem [0:8-1];
+  reg [73-1:0] mem [0:8-1];
   reg [3-1:0] head;
   reg [3-1:0] tail;
   wire is_empty;
@@ -2739,7 +2705,7 @@ module _memory_wdata_fifo
   assign is_almost_empty = head == (tail + 1 & 7);
   assign is_full = (head + 1 & 7) == tail;
   assign is_almost_full = (head + 2 & 7) == tail;
-  wire [145-1:0] rdata;
+  wire [73-1:0] rdata;
   assign _memory_wdata_fifo_full = is_full;
   assign _memory_wdata_fifo_almost_full = is_almost_full || is_full;
   assign _memory_wdata_fifo_empty = is_empty;
@@ -2792,6 +2758,7 @@ module spm
   output [2-1:0] axi_s_ctrl_spm_rresp,
   output reg axi_s_ctrl_spm_rvalid,
   input axi_s_ctrl_spm_rready,
+  output reg [4-1:0] axi_m_dram_awid,
   output reg [32-1:0] axi_m_dram_awaddr,
   output reg [8-1:0] axi_m_dram_awlen,
   output [3-1:0] axi_m_dram_awsize,
@@ -2803,14 +2770,16 @@ module spm
   output [2-1:0] axi_m_dram_awuser,
   output reg axi_m_dram_awvalid,
   input axi_m_dram_awready,
-  output [128-1:0] axi_m_dram_wdata,
-  output [16-1:0] axi_m_dram_wstrb,
+  output [64-1:0] axi_m_dram_wdata,
+  output [8-1:0] axi_m_dram_wstrb,
   output axi_m_dram_wlast,
   output axi_m_dram_wvalid,
   input axi_m_dram_wready,
+  input [4-1:0] axi_m_dram_bid,
   input [2-1:0] axi_m_dram_bresp,
   input axi_m_dram_bvalid,
   output axi_m_dram_bready,
+  output reg [4-1:0] axi_m_dram_arid,
   output reg [32-1:0] axi_m_dram_araddr,
   output reg [8-1:0] axi_m_dram_arlen,
   output [3-1:0] axi_m_dram_arsize,
@@ -2822,7 +2791,8 @@ module spm
   output [2-1:0] axi_m_dram_aruser,
   output reg axi_m_dram_arvalid,
   input axi_m_dram_arready,
-  input [128-1:0] axi_m_dram_rdata,
+  input [4-1:0] axi_m_dram_rid,
+  input [64-1:0] axi_m_dram_rdata,
   input [2-1:0] axi_m_dram_rresp,
   input axi_m_dram_rlast,
   input axi_m_dram_rvalid,
@@ -2916,87 +2886,87 @@ module spm
                                (axis_maskaddr_5 == 6)? _axi_s_ctrl_spm_resetval_6 : 'hx;
   reg _axi_s_ctrl_spm_rdata_cond_0_1;
   assign axi_s_ctrl_spm_wready = _axi_s_ctrl_spm_register_fsm == 3;
-  assign axi_m_dram_awsize = 4;
+  assign axi_m_dram_awsize = 3;
   assign axi_m_dram_awburst = 1;
   assign axi_m_dram_awlock = 0;
   assign axi_m_dram_awcache = 3;
   assign axi_m_dram_awprot = 0;
   assign axi_m_dram_awqos = 0;
   assign axi_m_dram_awuser = 0;
-  reg [128-1:0] _axi_m_dram_wdata_sb_0;
-  reg [16-1:0] _axi_m_dram_wstrb_sb_0;
+  reg [64-1:0] _axi_m_dram_wdata_sb_0;
+  reg [8-1:0] _axi_m_dram_wstrb_sb_0;
   reg _axi_m_dram_wlast_sb_0;
   reg _axi_m_dram_wvalid_sb_0;
   wire _axi_m_dram_wready_sb_0;
   wire _sb_axi_m_dram_writedata_s_value_9;
   assign _sb_axi_m_dram_writedata_s_value_9 = _axi_m_dram_wlast_sb_0;
-  wire [16-1:0] _sb_axi_m_dram_writedata_s_value_10;
+  wire [8-1:0] _sb_axi_m_dram_writedata_s_value_10;
   assign _sb_axi_m_dram_writedata_s_value_10 = _axi_m_dram_wstrb_sb_0;
-  wire [128-1:0] _sb_axi_m_dram_writedata_s_value_11;
+  wire [64-1:0] _sb_axi_m_dram_writedata_s_value_11;
   assign _sb_axi_m_dram_writedata_s_value_11 = _axi_m_dram_wdata_sb_0;
-  wire [145-1:0] _sb_axi_m_dram_writedata_s_data_12;
+  wire [73-1:0] _sb_axi_m_dram_writedata_s_data_12;
   assign _sb_axi_m_dram_writedata_s_data_12 = { _sb_axi_m_dram_writedata_s_value_9, _sb_axi_m_dram_writedata_s_value_10, _sb_axi_m_dram_writedata_s_value_11 };
   wire _sb_axi_m_dram_writedata_s_valid_13;
   assign _sb_axi_m_dram_writedata_s_valid_13 = _axi_m_dram_wvalid_sb_0;
   wire _sb_axi_m_dram_writedata_m_ready_14;
   assign _sb_axi_m_dram_writedata_m_ready_14 = axi_m_dram_wready;
-  reg [145-1:0] _sb_axi_m_dram_writedata_data_15;
+  reg [73-1:0] _sb_axi_m_dram_writedata_data_15;
   reg _sb_axi_m_dram_writedata_valid_16;
   wire _sb_axi_m_dram_writedata_ready_17;
-  reg [145-1:0] _sb_axi_m_dram_writedata_tmp_data_18;
+  reg [73-1:0] _sb_axi_m_dram_writedata_tmp_data_18;
   reg _sb_axi_m_dram_writedata_tmp_valid_19;
-  wire [145-1:0] _sb_axi_m_dram_writedata_next_data_20;
+  wire [73-1:0] _sb_axi_m_dram_writedata_next_data_20;
   wire _sb_axi_m_dram_writedata_next_valid_21;
   assign _sb_axi_m_dram_writedata_ready_17 = !_sb_axi_m_dram_writedata_tmp_valid_19;
   assign _sb_axi_m_dram_writedata_next_data_20 = (_sb_axi_m_dram_writedata_tmp_valid_19)? _sb_axi_m_dram_writedata_tmp_data_18 : _sb_axi_m_dram_writedata_s_data_12;
   assign _sb_axi_m_dram_writedata_next_valid_21 = _sb_axi_m_dram_writedata_tmp_valid_19 || _sb_axi_m_dram_writedata_s_valid_13;
   wire _sb_axi_m_dram_writedata_m_value_22;
-  assign _sb_axi_m_dram_writedata_m_value_22 = _sb_axi_m_dram_writedata_data_15[144:144];
-  wire [16-1:0] _sb_axi_m_dram_writedata_m_value_23;
-  assign _sb_axi_m_dram_writedata_m_value_23 = _sb_axi_m_dram_writedata_data_15[143:128];
-  wire [128-1:0] _sb_axi_m_dram_writedata_m_value_24;
-  assign _sb_axi_m_dram_writedata_m_value_24 = _sb_axi_m_dram_writedata_data_15[127:0];
+  assign _sb_axi_m_dram_writedata_m_value_22 = _sb_axi_m_dram_writedata_data_15[72:72];
+  wire [8-1:0] _sb_axi_m_dram_writedata_m_value_23;
+  assign _sb_axi_m_dram_writedata_m_value_23 = _sb_axi_m_dram_writedata_data_15[71:64];
+  wire [64-1:0] _sb_axi_m_dram_writedata_m_value_24;
+  assign _sb_axi_m_dram_writedata_m_value_24 = _sb_axi_m_dram_writedata_data_15[63:0];
   assign _axi_m_dram_wready_sb_0 = _sb_axi_m_dram_writedata_ready_17;
   assign axi_m_dram_wdata = _sb_axi_m_dram_writedata_m_value_24;
   assign axi_m_dram_wstrb = _sb_axi_m_dram_writedata_m_value_23;
   assign axi_m_dram_wlast = _sb_axi_m_dram_writedata_m_value_22;
   assign axi_m_dram_wvalid = _sb_axi_m_dram_writedata_valid_16;
   assign axi_m_dram_bready = 1;
-  assign axi_m_dram_arsize = 4;
+  assign axi_m_dram_arsize = 3;
   assign axi_m_dram_arburst = 1;
   assign axi_m_dram_arlock = 0;
   assign axi_m_dram_arcache = 3;
   assign axi_m_dram_arprot = 0;
   assign axi_m_dram_arqos = 0;
   assign axi_m_dram_aruser = 0;
-  wire [128-1:0] _axi_m_dram_rdata_sb_0;
+  wire [64-1:0] _axi_m_dram_rdata_sb_0;
   wire _axi_m_dram_rlast_sb_0;
   wire _axi_m_dram_rvalid_sb_0;
   wire _axi_m_dram_rready_sb_0;
   wire _sb_axi_m_dram_readdata_s_value_25;
   assign _sb_axi_m_dram_readdata_s_value_25 = axi_m_dram_rlast;
-  wire [128-1:0] _sb_axi_m_dram_readdata_s_value_26;
+  wire [64-1:0] _sb_axi_m_dram_readdata_s_value_26;
   assign _sb_axi_m_dram_readdata_s_value_26 = axi_m_dram_rdata;
-  wire [129-1:0] _sb_axi_m_dram_readdata_s_data_27;
+  wire [65-1:0] _sb_axi_m_dram_readdata_s_data_27;
   assign _sb_axi_m_dram_readdata_s_data_27 = { _sb_axi_m_dram_readdata_s_value_25, _sb_axi_m_dram_readdata_s_value_26 };
   wire _sb_axi_m_dram_readdata_s_valid_28;
   assign _sb_axi_m_dram_readdata_s_valid_28 = axi_m_dram_rvalid;
   wire _sb_axi_m_dram_readdata_m_ready_29;
   assign _sb_axi_m_dram_readdata_m_ready_29 = _axi_m_dram_rready_sb_0;
-  reg [129-1:0] _sb_axi_m_dram_readdata_data_30;
+  reg [65-1:0] _sb_axi_m_dram_readdata_data_30;
   reg _sb_axi_m_dram_readdata_valid_31;
   wire _sb_axi_m_dram_readdata_ready_32;
-  reg [129-1:0] _sb_axi_m_dram_readdata_tmp_data_33;
+  reg [65-1:0] _sb_axi_m_dram_readdata_tmp_data_33;
   reg _sb_axi_m_dram_readdata_tmp_valid_34;
-  wire [129-1:0] _sb_axi_m_dram_readdata_next_data_35;
+  wire [65-1:0] _sb_axi_m_dram_readdata_next_data_35;
   wire _sb_axi_m_dram_readdata_next_valid_36;
   assign _sb_axi_m_dram_readdata_ready_32 = !_sb_axi_m_dram_readdata_tmp_valid_34;
   assign _sb_axi_m_dram_readdata_next_data_35 = (_sb_axi_m_dram_readdata_tmp_valid_34)? _sb_axi_m_dram_readdata_tmp_data_33 : _sb_axi_m_dram_readdata_s_data_27;
   assign _sb_axi_m_dram_readdata_next_valid_36 = _sb_axi_m_dram_readdata_tmp_valid_34 || _sb_axi_m_dram_readdata_s_valid_28;
   wire _sb_axi_m_dram_readdata_m_value_37;
-  assign _sb_axi_m_dram_readdata_m_value_37 = _sb_axi_m_dram_readdata_data_30[128:128];
-  wire [128-1:0] _sb_axi_m_dram_readdata_m_value_38;
-  assign _sb_axi_m_dram_readdata_m_value_38 = _sb_axi_m_dram_readdata_data_30[127:0];
+  assign _sb_axi_m_dram_readdata_m_value_37 = _sb_axi_m_dram_readdata_data_30[64:64];
+  wire [64-1:0] _sb_axi_m_dram_readdata_m_value_38;
+  assign _sb_axi_m_dram_readdata_m_value_38 = _sb_axi_m_dram_readdata_data_30[63:0];
   assign _axi_m_dram_rdata_sb_0 = _sb_axi_m_dram_readdata_m_value_38;
   assign _axi_m_dram_rlast_sb_0 = _sb_axi_m_dram_readdata_m_value_37;
   assign _axi_m_dram_rvalid_sb_0 = _sb_axi_m_dram_readdata_valid_31;
@@ -3419,9 +3389,9 @@ module spm
   reg [32-1:0] spm_thread;
   localparam spm_thread_init = 0;
   wire [32-1:0] mask_addr_shifted_77;
-  assign mask_addr_shifted_77 = dram_addr_69 >> 4;
+  assign mask_addr_shifted_77 = dram_addr_69 >> 3;
   wire [32-1:0] mask_addr_masked_78;
-  assign mask_addr_masked_78 = mask_addr_shifted_77 << 4;
+  assign mask_addr_masked_78 = mask_addr_shifted_77 << 3;
   reg [32-1:0] _axi_m_dram_read_req_fsm;
   localparam _axi_m_dram_read_req_fsm_init = 0;
   reg [33-1:0] _axi_m_dram_read_cur_global_size;
@@ -3445,322 +3415,309 @@ module spm
   assign _tmp_86 = !_axi_m_dram_read_req_fifo_almost_full;
   reg [_tmp_85-1:0] __tmp_86_1;
   wire [32-1:0] mask_addr_shifted_87;
-  assign mask_addr_shifted_87 = _axi_m_dram_read_global_addr >> 4;
+  assign mask_addr_shifted_87 = _axi_m_dram_read_global_addr >> 3;
   wire [32-1:0] mask_addr_masked_88;
-  assign mask_addr_masked_88 = mask_addr_shifted_87 << 4;
+  assign mask_addr_masked_88 = mask_addr_shifted_87 << 3;
   wire [32-1:0] mask_addr_shifted_89;
-  assign mask_addr_shifted_89 = _axi_m_dram_read_global_addr >> 4;
+  assign mask_addr_shifted_89 = _axi_m_dram_read_global_addr >> 3;
   wire [32-1:0] mask_addr_masked_90;
-  assign mask_addr_masked_90 = mask_addr_shifted_89 << 4;
+  assign mask_addr_masked_90 = mask_addr_shifted_89 << 3;
   wire [32-1:0] mask_addr_shifted_91;
-  assign mask_addr_shifted_91 = _axi_m_dram_read_global_addr >> 4;
+  assign mask_addr_shifted_91 = _axi_m_dram_read_global_addr >> 3;
   wire [32-1:0] mask_addr_masked_92;
-  assign mask_addr_masked_92 = mask_addr_shifted_91 << 4;
+  assign mask_addr_masked_92 = mask_addr_shifted_91 << 3;
   wire [32-1:0] mask_addr_shifted_93;
-  assign mask_addr_shifted_93 = _axi_m_dram_read_global_addr >> 4;
+  assign mask_addr_shifted_93 = _axi_m_dram_read_global_addr >> 3;
   wire [32-1:0] mask_addr_masked_94;
-  assign mask_addr_masked_94 = mask_addr_shifted_93 << 4;
+  assign mask_addr_masked_94 = mask_addr_shifted_93 << 3;
   wire [32-1:0] mask_addr_shifted_95;
-  assign mask_addr_shifted_95 = _axi_m_dram_read_global_addr >> 4;
+  assign mask_addr_shifted_95 = _axi_m_dram_read_global_addr >> 3;
   wire [32-1:0] mask_addr_masked_96;
-  assign mask_addr_masked_96 = mask_addr_shifted_95 << 4;
+  assign mask_addr_masked_96 = mask_addr_shifted_95 << 3;
   wire [32-1:0] mask_addr_shifted_97;
-  assign mask_addr_shifted_97 = _axi_m_dram_read_global_addr >> 4;
+  assign mask_addr_shifted_97 = _axi_m_dram_read_global_addr >> 3;
   wire [32-1:0] mask_addr_masked_98;
-  assign mask_addr_masked_98 = mask_addr_shifted_97 << 4;
+  assign mask_addr_masked_98 = mask_addr_shifted_97 << 3;
   reg _axi_m_dram_raddr_cond_0_1;
-  reg [32-1:0] _axi_m_dram_read_data_wide_fsm;
-  localparam _axi_m_dram_read_data_wide_fsm_init = 0;
-  assign _axi_m_dram_read_req_fifo_deq = ((_axi_m_dram_read_data_wide_fsm == 0) && (!_axi_m_dram_read_data_busy && !_axi_m_dram_read_req_fifo_empty && (_axi_m_dram_read_op_sel_fifo == 1)) && !_axi_m_dram_read_req_fifo_empty)? 1 : 0;
-  reg [128-1:0] _axi_m_dram_read_wide_wdata_99;
-  reg _axi_m_dram_read_wide_wvalid_100;
-  reg [1-1:0] _axi_m_dram_read_wide_count_101;
+  reg [32-1:0] _axi_m_dram_read_data_fsm;
+  localparam _axi_m_dram_read_data_fsm_init = 0;
+  assign _axi_m_dram_read_req_fifo_deq = ((_axi_m_dram_read_data_fsm == 0) && (!_axi_m_dram_read_data_busy && !_axi_m_dram_read_req_fifo_empty && (_axi_m_dram_read_op_sel_fifo == 1)) && !_axi_m_dram_read_req_fifo_empty)? 1 : 0;
   reg [32-1:0] write_burst_fsm_0;
   localparam write_burst_fsm_0_init = 0;
-  reg [9-1:0] write_burst_addr_102;
-  reg [9-1:0] write_burst_stride_103;
-  reg [33-1:0] write_burst_length_104;
-  reg write_burst_done_105;
-  assign _axi_m_dram_rready_sb_0 = (_axi_m_dram_read_data_wide_fsm == 2) && (_axi_m_dram_read_op_sel_buf == 1) && (_axi_m_dram_read_wide_count_101 == 0);
-  wire [32-1:0] mask_addr_shifted_106;
-  assign mask_addr_shifted_106 = dram_addr_69 >> 4;
-  wire [32-1:0] mask_addr_masked_107;
-  assign mask_addr_masked_107 = mask_addr_shifted_106 << 4;
+  reg [9-1:0] write_burst_addr_99;
+  reg [9-1:0] write_burst_stride_100;
+  reg [33-1:0] write_burst_length_101;
+  reg write_burst_done_102;
+  assign _axi_m_dram_rready_sb_0 = _axi_m_dram_read_data_fsm == 2;
+  wire [32-1:0] mask_addr_shifted_103;
+  assign mask_addr_shifted_103 = dram_addr_69 >> 3;
+  wire [32-1:0] mask_addr_masked_104;
+  assign mask_addr_masked_104 = mask_addr_shifted_103 << 3;
   reg [32-1:0] _axi_m_dram_write_req_fsm;
   localparam _axi_m_dram_write_req_fsm_init = 0;
   reg [33-1:0] _axi_m_dram_write_cur_global_size;
   reg _axi_m_dram_write_cont;
-  wire [8-1:0] pack_write_req_op_sel_108;
-  wire [32-1:0] pack_write_req_local_addr_109;
-  wire [32-1:0] pack_write_req_local_stride_110;
-  wire [33-1:0] pack_write_req_size_111;
-  wire [32-1:0] pack_write_req_local_blocksize_112;
-  assign pack_write_req_op_sel_108 = _axi_m_dram_write_op_sel;
-  assign pack_write_req_local_addr_109 = _axi_m_dram_write_local_addr;
-  assign pack_write_req_local_stride_110 = _axi_m_dram_write_local_stride;
-  assign pack_write_req_size_111 = _axi_m_dram_write_local_size;
-  assign pack_write_req_local_blocksize_112 = _axi_m_dram_write_local_blocksize;
-  wire [137-1:0] pack_write_req_packed_113;
-  assign pack_write_req_packed_113 = { pack_write_req_op_sel_108, pack_write_req_local_addr_109, pack_write_req_local_stride_110, pack_write_req_size_111, pack_write_req_local_blocksize_112 };
-  localparam _tmp_114 = 1;
-  wire [_tmp_114-1:0] _tmp_115;
-  assign _tmp_115 = !_axi_m_dram_write_req_fifo_almost_full;
-  reg [_tmp_114-1:0] __tmp_115_1;
-  wire [32-1:0] mask_addr_shifted_116;
-  assign mask_addr_shifted_116 = _axi_m_dram_write_global_addr >> 4;
-  wire [32-1:0] mask_addr_masked_117;
-  assign mask_addr_masked_117 = mask_addr_shifted_116 << 4;
-  wire [32-1:0] mask_addr_shifted_118;
-  assign mask_addr_shifted_118 = _axi_m_dram_write_global_addr >> 4;
-  wire [32-1:0] mask_addr_masked_119;
-  assign mask_addr_masked_119 = mask_addr_shifted_118 << 4;
-  wire [32-1:0] mask_addr_shifted_120;
-  assign mask_addr_shifted_120 = _axi_m_dram_write_global_addr >> 4;
-  wire [32-1:0] mask_addr_masked_121;
-  assign mask_addr_masked_121 = mask_addr_shifted_120 << 4;
-  wire [32-1:0] mask_addr_shifted_122;
-  assign mask_addr_shifted_122 = _axi_m_dram_write_global_addr >> 4;
-  wire [32-1:0] mask_addr_masked_123;
-  assign mask_addr_masked_123 = mask_addr_shifted_122 << 4;
-  wire [32-1:0] mask_addr_shifted_124;
-  assign mask_addr_shifted_124 = _axi_m_dram_write_global_addr >> 4;
-  wire [32-1:0] mask_addr_masked_125;
-  assign mask_addr_masked_125 = mask_addr_shifted_124 << 4;
-  wire [32-1:0] mask_addr_shifted_126;
-  assign mask_addr_shifted_126 = _axi_m_dram_write_global_addr >> 4;
-  wire [32-1:0] mask_addr_masked_127;
-  assign mask_addr_masked_127 = mask_addr_shifted_126 << 4;
-  wire [8-1:0] pack_write_req_op_sel_128;
-  wire [32-1:0] pack_write_req_local_addr_129;
-  wire [32-1:0] pack_write_req_local_stride_130;
-  wire [33-1:0] pack_write_req_size_131;
-  wire [32-1:0] pack_write_req_local_blocksize_132;
-  assign pack_write_req_op_sel_128 = _axi_m_dram_write_op_sel;
-  assign pack_write_req_local_addr_129 = _axi_m_dram_write_local_addr;
-  assign pack_write_req_local_stride_130 = _axi_m_dram_write_local_stride;
-  assign pack_write_req_size_131 = _axi_m_dram_write_cur_global_size;
-  assign pack_write_req_local_blocksize_132 = _axi_m_dram_write_local_blocksize;
-  wire [137-1:0] pack_write_req_packed_133;
-  assign pack_write_req_packed_133 = { pack_write_req_op_sel_128, pack_write_req_local_addr_129, pack_write_req_local_stride_130, pack_write_req_size_131, pack_write_req_local_blocksize_132 };
-  assign _axi_m_dram_write_req_fifo_wdata = ((_axi_m_dram_write_req_fsm == 1) && !_axi_m_dram_write_req_fifo_almost_full && (axi_m_dram_awready || !axi_m_dram_awvalid) && (_axi_m_dram_outstanding_wcount < 6))? pack_write_req_packed_133 : 
-                                            ((_axi_m_dram_write_req_fsm == 0) && _axi_m_dram_write_start && !_axi_m_dram_write_req_fifo_almost_full)? pack_write_req_packed_113 : 'hx;
+  wire [8-1:0] pack_write_req_op_sel_105;
+  wire [32-1:0] pack_write_req_local_addr_106;
+  wire [32-1:0] pack_write_req_local_stride_107;
+  wire [33-1:0] pack_write_req_size_108;
+  wire [32-1:0] pack_write_req_local_blocksize_109;
+  assign pack_write_req_op_sel_105 = _axi_m_dram_write_op_sel;
+  assign pack_write_req_local_addr_106 = _axi_m_dram_write_local_addr;
+  assign pack_write_req_local_stride_107 = _axi_m_dram_write_local_stride;
+  assign pack_write_req_size_108 = _axi_m_dram_write_local_size;
+  assign pack_write_req_local_blocksize_109 = _axi_m_dram_write_local_blocksize;
+  wire [137-1:0] pack_write_req_packed_110;
+  assign pack_write_req_packed_110 = { pack_write_req_op_sel_105, pack_write_req_local_addr_106, pack_write_req_local_stride_107, pack_write_req_size_108, pack_write_req_local_blocksize_109 };
+  localparam _tmp_111 = 1;
+  wire [_tmp_111-1:0] _tmp_112;
+  assign _tmp_112 = !_axi_m_dram_write_req_fifo_almost_full;
+  reg [_tmp_111-1:0] __tmp_112_1;
+  wire [32-1:0] mask_addr_shifted_113;
+  assign mask_addr_shifted_113 = _axi_m_dram_write_global_addr >> 3;
+  wire [32-1:0] mask_addr_masked_114;
+  assign mask_addr_masked_114 = mask_addr_shifted_113 << 3;
+  wire [32-1:0] mask_addr_shifted_115;
+  assign mask_addr_shifted_115 = _axi_m_dram_write_global_addr >> 3;
+  wire [32-1:0] mask_addr_masked_116;
+  assign mask_addr_masked_116 = mask_addr_shifted_115 << 3;
+  wire [32-1:0] mask_addr_shifted_117;
+  assign mask_addr_shifted_117 = _axi_m_dram_write_global_addr >> 3;
+  wire [32-1:0] mask_addr_masked_118;
+  assign mask_addr_masked_118 = mask_addr_shifted_117 << 3;
+  wire [32-1:0] mask_addr_shifted_119;
+  assign mask_addr_shifted_119 = _axi_m_dram_write_global_addr >> 3;
+  wire [32-1:0] mask_addr_masked_120;
+  assign mask_addr_masked_120 = mask_addr_shifted_119 << 3;
+  wire [32-1:0] mask_addr_shifted_121;
+  assign mask_addr_shifted_121 = _axi_m_dram_write_global_addr >> 3;
+  wire [32-1:0] mask_addr_masked_122;
+  assign mask_addr_masked_122 = mask_addr_shifted_121 << 3;
+  wire [32-1:0] mask_addr_shifted_123;
+  assign mask_addr_shifted_123 = _axi_m_dram_write_global_addr >> 3;
+  wire [32-1:0] mask_addr_masked_124;
+  assign mask_addr_masked_124 = mask_addr_shifted_123 << 3;
+  wire [8-1:0] pack_write_req_op_sel_125;
+  wire [32-1:0] pack_write_req_local_addr_126;
+  wire [32-1:0] pack_write_req_local_stride_127;
+  wire [33-1:0] pack_write_req_size_128;
+  wire [32-1:0] pack_write_req_local_blocksize_129;
+  assign pack_write_req_op_sel_125 = _axi_m_dram_write_op_sel;
+  assign pack_write_req_local_addr_126 = _axi_m_dram_write_local_addr;
+  assign pack_write_req_local_stride_127 = _axi_m_dram_write_local_stride;
+  assign pack_write_req_size_128 = _axi_m_dram_write_cur_global_size;
+  assign pack_write_req_local_blocksize_129 = _axi_m_dram_write_local_blocksize;
+  wire [137-1:0] pack_write_req_packed_130;
+  assign pack_write_req_packed_130 = { pack_write_req_op_sel_125, pack_write_req_local_addr_126, pack_write_req_local_stride_127, pack_write_req_size_128, pack_write_req_local_blocksize_129 };
+  assign _axi_m_dram_write_req_fifo_wdata = ((_axi_m_dram_write_req_fsm == 1) && !_axi_m_dram_write_req_fifo_almost_full && (axi_m_dram_awready || !axi_m_dram_awvalid) && (_axi_m_dram_outstanding_wcount < 6))? pack_write_req_packed_130 : 
+                                            ((_axi_m_dram_write_req_fsm == 0) && _axi_m_dram_write_start && !_axi_m_dram_write_req_fifo_almost_full)? pack_write_req_packed_110 : 'hx;
   assign _axi_m_dram_write_req_fifo_enq = ((_axi_m_dram_write_req_fsm == 1) && !_axi_m_dram_write_req_fifo_almost_full && (axi_m_dram_awready || !axi_m_dram_awvalid) && (_axi_m_dram_outstanding_wcount < 6))? (_axi_m_dram_write_req_fsm == 1) && !_axi_m_dram_write_req_fifo_almost_full && (axi_m_dram_awready || !axi_m_dram_awvalid) && (_axi_m_dram_outstanding_wcount < 6) && !_axi_m_dram_write_req_fifo_almost_full : 
                                           ((_axi_m_dram_write_req_fsm == 0) && _axi_m_dram_write_start && !_axi_m_dram_write_req_fifo_almost_full)? (_axi_m_dram_write_req_fsm == 0) && _axi_m_dram_write_start && !_axi_m_dram_write_req_fifo_almost_full && !_axi_m_dram_write_req_fifo_almost_full : 0;
-  localparam _tmp_134 = 1;
-  wire [_tmp_134-1:0] _tmp_135;
-  assign _tmp_135 = !_axi_m_dram_write_req_fifo_almost_full;
-  reg [_tmp_134-1:0] __tmp_135_1;
+  localparam _tmp_131 = 1;
+  wire [_tmp_131-1:0] _tmp_132;
+  assign _tmp_132 = !_axi_m_dram_write_req_fifo_almost_full;
+  reg [_tmp_131-1:0] __tmp_132_1;
   reg _axi_m_dram_waddr_cond_0_1;
-  reg [32-1:0] _axi_m_dram_write_data_wide_fsm;
-  localparam _axi_m_dram_write_data_wide_fsm_init = 0;
-  reg [1-1:0] _axi_m_dram_write_wide_count_136;
+  reg [32-1:0] _axi_m_dram_write_data_fsm;
+  localparam _axi_m_dram_write_data_fsm_init = 0;
   reg [32-1:0] read_burst_fsm_1;
   localparam read_burst_fsm_1_init = 0;
-  reg [9-1:0] read_burst_addr_137;
-  reg [9-1:0] read_burst_stride_138;
-  reg [33-1:0] read_burst_length_139;
-  reg read_burst_rvalid_140;
-  reg read_burst_rlast_141;
-  localparam _tmp_142 = 1;
-  wire [_tmp_142-1:0] _tmp_143;
-  assign _tmp_143 = (read_burst_fsm_1 == 1) && (!read_burst_rvalid_140 || (_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0));
-  reg [_tmp_142-1:0] __tmp_143_1;
-  wire [64-1:0] read_burst_rdata_144;
-  assign read_burst_rdata_144 = ram_spm_0_rdata;
-  assign _axi_m_dram_write_req_fifo_deq = ((_axi_m_dram_write_data_wide_fsm == 2) && (!_axi_m_dram_write_req_fifo_empty && (_axi_m_dram_write_size_buf == 0)) && !_axi_m_dram_write_req_fifo_empty)? 1 : 
-                                          ((_axi_m_dram_write_data_wide_fsm == 0) && (!_axi_m_dram_write_data_busy && !_axi_m_dram_write_req_fifo_empty && (_axi_m_dram_write_op_sel_fifo == 1)) && !_axi_m_dram_write_req_fifo_empty)? 1 : 0;
-  reg [128-1:0] _axi_m_dram_write_wide_wdata_145;
+  reg [9-1:0] read_burst_addr_133;
+  reg [9-1:0] read_burst_stride_134;
+  reg [33-1:0] read_burst_length_135;
+  reg read_burst_rvalid_136;
+  reg read_burst_rlast_137;
+  localparam _tmp_138 = 1;
+  wire [_tmp_138-1:0] _tmp_139;
+  assign _tmp_139 = (read_burst_fsm_1 == 1) && (!read_burst_rvalid_136 || (_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0) && (_axi_m_dram_write_size_buf > 0));
+  reg [_tmp_138-1:0] __tmp_139_1;
+  wire [64-1:0] read_burst_rdata_140;
+  assign read_burst_rdata_140 = ram_spm_0_rdata;
+  assign _axi_m_dram_write_req_fifo_deq = ((_axi_m_dram_write_data_fsm == 2) && (!_axi_m_dram_write_req_fifo_empty && (_axi_m_dram_write_size_buf == 0)) && !_axi_m_dram_write_req_fifo_empty)? 1 : 
+                                          ((_axi_m_dram_write_data_fsm == 0) && (!_axi_m_dram_write_data_busy && !_axi_m_dram_write_req_fifo_empty && (_axi_m_dram_write_op_sel_fifo == 1)) && !_axi_m_dram_write_req_fifo_empty)? 1 : 0;
   reg _axi_m_dram_wdata_cond_0_1;
-  wire [8-1:0] pack_write_req_op_sel_146;
-  wire [32-1:0] pack_write_req_local_addr_147;
-  wire [32-1:0] pack_write_req_local_stride_148;
-  wire [33-1:0] pack_write_req_local_size_149;
-  assign pack_write_req_op_sel_146 = 1;
-  assign pack_write_req_local_addr_147 = spm_addr_70 >>> 3;
-  assign pack_write_req_local_stride_148 = 1;
-  assign pack_write_req_local_size_149 = 8;
-  wire [105-1:0] pack_write_req_packed_150;
-  assign pack_write_req_packed_150 = { pack_write_req_op_sel_146, pack_write_req_local_addr_147, pack_write_req_local_stride_148, pack_write_req_local_size_149 };
-  assign _axis_out_mac_spm_write_req_fifo_wdata = ((spm_thread == 20) && !_axis_out_mac_spm_write_req_fifo_almost_full)? pack_write_req_packed_150 : 'hx;
-  assign _axis_out_mac_spm_write_req_fifo_enq = ((spm_thread == 20) && !_axis_out_mac_spm_write_req_fifo_almost_full)? (spm_thread == 20) && !_axis_out_mac_spm_write_req_fifo_almost_full && !_axis_out_mac_spm_write_req_fifo_almost_full : 0;
-  localparam _tmp_151 = 1;
-  wire [_tmp_151-1:0] _tmp_152;
-  assign _tmp_152 = !_axis_out_mac_spm_write_req_fifo_almost_full;
-  reg [_tmp_151-1:0] __tmp_152_1;
+  wire [8-1:0] pack_write_req_op_sel_141;
+  wire [32-1:0] pack_write_req_local_addr_142;
+  wire [32-1:0] pack_write_req_local_stride_143;
+  wire [33-1:0] pack_write_req_local_size_144;
+  assign pack_write_req_op_sel_141 = 1;
+  assign pack_write_req_local_addr_142 = spm_addr_70 >>> 3;
+  assign pack_write_req_local_stride_143 = 1;
+  assign pack_write_req_local_size_144 = 8;
+  wire [105-1:0] pack_write_req_packed_145;
+  assign pack_write_req_packed_145 = { pack_write_req_op_sel_141, pack_write_req_local_addr_142, pack_write_req_local_stride_143, pack_write_req_local_size_144 };
+  assign _axis_out_mac_spm_write_req_fifo_wdata = ((spm_thread == 19) && !_axis_out_mac_spm_write_req_fifo_almost_full)? pack_write_req_packed_145 : 'hx;
+  assign _axis_out_mac_spm_write_req_fifo_enq = ((spm_thread == 19) && !_axis_out_mac_spm_write_req_fifo_almost_full)? (spm_thread == 19) && !_axis_out_mac_spm_write_req_fifo_almost_full && !_axis_out_mac_spm_write_req_fifo_almost_full : 0;
+  localparam _tmp_146 = 1;
+  wire [_tmp_146-1:0] _tmp_147;
+  assign _tmp_147 = !_axis_out_mac_spm_write_req_fifo_almost_full;
+  reg [_tmp_146-1:0] __tmp_147_1;
   reg [32-1:0] _axis_out_mac_spm_write_data_wide_fsm;
   localparam _axis_out_mac_spm_write_data_wide_fsm_init = 0;
   assign _axis_out_mac_spm_write_req_fifo_deq = ((_axis_out_mac_spm_write_data_wide_fsm == 0) && (!_axis_out_mac_spm_write_data_busy && !_axis_out_mac_spm_write_req_fifo_empty && (_axis_out_mac_spm_write_op_sel_fifo == 1)) && !_axis_out_mac_spm_write_req_fifo_empty)? 1 : 0;
-  reg [1-1:0] _axis_out_mac_spm_write_wide_count_153;
+  reg [1-1:0] _axis_out_mac_spm_write_wide_count_148;
   reg [32-1:0] read_burst_fsm_2;
   localparam read_burst_fsm_2_init = 0;
-  reg [9-1:0] read_burst_addr_154;
-  reg [9-1:0] read_burst_stride_155;
-  reg [33-1:0] read_burst_length_156;
-  reg read_burst_rvalid_157;
-  reg read_burst_rlast_158;
-  localparam _tmp_159 = 1;
-  wire [_tmp_159-1:0] _tmp_160;
-  assign _tmp_160 = (read_burst_fsm_2 == 1) && (!read_burst_rvalid_157 || (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0)));
-  reg [_tmp_159-1:0] __tmp_160_1;
-  wire [64-1:0] read_burst_rdata_161;
-  assign read_burst_rdata_161 = ram_spm_0_rdata;
-  reg [128-1:0] _axis_out_mac_spm_write_wide_wdata_162;
+  reg [9-1:0] read_burst_addr_149;
+  reg [9-1:0] read_burst_stride_150;
+  reg [33-1:0] read_burst_length_151;
+  reg read_burst_rvalid_152;
+  reg read_burst_rlast_153;
+  localparam _tmp_154 = 1;
+  wire [_tmp_154-1:0] _tmp_155;
+  assign _tmp_155 = (read_burst_fsm_2 == 1) && (!read_burst_rvalid_152 || (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0)));
+  reg [_tmp_154-1:0] __tmp_155_1;
+  wire [64-1:0] read_burst_rdata_156;
+  assign read_burst_rdata_156 = ram_spm_0_rdata;
+  reg [128-1:0] _axis_out_mac_spm_write_wide_wdata_157;
   reg _axis_out_mac_spm_cond_0_1;
-  reg signed [32-1:0] _spm_thread_i_0;
+  wire [8-1:0] pack_read_req_op_sel_158;
+  wire [32-1:0] pack_read_req_local_addr_159;
+  wire [32-1:0] pack_read_req_local_stride_160;
+  wire [33-1:0] pack_read_req_local_size_161;
+  assign pack_read_req_op_sel_158 = 1;
+  assign pack_read_req_local_addr_159 = spm_addr_70 >>> 3;
+  assign pack_read_req_local_stride_160 = 1;
+  assign pack_read_req_local_size_161 = 8;
+  wire [105-1:0] pack_read_req_packed_162;
+  assign pack_read_req_packed_162 = { pack_read_req_op_sel_158, pack_read_req_local_addr_159, pack_read_req_local_stride_160, pack_read_req_local_size_161 };
+  assign _axis_in_axim_spm_read_req_fifo_wdata = ((spm_thread == 24) && !_axis_in_axim_spm_read_req_fifo_almost_full)? pack_read_req_packed_162 : 'hx;
+  assign _axis_in_axim_spm_read_req_fifo_enq = ((spm_thread == 24) && !_axis_in_axim_spm_read_req_fifo_almost_full)? (spm_thread == 24) && !_axis_in_axim_spm_read_req_fifo_almost_full && !_axis_in_axim_spm_read_req_fifo_almost_full : 0;
   localparam _tmp_163 = 1;
   wire [_tmp_163-1:0] _tmp_164;
-  assign _tmp_164 = spm_thread == 24;
+  assign _tmp_164 = !_axis_in_axim_spm_read_req_fifo_almost_full;
   reg [_tmp_163-1:0] __tmp_164_1;
-  reg signed [64-1:0] read_rdata_165;
-  wire [8-1:0] pack_read_req_op_sel_166;
-  wire [32-1:0] pack_read_req_local_addr_167;
-  wire [32-1:0] pack_read_req_local_stride_168;
-  wire [33-1:0] pack_read_req_local_size_169;
-  assign pack_read_req_op_sel_166 = 1;
-  assign pack_read_req_local_addr_167 = spm_addr_70 >>> 3;
-  assign pack_read_req_local_stride_168 = 1;
-  assign pack_read_req_local_size_169 = 8;
-  wire [105-1:0] pack_read_req_packed_170;
-  assign pack_read_req_packed_170 = { pack_read_req_op_sel_166, pack_read_req_local_addr_167, pack_read_req_local_stride_168, pack_read_req_local_size_169 };
-  assign _axis_in_axim_spm_read_req_fifo_wdata = ((spm_thread == 31) && !_axis_in_axim_spm_read_req_fifo_almost_full)? pack_read_req_packed_170 : 'hx;
-  assign _axis_in_axim_spm_read_req_fifo_enq = ((spm_thread == 31) && !_axis_in_axim_spm_read_req_fifo_almost_full)? (spm_thread == 31) && !_axis_in_axim_spm_read_req_fifo_almost_full && !_axis_in_axim_spm_read_req_fifo_almost_full : 0;
-  localparam _tmp_171 = 1;
-  wire [_tmp_171-1:0] _tmp_172;
-  assign _tmp_172 = !_axis_in_axim_spm_read_req_fifo_almost_full;
-  reg [_tmp_171-1:0] __tmp_172_1;
   reg [32-1:0] _axis_in_axim_spm_read_data_wide_fsm;
   localparam _axis_in_axim_spm_read_data_wide_fsm_init = 0;
   assign _axis_in_axim_spm_read_req_fifo_deq = ((_axis_in_axim_spm_read_data_wide_fsm == 0) && (!_axis_in_axim_spm_read_data_busy && !_axis_in_axim_spm_read_req_fifo_empty && (_axis_in_axim_spm_read_op_sel_fifo == 1)) && !_axis_in_axim_spm_read_req_fifo_empty)? 1 : 0;
-  reg [128-1:0] _axis_in_axim_spm_read_wide_wdata_173;
-  reg _axis_in_axim_spm_read_wide_wvalid_174;
-  reg [1-1:0] _axis_in_axim_spm_read_wide_count_175;
+  reg [128-1:0] _axis_in_axim_spm_read_wide_wdata_165;
+  reg _axis_in_axim_spm_read_wide_wvalid_166;
+  reg [1-1:0] _axis_in_axim_spm_read_wide_count_167;
   reg [32-1:0] write_burst_fsm_3;
   localparam write_burst_fsm_3_init = 0;
-  reg [9-1:0] write_burst_addr_176;
-  reg [9-1:0] write_burst_stride_177;
-  reg [33-1:0] write_burst_length_178;
-  reg write_burst_done_179;
-  assign axis_in_axim_spm_tready = (_axis_in_axim_spm_read_data_wide_fsm == 2) && (_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_wide_count_175 == 0);
-  wire [8-1:0] pack_write_req_op_sel_180;
-  wire [32-1:0] pack_write_req_local_addr_181;
-  wire [32-1:0] pack_write_req_local_stride_182;
-  wire [33-1:0] pack_write_req_local_size_183;
-  assign pack_write_req_op_sel_180 = 1;
-  assign pack_write_req_local_addr_181 = spm_addr_70 >>> 3;
-  assign pack_write_req_local_stride_182 = 1;
-  assign pack_write_req_local_size_183 = 8;
-  wire [105-1:0] pack_write_req_packed_184;
-  assign pack_write_req_packed_184 = { pack_write_req_op_sel_180, pack_write_req_local_addr_181, pack_write_req_local_stride_182, pack_write_req_local_size_183 };
-  assign _axis_out_axim_spm_write_req_fifo_wdata = ((spm_thread == 33) && !_axis_out_axim_spm_write_req_fifo_almost_full)? pack_write_req_packed_184 : 'hx;
-  assign _axis_out_axim_spm_write_req_fifo_enq = ((spm_thread == 33) && !_axis_out_axim_spm_write_req_fifo_almost_full)? (spm_thread == 33) && !_axis_out_axim_spm_write_req_fifo_almost_full && !_axis_out_axim_spm_write_req_fifo_almost_full : 0;
-  localparam _tmp_185 = 1;
-  wire [_tmp_185-1:0] _tmp_186;
-  assign _tmp_186 = !_axis_out_axim_spm_write_req_fifo_almost_full;
-  reg [_tmp_185-1:0] __tmp_186_1;
+  reg [9-1:0] write_burst_addr_168;
+  reg [9-1:0] write_burst_stride_169;
+  reg [33-1:0] write_burst_length_170;
+  reg write_burst_done_171;
+  assign axis_in_axim_spm_tready = (_axis_in_axim_spm_read_data_wide_fsm == 2) && (_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_wide_count_167 == 0);
+  wire [8-1:0] pack_write_req_op_sel_172;
+  wire [32-1:0] pack_write_req_local_addr_173;
+  wire [32-1:0] pack_write_req_local_stride_174;
+  wire [33-1:0] pack_write_req_local_size_175;
+  assign pack_write_req_op_sel_172 = 1;
+  assign pack_write_req_local_addr_173 = spm_addr_70 >>> 3;
+  assign pack_write_req_local_stride_174 = 1;
+  assign pack_write_req_local_size_175 = 8;
+  wire [105-1:0] pack_write_req_packed_176;
+  assign pack_write_req_packed_176 = { pack_write_req_op_sel_172, pack_write_req_local_addr_173, pack_write_req_local_stride_174, pack_write_req_local_size_175 };
+  assign _axis_out_axim_spm_write_req_fifo_wdata = ((spm_thread == 26) && !_axis_out_axim_spm_write_req_fifo_almost_full)? pack_write_req_packed_176 : 'hx;
+  assign _axis_out_axim_spm_write_req_fifo_enq = ((spm_thread == 26) && !_axis_out_axim_spm_write_req_fifo_almost_full)? (spm_thread == 26) && !_axis_out_axim_spm_write_req_fifo_almost_full && !_axis_out_axim_spm_write_req_fifo_almost_full : 0;
+  localparam _tmp_177 = 1;
+  wire [_tmp_177-1:0] _tmp_178;
+  assign _tmp_178 = !_axis_out_axim_spm_write_req_fifo_almost_full;
+  reg [_tmp_177-1:0] __tmp_178_1;
   reg [32-1:0] _axis_out_axim_spm_write_data_wide_fsm;
   localparam _axis_out_axim_spm_write_data_wide_fsm_init = 0;
   assign _axis_out_axim_spm_write_req_fifo_deq = ((_axis_out_axim_spm_write_data_wide_fsm == 0) && (!_axis_out_axim_spm_write_data_busy && !_axis_out_axim_spm_write_req_fifo_empty && (_axis_out_axim_spm_write_op_sel_fifo == 1)) && !_axis_out_axim_spm_write_req_fifo_empty)? 1 : 0;
-  reg [1-1:0] _axis_out_axim_spm_write_wide_count_187;
+  reg [1-1:0] _axis_out_axim_spm_write_wide_count_179;
   reg [32-1:0] read_burst_fsm_4;
   localparam read_burst_fsm_4_init = 0;
-  reg [9-1:0] read_burst_addr_188;
-  reg [9-1:0] read_burst_stride_189;
-  reg [33-1:0] read_burst_length_190;
-  reg read_burst_rvalid_191;
-  reg read_burst_rlast_192;
-  localparam _tmp_193 = 1;
-  wire [_tmp_193-1:0] _tmp_194;
-  assign _tmp_194 = (read_burst_fsm_4 == 1) && (!read_burst_rvalid_191 || (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0)));
-  reg [_tmp_193-1:0] __tmp_194_1;
-  wire [64-1:0] read_burst_rdata_195;
-  assign read_burst_rdata_195 = ram_spm_0_rdata;
-  reg [128-1:0] _axis_out_axim_spm_write_wide_wdata_196;
+  reg [9-1:0] read_burst_addr_180;
+  reg [9-1:0] read_burst_stride_181;
+  reg [33-1:0] read_burst_length_182;
+  reg read_burst_rvalid_183;
+  reg read_burst_rlast_184;
+  localparam _tmp_185 = 1;
+  wire [_tmp_185-1:0] _tmp_186;
+  assign _tmp_186 = (read_burst_fsm_4 == 1) && (!read_burst_rvalid_183 || (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0)));
+  reg [_tmp_185-1:0] __tmp_186_1;
+  wire [64-1:0] read_burst_rdata_187;
+  assign read_burst_rdata_187 = ram_spm_0_rdata;
+  reg [128-1:0] _axis_out_axim_spm_write_wide_wdata_188;
   reg _axis_out_axim_spm_cond_0_1;
-  wire [8-1:0] pack_read_req_op_sel_197;
-  wire [32-1:0] pack_read_req_local_addr_198;
-  wire [32-1:0] pack_read_req_local_stride_199;
-  wire [33-1:0] pack_read_req_local_size_200;
-  assign pack_read_req_op_sel_197 = 1;
-  assign pack_read_req_local_addr_198 = spm_addr_70 >>> 3;
-  assign pack_read_req_local_stride_199 = 1;
-  assign pack_read_req_local_size_200 = 8;
-  wire [105-1:0] pack_read_req_packed_201;
-  assign pack_read_req_packed_201 = { pack_read_req_op_sel_197, pack_read_req_local_addr_198, pack_read_req_local_stride_199, pack_read_req_local_size_200 };
-  assign _axis_in_xored_spm_read_req_fifo_wdata = ((spm_thread == 37) && !_axis_in_xored_spm_read_req_fifo_almost_full)? pack_read_req_packed_201 : 'hx;
-  assign _axis_in_xored_spm_read_req_fifo_enq = ((spm_thread == 37) && !_axis_in_xored_spm_read_req_fifo_almost_full)? (spm_thread == 37) && !_axis_in_xored_spm_read_req_fifo_almost_full && !_axis_in_xored_spm_read_req_fifo_almost_full : 0;
-  localparam _tmp_202 = 1;
-  wire [_tmp_202-1:0] _tmp_203;
-  assign _tmp_203 = !_axis_in_xored_spm_read_req_fifo_almost_full;
-  reg [_tmp_202-1:0] __tmp_203_1;
+  wire [8-1:0] pack_read_req_op_sel_189;
+  wire [32-1:0] pack_read_req_local_addr_190;
+  wire [32-1:0] pack_read_req_local_stride_191;
+  wire [33-1:0] pack_read_req_local_size_192;
+  assign pack_read_req_op_sel_189 = 1;
+  assign pack_read_req_local_addr_190 = spm_addr_70 >>> 3;
+  assign pack_read_req_local_stride_191 = 1;
+  assign pack_read_req_local_size_192 = 8;
+  wire [105-1:0] pack_read_req_packed_193;
+  assign pack_read_req_packed_193 = { pack_read_req_op_sel_189, pack_read_req_local_addr_190, pack_read_req_local_stride_191, pack_read_req_local_size_192 };
+  assign _axis_in_xored_spm_read_req_fifo_wdata = ((spm_thread == 30) && !_axis_in_xored_spm_read_req_fifo_almost_full)? pack_read_req_packed_193 : 'hx;
+  assign _axis_in_xored_spm_read_req_fifo_enq = ((spm_thread == 30) && !_axis_in_xored_spm_read_req_fifo_almost_full)? (spm_thread == 30) && !_axis_in_xored_spm_read_req_fifo_almost_full && !_axis_in_xored_spm_read_req_fifo_almost_full : 0;
+  localparam _tmp_194 = 1;
+  wire [_tmp_194-1:0] _tmp_195;
+  assign _tmp_195 = !_axis_in_xored_spm_read_req_fifo_almost_full;
+  reg [_tmp_194-1:0] __tmp_195_1;
   reg [32-1:0] _axis_in_xored_spm_read_data_wide_fsm;
   localparam _axis_in_xored_spm_read_data_wide_fsm_init = 0;
   assign _axis_in_xored_spm_read_req_fifo_deq = ((_axis_in_xored_spm_read_data_wide_fsm == 0) && (!_axis_in_xored_spm_read_data_busy && !_axis_in_xored_spm_read_req_fifo_empty && (_axis_in_xored_spm_read_op_sel_fifo == 1)) && !_axis_in_xored_spm_read_req_fifo_empty)? 1 : 0;
-  reg [128-1:0] _axis_in_xored_spm_read_wide_wdata_204;
-  reg _axis_in_xored_spm_read_wide_wvalid_205;
-  reg [1-1:0] _axis_in_xored_spm_read_wide_count_206;
+  reg [128-1:0] _axis_in_xored_spm_read_wide_wdata_196;
+  reg _axis_in_xored_spm_read_wide_wvalid_197;
+  reg [1-1:0] _axis_in_xored_spm_read_wide_count_198;
   reg [32-1:0] write_burst_fsm_5;
   localparam write_burst_fsm_5_init = 0;
-  reg [9-1:0] write_burst_addr_207;
-  reg [9-1:0] write_burst_stride_208;
-  reg [33-1:0] write_burst_length_209;
-  reg write_burst_done_210;
-  assign ram_spm_0_wdata = ((write_burst_fsm_5 == 1) && _axis_in_xored_spm_read_wide_wvalid_205)? _axis_in_xored_spm_read_wide_wdata_204[63:0] : 
-                           ((write_burst_fsm_3 == 1) && _axis_in_axim_spm_read_wide_wvalid_174)? _axis_in_axim_spm_read_wide_wdata_173[63:0] : 
-                           ((write_burst_fsm_0 == 1) && _axi_m_dram_read_wide_wvalid_100)? _axi_m_dram_read_wide_wdata_99[63:0] : 'hx;
-  assign ram_spm_0_wenable = ((write_burst_fsm_5 == 1) && _axis_in_xored_spm_read_wide_wvalid_205)? 1'd1 : 
-                             ((write_burst_fsm_3 == 1) && _axis_in_axim_spm_read_wide_wvalid_174)? 1'd1 : 
-                             ((write_burst_fsm_0 == 1) && _axi_m_dram_read_wide_wvalid_100)? 1'd1 : 0;
-  assign axis_in_xored_spm_tready = (_axis_in_xored_spm_read_data_wide_fsm == 2) && (_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_wide_count_206 == 0);
-  wire [8-1:0] pack_write_req_op_sel_211;
-  wire [32-1:0] pack_write_req_local_addr_212;
-  wire [32-1:0] pack_write_req_local_stride_213;
-  wire [33-1:0] pack_write_req_local_size_214;
-  assign pack_write_req_op_sel_211 = 1;
-  assign pack_write_req_local_addr_212 = spm_addr_70 >>> 3;
-  assign pack_write_req_local_stride_213 = 1;
-  assign pack_write_req_local_size_214 = 8;
-  wire [105-1:0] pack_write_req_packed_215;
-  assign pack_write_req_packed_215 = { pack_write_req_op_sel_211, pack_write_req_local_addr_212, pack_write_req_local_stride_213, pack_write_req_local_size_214 };
-  assign _axis_out_xored_spm_write_req_fifo_wdata = ((spm_thread == 40) && !_axis_out_xored_spm_write_req_fifo_almost_full)? pack_write_req_packed_215 : 'hx;
-  assign _axis_out_xored_spm_write_req_fifo_enq = ((spm_thread == 40) && !_axis_out_xored_spm_write_req_fifo_almost_full)? (spm_thread == 40) && !_axis_out_xored_spm_write_req_fifo_almost_full && !_axis_out_xored_spm_write_req_fifo_almost_full : 0;
-  localparam _tmp_216 = 1;
-  wire [_tmp_216-1:0] _tmp_217;
-  assign _tmp_217 = !_axis_out_xored_spm_write_req_fifo_almost_full;
-  reg [_tmp_216-1:0] __tmp_217_1;
+  reg [9-1:0] write_burst_addr_199;
+  reg [9-1:0] write_burst_stride_200;
+  reg [33-1:0] write_burst_length_201;
+  reg write_burst_done_202;
+  assign ram_spm_0_wdata = ((write_burst_fsm_5 == 1) && _axis_in_xored_spm_read_wide_wvalid_197)? _axis_in_xored_spm_read_wide_wdata_196[63:0] : 
+                           ((write_burst_fsm_3 == 1) && _axis_in_axim_spm_read_wide_wvalid_166)? _axis_in_axim_spm_read_wide_wdata_165[63:0] : 
+                           ((write_burst_fsm_0 == 1) && _axi_m_dram_rvalid_sb_0)? _axi_m_dram_rdata_sb_0 : 'hx;
+  assign ram_spm_0_wenable = ((write_burst_fsm_5 == 1) && _axis_in_xored_spm_read_wide_wvalid_197)? 1'd1 : 
+                             ((write_burst_fsm_3 == 1) && _axis_in_axim_spm_read_wide_wvalid_166)? 1'd1 : 
+                             ((write_burst_fsm_0 == 1) && _axi_m_dram_rvalid_sb_0)? 1'd1 : 0;
+  assign axis_in_xored_spm_tready = (_axis_in_xored_spm_read_data_wide_fsm == 2) && (_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_wide_count_198 == 0);
+  wire [8-1:0] pack_write_req_op_sel_203;
+  wire [32-1:0] pack_write_req_local_addr_204;
+  wire [32-1:0] pack_write_req_local_stride_205;
+  wire [33-1:0] pack_write_req_local_size_206;
+  assign pack_write_req_op_sel_203 = 1;
+  assign pack_write_req_local_addr_204 = spm_addr_70 >>> 3;
+  assign pack_write_req_local_stride_205 = 1;
+  assign pack_write_req_local_size_206 = 8;
+  wire [105-1:0] pack_write_req_packed_207;
+  assign pack_write_req_packed_207 = { pack_write_req_op_sel_203, pack_write_req_local_addr_204, pack_write_req_local_stride_205, pack_write_req_local_size_206 };
+  assign _axis_out_xored_spm_write_req_fifo_wdata = ((spm_thread == 33) && !_axis_out_xored_spm_write_req_fifo_almost_full)? pack_write_req_packed_207 : 'hx;
+  assign _axis_out_xored_spm_write_req_fifo_enq = ((spm_thread == 33) && !_axis_out_xored_spm_write_req_fifo_almost_full)? (spm_thread == 33) && !_axis_out_xored_spm_write_req_fifo_almost_full && !_axis_out_xored_spm_write_req_fifo_almost_full : 0;
+  localparam _tmp_208 = 1;
+  wire [_tmp_208-1:0] _tmp_209;
+  assign _tmp_209 = !_axis_out_xored_spm_write_req_fifo_almost_full;
+  reg [_tmp_208-1:0] __tmp_209_1;
   reg [32-1:0] _axis_out_xored_spm_write_data_wide_fsm;
   localparam _axis_out_xored_spm_write_data_wide_fsm_init = 0;
   assign _axis_out_xored_spm_write_req_fifo_deq = ((_axis_out_xored_spm_write_data_wide_fsm == 0) && (!_axis_out_xored_spm_write_data_busy && !_axis_out_xored_spm_write_req_fifo_empty && (_axis_out_xored_spm_write_op_sel_fifo == 1)) && !_axis_out_xored_spm_write_req_fifo_empty)? 1 : 0;
-  reg [1-1:0] _axis_out_xored_spm_write_wide_count_218;
+  reg [1-1:0] _axis_out_xored_spm_write_wide_count_210;
   reg [32-1:0] read_burst_fsm_6;
   localparam read_burst_fsm_6_init = 0;
-  reg [9-1:0] read_burst_addr_219;
-  reg [9-1:0] read_burst_stride_220;
-  reg [33-1:0] read_burst_length_221;
-  reg read_burst_rvalid_222;
-  reg read_burst_rlast_223;
-  assign ram_spm_0_addr = ((read_burst_fsm_6 == 1) && (!read_burst_rvalid_222 || (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0))))? read_burst_addr_219 : 
-                          ((write_burst_fsm_5 == 1) && _axis_in_xored_spm_read_wide_wvalid_205)? write_burst_addr_207 : 
-                          ((read_burst_fsm_4 == 1) && (!read_burst_rvalid_191 || (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0))))? read_burst_addr_188 : 
-                          ((write_burst_fsm_3 == 1) && _axis_in_axim_spm_read_wide_wvalid_174)? write_burst_addr_176 : 
-                          (spm_thread == 24)? (spm_addr_70 >>> 3) + _spm_thread_i_0 : 
-                          ((read_burst_fsm_2 == 1) && (!read_burst_rvalid_157 || (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0))))? read_burst_addr_154 : 
-                          ((read_burst_fsm_1 == 1) && (!read_burst_rvalid_140 || (_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0)))? read_burst_addr_137 : 
-                          ((write_burst_fsm_0 == 1) && _axi_m_dram_read_wide_wvalid_100)? write_burst_addr_102 : 'hx;
-  assign ram_spm_0_enable = ((read_burst_fsm_6 == 1) && (!read_burst_rvalid_222 || (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0))))? 1'd1 : 
-                            ((write_burst_fsm_5 == 1) && _axis_in_xored_spm_read_wide_wvalid_205)? 1'd1 : 
-                            ((read_burst_fsm_4 == 1) && (!read_burst_rvalid_191 || (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0))))? 1'd1 : 
-                            ((write_burst_fsm_3 == 1) && _axis_in_axim_spm_read_wide_wvalid_174)? 1'd1 : 
-                            (spm_thread == 24)? 1'd1 : 
-                            ((read_burst_fsm_2 == 1) && (!read_burst_rvalid_157 || (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0))))? 1'd1 : 
-                            ((read_burst_fsm_1 == 1) && (!read_burst_rvalid_140 || (_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0)))? 1'd1 : 
-                            ((write_burst_fsm_0 == 1) && _axi_m_dram_read_wide_wvalid_100)? 1'd1 : 0;
-  localparam _tmp_224 = 1;
-  wire [_tmp_224-1:0] _tmp_225;
-  assign _tmp_225 = (read_burst_fsm_6 == 1) && (!read_burst_rvalid_222 || (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0)));
-  reg [_tmp_224-1:0] __tmp_225_1;
-  wire [64-1:0] read_burst_rdata_226;
-  assign read_burst_rdata_226 = ram_spm_0_rdata;
-  reg [128-1:0] _axis_out_xored_spm_write_wide_wdata_227;
+  reg [9-1:0] read_burst_addr_211;
+  reg [9-1:0] read_burst_stride_212;
+  reg [33-1:0] read_burst_length_213;
+  reg read_burst_rvalid_214;
+  reg read_burst_rlast_215;
+  assign ram_spm_0_addr = ((read_burst_fsm_6 == 1) && (!read_burst_rvalid_214 || (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0))))? read_burst_addr_211 : 
+                          ((write_burst_fsm_5 == 1) && _axis_in_xored_spm_read_wide_wvalid_197)? write_burst_addr_199 : 
+                          ((read_burst_fsm_4 == 1) && (!read_burst_rvalid_183 || (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0))))? read_burst_addr_180 : 
+                          ((write_burst_fsm_3 == 1) && _axis_in_axim_spm_read_wide_wvalid_166)? write_burst_addr_168 : 
+                          ((read_burst_fsm_2 == 1) && (!read_burst_rvalid_152 || (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0))))? read_burst_addr_149 : 
+                          ((read_burst_fsm_1 == 1) && (!read_burst_rvalid_136 || (_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0) && (_axi_m_dram_write_size_buf > 0)))? read_burst_addr_133 : 
+                          ((write_burst_fsm_0 == 1) && _axi_m_dram_rvalid_sb_0)? write_burst_addr_99 : 'hx;
+  assign ram_spm_0_enable = ((read_burst_fsm_6 == 1) && (!read_burst_rvalid_214 || (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0))))? 1'd1 : 
+                            ((write_burst_fsm_5 == 1) && _axis_in_xored_spm_read_wide_wvalid_197)? 1'd1 : 
+                            ((read_burst_fsm_4 == 1) && (!read_burst_rvalid_183 || (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0))))? 1'd1 : 
+                            ((write_burst_fsm_3 == 1) && _axis_in_axim_spm_read_wide_wvalid_166)? 1'd1 : 
+                            ((read_burst_fsm_2 == 1) && (!read_burst_rvalid_152 || (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0))))? 1'd1 : 
+                            ((read_burst_fsm_1 == 1) && (!read_burst_rvalid_136 || (_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0) && (_axi_m_dram_write_size_buf > 0)))? 1'd1 : 
+                            ((write_burst_fsm_0 == 1) && _axi_m_dram_rvalid_sb_0)? 1'd1 : 0;
+  localparam _tmp_216 = 1;
+  wire [_tmp_216-1:0] _tmp_217;
+  assign _tmp_217 = (read_burst_fsm_6 == 1) && (!read_burst_rvalid_214 || (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0)));
+  reg [_tmp_216-1:0] __tmp_217_1;
+  wire [64-1:0] read_burst_rdata_218;
+  assign read_burst_rdata_218 = ram_spm_0_rdata;
+  reg [128-1:0] _axis_out_xored_spm_write_wide_wdata_219;
   reg _axis_out_xored_spm_cond_0_1;
 
   always @(posedge CLK) begin
@@ -3922,59 +3879,59 @@ module spm
         _axi_s_ctrl_spm_register_6 <= 1;
         _axi_s_ctrl_spm_flag_6 <= 0;
       end 
-      if((spm_thread == 42) && 0) begin
+      if((spm_thread == 35) && 0) begin
         _axi_s_ctrl_spm_register_0 <= 0;
         _axi_s_ctrl_spm_flag_0 <= 0;
       end 
-      if((spm_thread == 42) && 0) begin
+      if((spm_thread == 35) && 0) begin
         _axi_s_ctrl_spm_register_1 <= 0;
         _axi_s_ctrl_spm_flag_1 <= 0;
       end 
-      if((spm_thread == 42) && 0) begin
+      if((spm_thread == 35) && 0) begin
         _axi_s_ctrl_spm_register_2 <= 0;
         _axi_s_ctrl_spm_flag_2 <= 0;
       end 
-      if((spm_thread == 42) && 0) begin
+      if((spm_thread == 35) && 0) begin
         _axi_s_ctrl_spm_register_3 <= 0;
         _axi_s_ctrl_spm_flag_3 <= 0;
       end 
-      if((spm_thread == 42) && 1) begin
+      if((spm_thread == 35) && 1) begin
         _axi_s_ctrl_spm_register_4 <= 0;
         _axi_s_ctrl_spm_flag_4 <= 0;
       end 
-      if((spm_thread == 42) && 0) begin
+      if((spm_thread == 35) && 0) begin
         _axi_s_ctrl_spm_register_5 <= 0;
         _axi_s_ctrl_spm_flag_5 <= 0;
       end 
-      if((spm_thread == 42) && 0) begin
+      if((spm_thread == 35) && 0) begin
         _axi_s_ctrl_spm_register_6 <= 0;
         _axi_s_ctrl_spm_flag_6 <= 0;
       end 
-      if((spm_thread == 43) && 0) begin
+      if((spm_thread == 36) && 0) begin
         _axi_s_ctrl_spm_register_0 <= 0;
         _axi_s_ctrl_spm_flag_0 <= 0;
       end 
-      if((spm_thread == 43) && 0) begin
+      if((spm_thread == 36) && 0) begin
         _axi_s_ctrl_spm_register_1 <= 0;
         _axi_s_ctrl_spm_flag_1 <= 0;
       end 
-      if((spm_thread == 43) && 0) begin
+      if((spm_thread == 36) && 0) begin
         _axi_s_ctrl_spm_register_2 <= 0;
         _axi_s_ctrl_spm_flag_2 <= 0;
       end 
-      if((spm_thread == 43) && 0) begin
+      if((spm_thread == 36) && 0) begin
         _axi_s_ctrl_spm_register_3 <= 0;
         _axi_s_ctrl_spm_flag_3 <= 0;
       end 
-      if((spm_thread == 43) && 0) begin
+      if((spm_thread == 36) && 0) begin
         _axi_s_ctrl_spm_register_4 <= 0;
         _axi_s_ctrl_spm_flag_4 <= 0;
       end 
-      if((spm_thread == 43) && 1) begin
+      if((spm_thread == 36) && 1) begin
         _axi_s_ctrl_spm_register_5 <= 0;
         _axi_s_ctrl_spm_flag_5 <= 0;
       end 
-      if((spm_thread == 43) && 0) begin
+      if((spm_thread == 36) && 0) begin
         _axi_s_ctrl_spm_register_6 <= 0;
         _axi_s_ctrl_spm_flag_6 <= 0;
       end 
@@ -4030,6 +3987,7 @@ module spm
 
   always @(posedge CLK) begin
     if(RST) begin
+      axi_m_dram_awid <= 0;
       axi_m_dram_awaddr <= 0;
       axi_m_dram_awlen <= 0;
       axi_m_dram_awvalid <= 0;
@@ -4039,6 +3997,7 @@ module spm
         axi_m_dram_awvalid <= 0;
       end 
       if((_axi_m_dram_write_req_fsm == 1) && !_axi_m_dram_write_req_fifo_almost_full && (_axi_m_dram_outstanding_wcount < 6) && ((_axi_m_dram_outstanding_wcount < 6) && (axi_m_dram_awready || !axi_m_dram_awvalid))) begin
+        axi_m_dram_awid <= 0;
         axi_m_dram_awaddr <= _axi_m_dram_write_global_addr;
         axi_m_dram_awlen <= _axi_m_dram_write_cur_global_size - 1;
         axi_m_dram_awvalid <= 1;
@@ -4066,11 +4025,11 @@ module spm
         _axi_m_dram_wvalid_sb_0 <= 0;
         _axi_m_dram_wlast_sb_0 <= 0;
       end 
-      if((_axi_m_dram_write_data_wide_fsm == 2) && (_axi_m_dram_write_op_sel_buf == 1) && (_axi_m_dram_write_wide_count_136 == 1) && read_burst_rvalid_140 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0)) && (_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0)) begin
-        _axi_m_dram_wdata_sb_0 <= { read_burst_rdata_144, _axi_m_dram_write_wide_wdata_145[127:64] };
+      if((_axi_m_dram_write_op_sel_buf == 1) && read_burst_rvalid_136 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0) && (_axi_m_dram_write_size_buf > 0)) && (_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0)) begin
+        _axi_m_dram_wdata_sb_0 <= read_burst_rdata_140;
         _axi_m_dram_wvalid_sb_0 <= 1;
-        _axi_m_dram_wlast_sb_0 <= read_burst_rlast_141 || (_axi_m_dram_write_size_buf == 1);
-        _axi_m_dram_wstrb_sb_0 <= { 16{ 1'd1 } };
+        _axi_m_dram_wlast_sb_0 <= read_burst_rlast_137 || (_axi_m_dram_write_size_buf == 1);
+        _axi_m_dram_wstrb_sb_0 <= { 8{ 1'd1 } };
       end 
       _axi_m_dram_wdata_cond_0_1 <= 1;
       if(_axi_m_dram_wvalid_sb_0 && !_axi_m_dram_wready_sb_0) begin
@@ -4105,6 +4064,7 @@ module spm
 
   always @(posedge CLK) begin
     if(RST) begin
+      axi_m_dram_arid <= 0;
       axi_m_dram_araddr <= 0;
       axi_m_dram_arlen <= 0;
       axi_m_dram_arvalid <= 0;
@@ -4114,6 +4074,7 @@ module spm
         axi_m_dram_arvalid <= 0;
       end 
       if((_axi_m_dram_read_req_fsm == 1) && (axi_m_dram_arready || !axi_m_dram_arvalid)) begin
+        axi_m_dram_arid <= 0;
         axi_m_dram_araddr <= _axi_m_dram_read_global_addr;
         axi_m_dram_arlen <= _axi_m_dram_read_cur_global_size - 1;
         axi_m_dram_arvalid <= 1;
@@ -4192,14 +4153,14 @@ module spm
       end 
       _axi_m_dram_read_start <= 0;
       _axi_m_dram_write_start <= 0;
-      if((spm_thread == 12) && _axi_m_dram_read_req_idle) begin
+      if((spm_thread == 11) && _axi_m_dram_read_req_idle) begin
         _axi_m_dram_read_start <= 1;
         _axi_m_dram_read_op_sel <= 1;
         _axi_m_dram_read_global_addr <= mask_addr_masked_78;
-        _axi_m_dram_read_global_size <= 4 + (((8 & 1) > 0)? 1 : 0);
+        _axi_m_dram_read_global_size <= size_73 >>> 3;
         _axi_m_dram_read_local_addr <= spm_addr_70 >>> 3;
         _axi_m_dram_read_local_stride <= 1;
-        _axi_m_dram_read_local_size <= 8;
+        _axi_m_dram_read_local_size <= size_73 >>> 3;
         _axi_m_dram_read_local_blocksize <= 1;
       end 
       if((_axi_m_dram_read_req_fsm == 0) && _axi_m_dram_read_start) begin
@@ -4208,26 +4169,26 @@ module spm
       if(_axi_m_dram_read_start && _axi_m_dram_read_req_fifo_almost_full) begin
         _axi_m_dram_read_start <= 1;
       end 
-      if((_axi_m_dram_read_req_fsm == 0) && (_axi_m_dram_read_start || _axi_m_dram_read_cont) && !_axi_m_dram_read_req_fifo_almost_full && (_axi_m_dram_read_global_size <= 256) && ((mask_addr_masked_88 & 4095) + (_axi_m_dram_read_global_size << 4) >= 4096)) begin
-        _axi_m_dram_read_cur_global_size <= 4096 - (mask_addr_masked_90 & 4095) >> 4;
-        _axi_m_dram_read_global_size <= _axi_m_dram_read_global_size - (4096 - (mask_addr_masked_92 & 4095) >> 4);
+      if((_axi_m_dram_read_req_fsm == 0) && (_axi_m_dram_read_start || _axi_m_dram_read_cont) && !_axi_m_dram_read_req_fifo_almost_full && (_axi_m_dram_read_global_size <= 256) && ((mask_addr_masked_88 & 4095) + (_axi_m_dram_read_global_size << 3) >= 4096)) begin
+        _axi_m_dram_read_cur_global_size <= 4096 - (mask_addr_masked_90 & 4095) >> 3;
+        _axi_m_dram_read_global_size <= _axi_m_dram_read_global_size - (4096 - (mask_addr_masked_92 & 4095) >> 3);
       end else if((_axi_m_dram_read_req_fsm == 0) && (_axi_m_dram_read_start || _axi_m_dram_read_cont) && !_axi_m_dram_read_req_fifo_almost_full && (_axi_m_dram_read_global_size <= 256)) begin
         _axi_m_dram_read_cur_global_size <= _axi_m_dram_read_global_size;
         _axi_m_dram_read_global_size <= 0;
-      end else if((_axi_m_dram_read_req_fsm == 0) && (_axi_m_dram_read_start || _axi_m_dram_read_cont) && !_axi_m_dram_read_req_fifo_almost_full && ((mask_addr_masked_94 & 4095) + 4096 >= 4096)) begin
-        _axi_m_dram_read_cur_global_size <= 4096 - (mask_addr_masked_96 & 4095) >> 4;
-        _axi_m_dram_read_global_size <= _axi_m_dram_read_global_size - (4096 - (mask_addr_masked_98 & 4095) >> 4);
+      end else if((_axi_m_dram_read_req_fsm == 0) && (_axi_m_dram_read_start || _axi_m_dram_read_cont) && !_axi_m_dram_read_req_fifo_almost_full && ((mask_addr_masked_94 & 4095) + 2048 >= 4096)) begin
+        _axi_m_dram_read_cur_global_size <= 4096 - (mask_addr_masked_96 & 4095) >> 3;
+        _axi_m_dram_read_global_size <= _axi_m_dram_read_global_size - (4096 - (mask_addr_masked_98 & 4095) >> 3);
       end else if((_axi_m_dram_read_req_fsm == 0) && (_axi_m_dram_read_start || _axi_m_dram_read_cont) && !_axi_m_dram_read_req_fifo_almost_full) begin
         _axi_m_dram_read_cur_global_size <= 256;
         _axi_m_dram_read_global_size <= _axi_m_dram_read_global_size - 256;
       end 
       if((_axi_m_dram_read_req_fsm == 1) && (axi_m_dram_arready || !axi_m_dram_arvalid)) begin
-        _axi_m_dram_read_global_addr <= _axi_m_dram_read_global_addr + (_axi_m_dram_read_cur_global_size << 4);
+        _axi_m_dram_read_global_addr <= _axi_m_dram_read_global_addr + (_axi_m_dram_read_cur_global_size << 3);
       end 
       if((_axi_m_dram_read_req_fsm == 1) && (axi_m_dram_arready || !axi_m_dram_arvalid) && (_axi_m_dram_read_global_size == 0)) begin
         _axi_m_dram_read_req_busy <= 0;
       end 
-      if((_axi_m_dram_read_data_wide_fsm == 0) && (!_axi_m_dram_read_data_busy && !_axi_m_dram_read_req_fifo_empty && (_axi_m_dram_read_op_sel_fifo == 1))) begin
+      if((_axi_m_dram_read_data_fsm == 0) && (!_axi_m_dram_read_data_busy && !_axi_m_dram_read_req_fifo_empty && (_axi_m_dram_read_op_sel_fifo == 1))) begin
         _axi_m_dram_read_data_busy <= 1;
         _axi_m_dram_read_op_sel_buf <= _axi_m_dram_read_op_sel_fifo;
         _axi_m_dram_read_local_addr_buf <= _axi_m_dram_read_local_addr_fifo;
@@ -4235,23 +4196,17 @@ module spm
         _axi_m_dram_read_local_size_buf <= _axi_m_dram_read_local_size_fifo;
         _axi_m_dram_read_local_blocksize_buf <= _axi_m_dram_read_local_blocksize_fifo;
       end 
-      if((_axi_m_dram_read_data_wide_fsm == 2) && (_axi_m_dram_read_op_sel_buf == 1) && _axi_m_dram_rvalid_sb_0 && (_axi_m_dram_read_wide_count_101 == 0)) begin
+      if((_axi_m_dram_read_data_fsm == 2) && _axi_m_dram_rvalid_sb_0) begin
         _axi_m_dram_read_local_size_buf <= _axi_m_dram_read_local_size_buf - 1;
       end 
-      if((_axi_m_dram_read_data_wide_fsm == 2) && (_axi_m_dram_read_op_sel_buf == 1) && (_axi_m_dram_read_wide_count_101 > 0)) begin
-        _axi_m_dram_read_local_size_buf <= _axi_m_dram_read_local_size_buf - 1;
-      end 
-      if((_axi_m_dram_read_data_wide_fsm == 2) && (_axi_m_dram_read_local_size_buf <= 1) && (_axi_m_dram_read_op_sel_buf == 1) && (_axi_m_dram_read_wide_count_101 > 0)) begin
+      if((_axi_m_dram_read_data_fsm == 2) && _axi_m_dram_rvalid_sb_0 && (_axi_m_dram_read_local_size_buf <= 1)) begin
         _axi_m_dram_read_data_busy <= 0;
       end 
-      if((_axi_m_dram_read_data_wide_fsm == 2) && (_axi_m_dram_read_local_size_buf <= 1) && (_axi_m_dram_read_op_sel_buf == 1) && _axi_m_dram_rvalid_sb_0 && (_axi_m_dram_read_wide_count_101 == 0)) begin
-        _axi_m_dram_read_data_busy <= 0;
-      end 
-      if((spm_thread == 15) && _axi_m_dram_write_req_idle) begin
+      if((spm_thread == 14) && _axi_m_dram_write_req_idle) begin
         _axi_m_dram_write_start <= 1;
         _axi_m_dram_write_op_sel <= 1;
-        _axi_m_dram_write_global_addr <= mask_addr_masked_107;
-        _axi_m_dram_write_global_size <= 4 + (((8 & 1) > 0)? 1 : 0);
+        _axi_m_dram_write_global_addr <= mask_addr_masked_104;
+        _axi_m_dram_write_global_size <= 8;
         _axi_m_dram_write_local_addr <= spm_addr_70 >>> 3;
         _axi_m_dram_write_local_stride <= 1;
         _axi_m_dram_write_local_size <= 8;
@@ -4263,43 +4218,43 @@ module spm
       if(_axi_m_dram_write_start && _axi_m_dram_write_req_fifo_almost_full) begin
         _axi_m_dram_write_start <= 1;
       end 
-      if((_axi_m_dram_write_req_fsm == 0) && (_axi_m_dram_write_start || _axi_m_dram_write_cont) && !_axi_m_dram_write_req_fifo_almost_full && (_axi_m_dram_write_global_size <= 256) && ((mask_addr_masked_117 & 4095) + (_axi_m_dram_write_global_size << 4) >= 4096)) begin
-        _axi_m_dram_write_cur_global_size <= 4096 - (mask_addr_masked_119 & 4095) >> 4;
-        _axi_m_dram_write_global_size <= _axi_m_dram_write_global_size - (4096 - (mask_addr_masked_121 & 4095) >> 4);
+      if((_axi_m_dram_write_req_fsm == 0) && (_axi_m_dram_write_start || _axi_m_dram_write_cont) && !_axi_m_dram_write_req_fifo_almost_full && (_axi_m_dram_write_global_size <= 256) && ((mask_addr_masked_114 & 4095) + (_axi_m_dram_write_global_size << 3) >= 4096)) begin
+        _axi_m_dram_write_cur_global_size <= 4096 - (mask_addr_masked_116 & 4095) >> 3;
+        _axi_m_dram_write_global_size <= _axi_m_dram_write_global_size - (4096 - (mask_addr_masked_118 & 4095) >> 3);
       end else if((_axi_m_dram_write_req_fsm == 0) && (_axi_m_dram_write_start || _axi_m_dram_write_cont) && !_axi_m_dram_write_req_fifo_almost_full && (_axi_m_dram_write_global_size <= 256)) begin
         _axi_m_dram_write_cur_global_size <= _axi_m_dram_write_global_size;
         _axi_m_dram_write_global_size <= 0;
-      end else if((_axi_m_dram_write_req_fsm == 0) && (_axi_m_dram_write_start || _axi_m_dram_write_cont) && !_axi_m_dram_write_req_fifo_almost_full && ((mask_addr_masked_123 & 4095) + 4096 >= 4096)) begin
-        _axi_m_dram_write_cur_global_size <= 4096 - (mask_addr_masked_125 & 4095) >> 4;
-        _axi_m_dram_write_global_size <= _axi_m_dram_write_global_size - (4096 - (mask_addr_masked_127 & 4095) >> 4);
+      end else if((_axi_m_dram_write_req_fsm == 0) && (_axi_m_dram_write_start || _axi_m_dram_write_cont) && !_axi_m_dram_write_req_fifo_almost_full && ((mask_addr_masked_120 & 4095) + 2048 >= 4096)) begin
+        _axi_m_dram_write_cur_global_size <= 4096 - (mask_addr_masked_122 & 4095) >> 3;
+        _axi_m_dram_write_global_size <= _axi_m_dram_write_global_size - (4096 - (mask_addr_masked_124 & 4095) >> 3);
       end else if((_axi_m_dram_write_req_fsm == 0) && (_axi_m_dram_write_start || _axi_m_dram_write_cont) && !_axi_m_dram_write_req_fifo_almost_full) begin
         _axi_m_dram_write_cur_global_size <= 256;
         _axi_m_dram_write_global_size <= _axi_m_dram_write_global_size - 256;
       end 
       if((_axi_m_dram_write_req_fsm == 1) && ((_axi_m_dram_write_req_fsm == 1) && !_axi_m_dram_write_req_fifo_almost_full && (axi_m_dram_awready || !axi_m_dram_awvalid) && (_axi_m_dram_outstanding_wcount < 6))) begin
-        _axi_m_dram_write_global_addr <= _axi_m_dram_write_global_addr + (_axi_m_dram_write_cur_global_size << 4);
+        _axi_m_dram_write_global_addr <= _axi_m_dram_write_global_addr + (_axi_m_dram_write_cur_global_size << 3);
       end 
       if((_axi_m_dram_write_req_fsm == 1) && ((_axi_m_dram_write_req_fsm == 1) && !_axi_m_dram_write_req_fifo_almost_full && (axi_m_dram_awready || !axi_m_dram_awvalid) && (_axi_m_dram_outstanding_wcount < 6)) && (_axi_m_dram_write_global_size == 0)) begin
         _axi_m_dram_write_req_busy <= 0;
       end 
-      if((_axi_m_dram_write_data_wide_fsm == 0) && (!_axi_m_dram_write_data_busy && !_axi_m_dram_write_req_fifo_empty && (_axi_m_dram_write_op_sel_fifo == 1))) begin
+      if((_axi_m_dram_write_data_fsm == 0) && (!_axi_m_dram_write_data_busy && !_axi_m_dram_write_req_fifo_empty && (_axi_m_dram_write_op_sel_fifo == 1))) begin
         _axi_m_dram_write_data_busy <= 1;
         _axi_m_dram_write_op_sel_buf <= _axi_m_dram_write_op_sel_fifo;
         _axi_m_dram_write_local_addr_buf <= _axi_m_dram_write_local_addr_fifo;
         _axi_m_dram_write_local_stride_buf <= _axi_m_dram_write_local_stride_fifo;
-        _axi_m_dram_write_size_buf <= (_axi_m_dram_write_size_fifo >> 1) + (((_axi_m_dram_write_size_fifo & 1) > 0)? 1 : 0) << 1;
+        _axi_m_dram_write_size_buf <= _axi_m_dram_write_size_fifo;
         _axi_m_dram_write_local_blocksize_buf <= _axi_m_dram_write_local_blocksize_fifo;
       end 
-      if(_axi_m_dram_write_data_wide_fsm == 1) begin
+      if(_axi_m_dram_write_data_fsm == 1) begin
         _axi_m_dram_write_size_buf <= 0;
       end 
-      if((_axi_m_dram_write_data_wide_fsm == 2) && (!_axi_m_dram_write_req_fifo_empty && (_axi_m_dram_write_size_buf == 0))) begin
-        _axi_m_dram_write_size_buf <= _axi_m_dram_write_size_fifo << 1;
+      if((_axi_m_dram_write_data_fsm == 2) && (!_axi_m_dram_write_req_fifo_empty && (_axi_m_dram_write_size_buf == 0))) begin
+        _axi_m_dram_write_size_buf <= _axi_m_dram_write_size_fifo;
       end 
-      if((_axi_m_dram_write_data_wide_fsm == 2) && read_burst_rvalid_140 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0))) begin
+      if((_axi_m_dram_write_data_fsm == 2) && read_burst_rvalid_136 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0) && (_axi_m_dram_write_size_buf > 0))) begin
         _axi_m_dram_write_size_buf <= _axi_m_dram_write_size_buf - 1;
       end 
-      if((_axi_m_dram_write_data_wide_fsm == 2) && (_axi_m_dram_write_wide_count_136 == 1) && read_burst_rvalid_140 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0)) && read_burst_rlast_141) begin
+      if((_axi_m_dram_write_data_fsm == 2) && ((_axi_m_dram_write_op_sel_buf == 1) && read_burst_rvalid_136 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0) && (_axi_m_dram_write_size_buf > 0))) && read_burst_rlast_137) begin
         _axi_m_dram_write_data_busy <= 0;
       end 
     end
@@ -4326,8 +4281,8 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       count__axi_m_dram_write_req_fifo <= 0;
-      __tmp_115_1 <= 0;
-      __tmp_135_1 <= 0;
+      __tmp_112_1 <= 0;
+      __tmp_132_1 <= 0;
     end else begin
       if(_axi_m_dram_write_req_fifo_enq && !_axi_m_dram_write_req_fifo_full && (_axi_m_dram_write_req_fifo_deq && !_axi_m_dram_write_req_fifo_empty)) begin
         count__axi_m_dram_write_req_fifo <= count__axi_m_dram_write_req_fifo;
@@ -4336,8 +4291,8 @@ module spm
       end else if(_axi_m_dram_write_req_fifo_deq && !_axi_m_dram_write_req_fifo_empty) begin
         count__axi_m_dram_write_req_fifo <= count__axi_m_dram_write_req_fifo - 1;
       end 
-      __tmp_115_1 <= _tmp_115;
-      __tmp_135_1 <= _tmp_135;
+      __tmp_112_1 <= _tmp_112;
+      __tmp_132_1 <= _tmp_132;
     end
   end
 
@@ -4353,10 +4308,10 @@ module spm
         axis_out_mac_spm_tvalid <= 0;
         axis_out_mac_spm_tlast <= 0;
       end 
-      if((_axis_out_mac_spm_write_data_wide_fsm == 2) && (_axis_out_mac_spm_write_op_sel_buf == 1) && (_axis_out_mac_spm_write_wide_count_153 == 1) && read_burst_rvalid_157 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0)) && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid)) begin
-        axis_out_mac_spm_tdata <= { read_burst_rdata_161, _axis_out_mac_spm_write_wide_wdata_162[127:64] };
+      if((_axis_out_mac_spm_write_data_wide_fsm == 2) && (_axis_out_mac_spm_write_op_sel_buf == 1) && (_axis_out_mac_spm_write_wide_count_148 == 1) && read_burst_rvalid_152 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0)) && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid)) begin
+        axis_out_mac_spm_tdata <= { read_burst_rdata_156, _axis_out_mac_spm_write_wide_wdata_157[127:64] };
         axis_out_mac_spm_tvalid <= 1;
-        axis_out_mac_spm_tlast <= read_burst_rlast_158 || (_axis_out_mac_spm_write_size_buf <= 1);
+        axis_out_mac_spm_tlast <= read_burst_rlast_153 || (_axis_out_mac_spm_write_size_buf <= 1);
       end 
       _axis_out_mac_spm_cond_0_1 <= 1;
       if(axis_out_mac_spm_tvalid && !axis_out_mac_spm_tready) begin
@@ -4382,10 +4337,10 @@ module spm
         _axis_out_mac_spm_write_local_stride_buf <= _axis_out_mac_spm_write_local_stride_fifo;
         _axis_out_mac_spm_write_size_buf <= (_axis_out_mac_spm_write_size_fifo >> 1) + (((_axis_out_mac_spm_write_size_fifo & 1) > 0)? 1 : 0) << 1;
       end 
-      if((_axis_out_mac_spm_write_data_wide_fsm == 2) && read_burst_rvalid_157 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0))) begin
+      if((_axis_out_mac_spm_write_data_wide_fsm == 2) && read_burst_rvalid_152 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0))) begin
         _axis_out_mac_spm_write_size_buf <= _axis_out_mac_spm_write_size_buf - 1;
       end 
-      if((_axis_out_mac_spm_write_data_wide_fsm == 2) && (_axis_out_mac_spm_write_wide_count_153 == 1) && read_burst_rvalid_157 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0)) && read_burst_rlast_158) begin
+      if((_axis_out_mac_spm_write_data_wide_fsm == 2) && (_axis_out_mac_spm_write_wide_count_148 == 1) && read_burst_rvalid_152 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0)) && read_burst_rlast_153) begin
         _axis_out_mac_spm_write_data_busy <= 0;
       end 
     end
@@ -4395,7 +4350,7 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       count__axis_out_mac_spm_write_req_fifo <= 0;
-      __tmp_152_1 <= 0;
+      __tmp_147_1 <= 0;
     end else begin
       if(_axis_out_mac_spm_write_req_fifo_enq && !_axis_out_mac_spm_write_req_fifo_full && (_axis_out_mac_spm_write_req_fifo_deq && !_axis_out_mac_spm_write_req_fifo_empty)) begin
         count__axis_out_mac_spm_write_req_fifo <= count__axis_out_mac_spm_write_req_fifo;
@@ -4404,7 +4359,7 @@ module spm
       end else if(_axis_out_mac_spm_write_req_fifo_deq && !_axis_out_mac_spm_write_req_fifo_empty) begin
         count__axis_out_mac_spm_write_req_fifo <= count__axis_out_mac_spm_write_req_fifo - 1;
       end 
-      __tmp_152_1 <= _tmp_152;
+      __tmp_147_1 <= _tmp_147;
     end
   end
 
@@ -4420,10 +4375,10 @@ module spm
         axis_out_axim_spm_tvalid <= 0;
         axis_out_axim_spm_tlast <= 0;
       end 
-      if((_axis_out_axim_spm_write_data_wide_fsm == 2) && (_axis_out_axim_spm_write_op_sel_buf == 1) && (_axis_out_axim_spm_write_wide_count_187 == 1) && read_burst_rvalid_191 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0)) && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid)) begin
-        axis_out_axim_spm_tdata <= { read_burst_rdata_195, _axis_out_axim_spm_write_wide_wdata_196[127:64] };
+      if((_axis_out_axim_spm_write_data_wide_fsm == 2) && (_axis_out_axim_spm_write_op_sel_buf == 1) && (_axis_out_axim_spm_write_wide_count_179 == 1) && read_burst_rvalid_183 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0)) && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid)) begin
+        axis_out_axim_spm_tdata <= { read_burst_rdata_187, _axis_out_axim_spm_write_wide_wdata_188[127:64] };
         axis_out_axim_spm_tvalid <= 1;
-        axis_out_axim_spm_tlast <= read_burst_rlast_192 || (_axis_out_axim_spm_write_size_buf <= 1);
+        axis_out_axim_spm_tlast <= read_burst_rlast_184 || (_axis_out_axim_spm_write_size_buf <= 1);
       end 
       _axis_out_axim_spm_cond_0_1 <= 1;
       if(axis_out_axim_spm_tvalid && !axis_out_axim_spm_tready) begin
@@ -4449,10 +4404,10 @@ module spm
         _axis_out_axim_spm_write_local_stride_buf <= _axis_out_axim_spm_write_local_stride_fifo;
         _axis_out_axim_spm_write_size_buf <= (_axis_out_axim_spm_write_size_fifo >> 1) + (((_axis_out_axim_spm_write_size_fifo & 1) > 0)? 1 : 0) << 1;
       end 
-      if((_axis_out_axim_spm_write_data_wide_fsm == 2) && read_burst_rvalid_191 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0))) begin
+      if((_axis_out_axim_spm_write_data_wide_fsm == 2) && read_burst_rvalid_183 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0))) begin
         _axis_out_axim_spm_write_size_buf <= _axis_out_axim_spm_write_size_buf - 1;
       end 
-      if((_axis_out_axim_spm_write_data_wide_fsm == 2) && (_axis_out_axim_spm_write_wide_count_187 == 1) && read_burst_rvalid_191 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0)) && read_burst_rlast_192) begin
+      if((_axis_out_axim_spm_write_data_wide_fsm == 2) && (_axis_out_axim_spm_write_wide_count_179 == 1) && read_burst_rvalid_183 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0)) && read_burst_rlast_184) begin
         _axis_out_axim_spm_write_data_busy <= 0;
       end 
     end
@@ -4462,7 +4417,7 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       count__axis_out_axim_spm_write_req_fifo <= 0;
-      __tmp_186_1 <= 0;
+      __tmp_178_1 <= 0;
     end else begin
       if(_axis_out_axim_spm_write_req_fifo_enq && !_axis_out_axim_spm_write_req_fifo_full && (_axis_out_axim_spm_write_req_fifo_deq && !_axis_out_axim_spm_write_req_fifo_empty)) begin
         count__axis_out_axim_spm_write_req_fifo <= count__axis_out_axim_spm_write_req_fifo;
@@ -4471,7 +4426,7 @@ module spm
       end else if(_axis_out_axim_spm_write_req_fifo_deq && !_axis_out_axim_spm_write_req_fifo_empty) begin
         count__axis_out_axim_spm_write_req_fifo <= count__axis_out_axim_spm_write_req_fifo - 1;
       end 
-      __tmp_186_1 <= _tmp_186;
+      __tmp_178_1 <= _tmp_178;
     end
   end
 
@@ -4491,16 +4446,16 @@ module spm
         _axis_in_axim_spm_read_local_stride_buf <= _axis_in_axim_spm_read_local_stride_fifo;
         _axis_in_axim_spm_read_local_size_buf <= _axis_in_axim_spm_read_local_size_fifo;
       end 
-      if((_axis_in_axim_spm_read_data_wide_fsm == 2) && (_axis_in_axim_spm_read_op_sel_buf == 1) && axis_in_axim_spm_tvalid && (_axis_in_axim_spm_read_wide_count_175 == 0)) begin
+      if((_axis_in_axim_spm_read_data_wide_fsm == 2) && (_axis_in_axim_spm_read_op_sel_buf == 1) && axis_in_axim_spm_tvalid && (_axis_in_axim_spm_read_wide_count_167 == 0)) begin
         _axis_in_axim_spm_read_local_size_buf <= _axis_in_axim_spm_read_local_size_buf - 1;
       end 
-      if((_axis_in_axim_spm_read_data_wide_fsm == 2) && (_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_wide_count_175 > 0)) begin
+      if((_axis_in_axim_spm_read_data_wide_fsm == 2) && (_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_wide_count_167 > 0)) begin
         _axis_in_axim_spm_read_local_size_buf <= _axis_in_axim_spm_read_local_size_buf - 1;
       end 
-      if((_axis_in_axim_spm_read_data_wide_fsm == 2) && (_axis_in_axim_spm_read_local_size_buf <= 1) && (_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_wide_count_175 > 0)) begin
+      if((_axis_in_axim_spm_read_data_wide_fsm == 2) && (_axis_in_axim_spm_read_local_size_buf <= 1) && (_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_wide_count_167 > 0)) begin
         _axis_in_axim_spm_read_data_busy <= 0;
       end 
-      if((_axis_in_axim_spm_read_data_wide_fsm == 2) && (_axis_in_axim_spm_read_local_size_buf <= 1) && (_axis_in_axim_spm_read_op_sel_buf == 1) && axis_in_axim_spm_tvalid && (_axis_in_axim_spm_read_wide_count_175 == 0)) begin
+      if((_axis_in_axim_spm_read_data_wide_fsm == 2) && (_axis_in_axim_spm_read_local_size_buf <= 1) && (_axis_in_axim_spm_read_op_sel_buf == 1) && axis_in_axim_spm_tvalid && (_axis_in_axim_spm_read_wide_count_167 == 0)) begin
         _axis_in_axim_spm_read_data_busy <= 0;
       end 
     end
@@ -4510,7 +4465,7 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       count__axis_in_axim_spm_read_req_fifo <= 0;
-      __tmp_172_1 <= 0;
+      __tmp_164_1 <= 0;
     end else begin
       if(_axis_in_axim_spm_read_req_fifo_enq && !_axis_in_axim_spm_read_req_fifo_full && (_axis_in_axim_spm_read_req_fifo_deq && !_axis_in_axim_spm_read_req_fifo_empty)) begin
         count__axis_in_axim_spm_read_req_fifo <= count__axis_in_axim_spm_read_req_fifo;
@@ -4519,7 +4474,7 @@ module spm
       end else if(_axis_in_axim_spm_read_req_fifo_deq && !_axis_in_axim_spm_read_req_fifo_empty) begin
         count__axis_in_axim_spm_read_req_fifo <= count__axis_in_axim_spm_read_req_fifo - 1;
       end 
-      __tmp_172_1 <= _tmp_172;
+      __tmp_164_1 <= _tmp_164;
     end
   end
 
@@ -4535,10 +4490,10 @@ module spm
         axis_out_xored_spm_tvalid <= 0;
         axis_out_xored_spm_tlast <= 0;
       end 
-      if((_axis_out_xored_spm_write_data_wide_fsm == 2) && (_axis_out_xored_spm_write_op_sel_buf == 1) && (_axis_out_xored_spm_write_wide_count_218 == 1) && read_burst_rvalid_222 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0)) && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid)) begin
-        axis_out_xored_spm_tdata <= { read_burst_rdata_226, _axis_out_xored_spm_write_wide_wdata_227[127:64] };
+      if((_axis_out_xored_spm_write_data_wide_fsm == 2) && (_axis_out_xored_spm_write_op_sel_buf == 1) && (_axis_out_xored_spm_write_wide_count_210 == 1) && read_burst_rvalid_214 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0)) && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid)) begin
+        axis_out_xored_spm_tdata <= { read_burst_rdata_218, _axis_out_xored_spm_write_wide_wdata_219[127:64] };
         axis_out_xored_spm_tvalid <= 1;
-        axis_out_xored_spm_tlast <= read_burst_rlast_223 || (_axis_out_xored_spm_write_size_buf <= 1);
+        axis_out_xored_spm_tlast <= read_burst_rlast_215 || (_axis_out_xored_spm_write_size_buf <= 1);
       end 
       _axis_out_xored_spm_cond_0_1 <= 1;
       if(axis_out_xored_spm_tvalid && !axis_out_xored_spm_tready) begin
@@ -4564,10 +4519,10 @@ module spm
         _axis_out_xored_spm_write_local_stride_buf <= _axis_out_xored_spm_write_local_stride_fifo;
         _axis_out_xored_spm_write_size_buf <= (_axis_out_xored_spm_write_size_fifo >> 1) + (((_axis_out_xored_spm_write_size_fifo & 1) > 0)? 1 : 0) << 1;
       end 
-      if((_axis_out_xored_spm_write_data_wide_fsm == 2) && read_burst_rvalid_222 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0))) begin
+      if((_axis_out_xored_spm_write_data_wide_fsm == 2) && read_burst_rvalid_214 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0))) begin
         _axis_out_xored_spm_write_size_buf <= _axis_out_xored_spm_write_size_buf - 1;
       end 
-      if((_axis_out_xored_spm_write_data_wide_fsm == 2) && (_axis_out_xored_spm_write_wide_count_218 == 1) && read_burst_rvalid_222 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0)) && read_burst_rlast_223) begin
+      if((_axis_out_xored_spm_write_data_wide_fsm == 2) && (_axis_out_xored_spm_write_wide_count_210 == 1) && read_burst_rvalid_214 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0)) && read_burst_rlast_215) begin
         _axis_out_xored_spm_write_data_busy <= 0;
       end 
     end
@@ -4577,7 +4532,7 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       count__axis_out_xored_spm_write_req_fifo <= 0;
-      __tmp_217_1 <= 0;
+      __tmp_209_1 <= 0;
     end else begin
       if(_axis_out_xored_spm_write_req_fifo_enq && !_axis_out_xored_spm_write_req_fifo_full && (_axis_out_xored_spm_write_req_fifo_deq && !_axis_out_xored_spm_write_req_fifo_empty)) begin
         count__axis_out_xored_spm_write_req_fifo <= count__axis_out_xored_spm_write_req_fifo;
@@ -4586,7 +4541,7 @@ module spm
       end else if(_axis_out_xored_spm_write_req_fifo_deq && !_axis_out_xored_spm_write_req_fifo_empty) begin
         count__axis_out_xored_spm_write_req_fifo <= count__axis_out_xored_spm_write_req_fifo - 1;
       end 
-      __tmp_217_1 <= _tmp_217;
+      __tmp_209_1 <= _tmp_209;
     end
   end
 
@@ -4606,16 +4561,16 @@ module spm
         _axis_in_xored_spm_read_local_stride_buf <= _axis_in_xored_spm_read_local_stride_fifo;
         _axis_in_xored_spm_read_local_size_buf <= _axis_in_xored_spm_read_local_size_fifo;
       end 
-      if((_axis_in_xored_spm_read_data_wide_fsm == 2) && (_axis_in_xored_spm_read_op_sel_buf == 1) && axis_in_xored_spm_tvalid && (_axis_in_xored_spm_read_wide_count_206 == 0)) begin
+      if((_axis_in_xored_spm_read_data_wide_fsm == 2) && (_axis_in_xored_spm_read_op_sel_buf == 1) && axis_in_xored_spm_tvalid && (_axis_in_xored_spm_read_wide_count_198 == 0)) begin
         _axis_in_xored_spm_read_local_size_buf <= _axis_in_xored_spm_read_local_size_buf - 1;
       end 
-      if((_axis_in_xored_spm_read_data_wide_fsm == 2) && (_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_wide_count_206 > 0)) begin
+      if((_axis_in_xored_spm_read_data_wide_fsm == 2) && (_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_wide_count_198 > 0)) begin
         _axis_in_xored_spm_read_local_size_buf <= _axis_in_xored_spm_read_local_size_buf - 1;
       end 
-      if((_axis_in_xored_spm_read_data_wide_fsm == 2) && (_axis_in_xored_spm_read_local_size_buf <= 1) && (_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_wide_count_206 > 0)) begin
+      if((_axis_in_xored_spm_read_data_wide_fsm == 2) && (_axis_in_xored_spm_read_local_size_buf <= 1) && (_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_wide_count_198 > 0)) begin
         _axis_in_xored_spm_read_data_busy <= 0;
       end 
-      if((_axis_in_xored_spm_read_data_wide_fsm == 2) && (_axis_in_xored_spm_read_local_size_buf <= 1) && (_axis_in_xored_spm_read_op_sel_buf == 1) && axis_in_xored_spm_tvalid && (_axis_in_xored_spm_read_wide_count_206 == 0)) begin
+      if((_axis_in_xored_spm_read_data_wide_fsm == 2) && (_axis_in_xored_spm_read_local_size_buf <= 1) && (_axis_in_xored_spm_read_op_sel_buf == 1) && axis_in_xored_spm_tvalid && (_axis_in_xored_spm_read_wide_count_198 == 0)) begin
         _axis_in_xored_spm_read_data_busy <= 0;
       end 
     end
@@ -4625,7 +4580,7 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       count__axis_in_xored_spm_read_req_fifo <= 0;
-      __tmp_203_1 <= 0;
+      __tmp_195_1 <= 0;
     end else begin
       if(_axis_in_xored_spm_read_req_fifo_enq && !_axis_in_xored_spm_read_req_fifo_full && (_axis_in_xored_spm_read_req_fifo_deq && !_axis_in_xored_spm_read_req_fifo_empty)) begin
         count__axis_in_xored_spm_read_req_fifo <= count__axis_in_xored_spm_read_req_fifo;
@@ -4634,24 +4589,22 @@ module spm
       end else if(_axis_in_xored_spm_read_req_fifo_deq && !_axis_in_xored_spm_read_req_fifo_empty) begin
         count__axis_in_xored_spm_read_req_fifo <= count__axis_in_xored_spm_read_req_fifo - 1;
       end 
-      __tmp_203_1 <= _tmp_203;
+      __tmp_195_1 <= _tmp_195;
     end
   end
 
 
   always @(posedge CLK) begin
     if(RST) begin
-      __tmp_143_1 <= 0;
-      __tmp_160_1 <= 0;
-      __tmp_164_1 <= 0;
-      __tmp_194_1 <= 0;
-      __tmp_225_1 <= 0;
+      __tmp_139_1 <= 0;
+      __tmp_155_1 <= 0;
+      __tmp_186_1 <= 0;
+      __tmp_217_1 <= 0;
     end else begin
-      __tmp_143_1 <= _tmp_143;
-      __tmp_160_1 <= _tmp_160;
-      __tmp_164_1 <= _tmp_164;
-      __tmp_194_1 <= _tmp_194;
-      __tmp_225_1 <= _tmp_225;
+      __tmp_139_1 <= _tmp_139;
+      __tmp_155_1 <= _tmp_155;
+      __tmp_186_1 <= _tmp_186;
+      __tmp_217_1 <= _tmp_217;
     end
   end
 
@@ -4693,13 +4646,6 @@ module spm
   localparam spm_thread_36 = 36;
   localparam spm_thread_37 = 37;
   localparam spm_thread_38 = 38;
-  localparam spm_thread_39 = 39;
-  localparam spm_thread_40 = 40;
-  localparam spm_thread_41 = 41;
-  localparam spm_thread_42 = 42;
-  localparam spm_thread_43 = 43;
-  localparam spm_thread_44 = 44;
-  localparam spm_thread_45 = 45;
 
   always @(posedge CLK) begin
     if(RST) begin
@@ -4709,9 +4655,6 @@ module spm
       size_73 <= 0;
       direction_71 <= 0;
       destination_72 <= 0;
-      _spm_thread_i_0 <= 0;
-      read_rdata_165 <= 0;
-      tmp_data_2_76 <= 0;
     end else begin
       case(spm_thread)
         spm_thread_init: begin
@@ -4721,7 +4664,7 @@ module spm
           if(1) begin
             spm_thread <= spm_thread_2;
           end else begin
-            spm_thread <= spm_thread_45;
+            spm_thread <= spm_thread_38;
           end
         end
         spm_thread_2: begin
@@ -4753,123 +4696,123 @@ module spm
           spm_thread <= spm_thread_9;
         end
         spm_thread_9: begin
-          // $display("SPM operation: dram_addr=%x, spm_addr=%x, size=%d, direction=%d, destination=%d", dram_addr_69, spm_addr_70, size_73, direction_71, destination_72);
-          spm_thread <= spm_thread_10;
+          if(destination_72 == 1) begin
+            spm_thread <= spm_thread_10;
+          end else begin
+            spm_thread <= spm_thread_17;
+          end
         end
         spm_thread_10: begin
-          if(destination_72 == 1) begin
+          if(direction_71 == 0) begin
             spm_thread <= spm_thread_11;
           end else begin
-            spm_thread <= spm_thread_18;
+            spm_thread <= spm_thread_14;
           end
         end
         spm_thread_11: begin
-          if(direction_71 == 0) begin
+          if(_axi_m_dram_read_req_idle) begin
             spm_thread <= spm_thread_12;
-          end else begin
-            spm_thread <= spm_thread_15;
-          end
+          end 
         end
         spm_thread_12: begin
-          if(_axi_m_dram_read_req_idle) begin
+          if(_axi_m_dram_read_idle) begin
             spm_thread <= spm_thread_13;
           end 
         end
         spm_thread_13: begin
-          if(_axi_m_dram_read_idle) begin
-            spm_thread <= spm_thread_14;
-          end 
+          spm_thread <= spm_thread_16;
         end
         spm_thread_14: begin
-          spm_thread <= spm_thread_17;
+          if(_axi_m_dram_write_req_idle) begin
+            spm_thread <= spm_thread_15;
+          end 
         end
         spm_thread_15: begin
-          if(_axi_m_dram_write_req_idle) begin
+          if(_axi_m_dram_write_idle && !_axi_m_dram_has_outstanding_write) begin
             spm_thread <= spm_thread_16;
           end 
         end
         spm_thread_16: begin
-          if(_axi_m_dram_write_idle && !_axi_m_dram_has_outstanding_write) begin
-            spm_thread <= spm_thread_17;
-          end 
+          spm_thread <= spm_thread_35;
         end
         spm_thread_17: begin
-          spm_thread <= spm_thread_42;
+          if(destination_72 == 2) begin
+            spm_thread <= spm_thread_18;
+          end else begin
+            spm_thread <= spm_thread_22;
+          end
         end
         spm_thread_18: begin
-          if(destination_72 == 2) begin
+          if(direction_71 == 1) begin
             spm_thread <= spm_thread_19;
           end else begin
-            spm_thread <= spm_thread_29;
+            spm_thread <= spm_thread_21;
           end
         end
         spm_thread_19: begin
-          if(direction_71 == 1) begin
+          if(!_axis_out_mac_spm_write_req_fifo_almost_full) begin
             spm_thread <= spm_thread_20;
-          end else begin
-            spm_thread <= spm_thread_28;
-          end
+          end 
         end
         spm_thread_20: begin
-          if(!_axis_out_mac_spm_write_req_fifo_almost_full) begin
+          if(_axis_out_mac_spm_write_idle) begin
             spm_thread <= spm_thread_21;
           end 
         end
         spm_thread_21: begin
-          if(_axis_out_mac_spm_write_idle) begin
-            spm_thread <= spm_thread_22;
-          end 
+          spm_thread <= spm_thread_35;
         end
         spm_thread_22: begin
-          _spm_thread_i_0 <= 0;
-          spm_thread <= spm_thread_23;
-        end
-        spm_thread_23: begin
-          if(_spm_thread_i_0 < 8) begin
-            spm_thread <= spm_thread_24;
+          if(destination_72 == 4) begin
+            spm_thread <= spm_thread_23;
           end else begin
             spm_thread <= spm_thread_28;
           end
         end
+        spm_thread_23: begin
+          if(direction_71 == 0) begin
+            spm_thread <= spm_thread_24;
+          end else begin
+            spm_thread <= spm_thread_26;
+          end
+        end
         spm_thread_24: begin
-          if(__tmp_164_1) begin
-            read_rdata_165 <= ram_spm_0_rdata;
-          end 
-          if(__tmp_164_1) begin
+          if(!_axis_in_axim_spm_read_req_fifo_almost_full) begin
             spm_thread <= spm_thread_25;
           end 
         end
         spm_thread_25: begin
-          tmp_data_2_76 <= read_rdata_165;
-          spm_thread <= spm_thread_26;
-        end
-        spm_thread_26: begin
-          // $display(" MAC data %d: %x", _spm_thread_i_0, tmp_data_2_76);
           spm_thread <= spm_thread_27;
         end
+        spm_thread_26: begin
+          if(!_axis_out_axim_spm_write_req_fifo_almost_full) begin
+            spm_thread <= spm_thread_27;
+          end 
+        end
         spm_thread_27: begin
-          _spm_thread_i_0 <= _spm_thread_i_0 + 1;
-          spm_thread <= spm_thread_23;
+          spm_thread <= spm_thread_35;
         end
         spm_thread_28: begin
-          spm_thread <= spm_thread_42;
-        end
-        spm_thread_29: begin
-          if(destination_72 == 4) begin
-            spm_thread <= spm_thread_30;
+          if(destination_72 == 8) begin
+            spm_thread <= spm_thread_29;
           end else begin
             spm_thread <= spm_thread_35;
           end
         end
-        spm_thread_30: begin
+        spm_thread_29: begin
           if(direction_71 == 0) begin
-            spm_thread <= spm_thread_31;
+            spm_thread <= spm_thread_30;
           end else begin
             spm_thread <= spm_thread_33;
           end
         end
+        spm_thread_30: begin
+          if(!_axis_in_xored_spm_read_req_fifo_almost_full) begin
+            spm_thread <= spm_thread_31;
+          end 
+        end
         spm_thread_31: begin
-          if(!_axis_in_axim_spm_read_req_fifo_almost_full) begin
+          if(_axis_in_xored_spm_read_idle) begin
             spm_thread <= spm_thread_32;
           end 
         end
@@ -4877,55 +4820,20 @@ module spm
           spm_thread <= spm_thread_34;
         end
         spm_thread_33: begin
-          if(!_axis_out_axim_spm_write_req_fifo_almost_full) begin
+          if(!_axis_out_xored_spm_write_req_fifo_almost_full) begin
             spm_thread <= spm_thread_34;
           end 
         end
         spm_thread_34: begin
-          spm_thread <= spm_thread_42;
+          spm_thread <= spm_thread_35;
         end
         spm_thread_35: begin
-          if(destination_72 == 8) begin
-            spm_thread <= spm_thread_36;
-          end else begin
-            spm_thread <= spm_thread_42;
-          end
+          spm_thread <= spm_thread_36;
         end
         spm_thread_36: begin
-          if(direction_71 == 0) begin
-            spm_thread <= spm_thread_37;
-          end else begin
-            spm_thread <= spm_thread_40;
-          end
+          spm_thread <= spm_thread_37;
         end
         spm_thread_37: begin
-          if(!_axis_in_xored_spm_read_req_fifo_almost_full) begin
-            spm_thread <= spm_thread_38;
-          end 
-        end
-        spm_thread_38: begin
-          if(_axis_in_xored_spm_read_idle) begin
-            spm_thread <= spm_thread_39;
-          end 
-        end
-        spm_thread_39: begin
-          spm_thread <= spm_thread_41;
-        end
-        spm_thread_40: begin
-          if(!_axis_out_xored_spm_write_req_fifo_almost_full) begin
-            spm_thread <= spm_thread_41;
-          end 
-        end
-        spm_thread_41: begin
-          spm_thread <= spm_thread_42;
-        end
-        spm_thread_42: begin
-          spm_thread <= spm_thread_43;
-        end
-        spm_thread_43: begin
-          spm_thread <= spm_thread_44;
-        end
-        spm_thread_44: begin
           spm_thread <= spm_thread_1;
         end
       endcase
@@ -4960,49 +4868,25 @@ module spm
     end
   end
 
-  localparam _axi_m_dram_read_data_wide_fsm_1 = 1;
-  localparam _axi_m_dram_read_data_wide_fsm_2 = 2;
+  localparam _axi_m_dram_read_data_fsm_1 = 1;
+  localparam _axi_m_dram_read_data_fsm_2 = 2;
 
   always @(posedge CLK) begin
     if(RST) begin
-      _axi_m_dram_read_data_wide_fsm <= _axi_m_dram_read_data_wide_fsm_init;
-      _axi_m_dram_read_wide_count_101 <= 0;
-      _axi_m_dram_read_wide_wvalid_100 <= 0;
-      _axi_m_dram_read_wide_wdata_99 <= 0;
+      _axi_m_dram_read_data_fsm <= _axi_m_dram_read_data_fsm_init;
     end else begin
-      case(_axi_m_dram_read_data_wide_fsm)
-        _axi_m_dram_read_data_wide_fsm_init: begin
+      case(_axi_m_dram_read_data_fsm)
+        _axi_m_dram_read_data_fsm_init: begin
           if(!_axi_m_dram_read_data_busy && !_axi_m_dram_read_req_fifo_empty && (_axi_m_dram_read_op_sel_fifo == 1)) begin
-            _axi_m_dram_read_data_wide_fsm <= _axi_m_dram_read_data_wide_fsm_1;
+            _axi_m_dram_read_data_fsm <= _axi_m_dram_read_data_fsm_1;
           end 
         end
-        _axi_m_dram_read_data_wide_fsm_1: begin
-          _axi_m_dram_read_wide_count_101 <= 0;
-          _axi_m_dram_read_wide_wvalid_100 <= 0;
-          _axi_m_dram_read_data_wide_fsm <= _axi_m_dram_read_data_wide_fsm_2;
+        _axi_m_dram_read_data_fsm_1: begin
+          _axi_m_dram_read_data_fsm <= _axi_m_dram_read_data_fsm_2;
         end
-        _axi_m_dram_read_data_wide_fsm_2: begin
-          if(_axi_m_dram_read_op_sel_buf == 1) begin
-            _axi_m_dram_read_wide_wvalid_100 <= 0;
-          end 
-          if((_axi_m_dram_read_op_sel_buf == 1) && _axi_m_dram_rvalid_sb_0 && (_axi_m_dram_read_wide_count_101 == 0)) begin
-            _axi_m_dram_read_wide_count_101 <= _axi_m_dram_read_wide_count_101 + 1;
-            _axi_m_dram_read_wide_wdata_99 <= _axi_m_dram_rdata_sb_0;
-            _axi_m_dram_read_wide_wvalid_100 <= 1;
-          end 
-          if((_axi_m_dram_read_op_sel_buf == 1) && (_axi_m_dram_read_wide_count_101 > 0)) begin
-            _axi_m_dram_read_wide_count_101 <= _axi_m_dram_read_wide_count_101 + 1;
-            _axi_m_dram_read_wide_wdata_99 <= _axi_m_dram_read_wide_wdata_99 >> 64;
-            _axi_m_dram_read_wide_wvalid_100 <= 1;
-          end 
-          if((_axi_m_dram_read_op_sel_buf == 1) && (_axi_m_dram_read_wide_count_101 == 1)) begin
-            _axi_m_dram_read_wide_count_101 <= 0;
-          end 
-          if((_axi_m_dram_read_local_size_buf <= 1) && (_axi_m_dram_read_op_sel_buf == 1) && (_axi_m_dram_read_wide_count_101 > 0)) begin
-            _axi_m_dram_read_data_wide_fsm <= _axi_m_dram_read_data_wide_fsm_init;
-          end 
-          if((_axi_m_dram_read_local_size_buf <= 1) && (_axi_m_dram_read_op_sel_buf == 1) && _axi_m_dram_rvalid_sb_0 && (_axi_m_dram_read_wide_count_101 == 0)) begin
-            _axi_m_dram_read_data_wide_fsm <= _axi_m_dram_read_data_wide_fsm_init;
+        _axi_m_dram_read_data_fsm_2: begin
+          if(_axi_m_dram_rvalid_sb_0 && (_axi_m_dram_read_local_size_buf <= 1)) begin
+            _axi_m_dram_read_data_fsm <= _axi_m_dram_read_data_fsm_init;
           end 
         end
       endcase
@@ -5014,37 +4898,37 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       write_burst_fsm_0 <= write_burst_fsm_0_init;
-      write_burst_addr_102 <= 0;
-      write_burst_stride_103 <= 0;
-      write_burst_length_104 <= 0;
-      write_burst_done_105 <= 0;
+      write_burst_addr_99 <= 0;
+      write_burst_stride_100 <= 0;
+      write_burst_length_101 <= 0;
+      write_burst_done_102 <= 0;
     end else begin
       case(write_burst_fsm_0)
         write_burst_fsm_0_init: begin
-          write_burst_addr_102 <= _axi_m_dram_read_local_addr_buf;
-          write_burst_stride_103 <= _axi_m_dram_read_local_stride_buf;
-          write_burst_length_104 <= _axi_m_dram_read_local_size_buf;
-          write_burst_done_105 <= 0;
-          if((_axi_m_dram_read_data_wide_fsm == 1) && (_axi_m_dram_read_op_sel_buf == 1) && (_axi_m_dram_read_local_size_buf > 0)) begin
+          write_burst_addr_99 <= _axi_m_dram_read_local_addr_buf;
+          write_burst_stride_100 <= _axi_m_dram_read_local_stride_buf;
+          write_burst_length_101 <= _axi_m_dram_read_local_size_buf;
+          write_burst_done_102 <= 0;
+          if((_axi_m_dram_read_data_fsm == 1) && (_axi_m_dram_read_op_sel_buf == 1) && (_axi_m_dram_read_local_size_buf > 0)) begin
             write_burst_fsm_0 <= write_burst_fsm_0_1;
           end 
         end
         write_burst_fsm_0_1: begin
-          if(_axi_m_dram_read_wide_wvalid_100) begin
-            write_burst_addr_102 <= write_burst_addr_102 + write_burst_stride_103;
-            write_burst_length_104 <= write_burst_length_104 - 1;
-            write_burst_done_105 <= 0;
+          if(_axi_m_dram_rvalid_sb_0) begin
+            write_burst_addr_99 <= write_burst_addr_99 + write_burst_stride_100;
+            write_burst_length_101 <= write_burst_length_101 - 1;
+            write_burst_done_102 <= 0;
           end 
-          if(_axi_m_dram_read_wide_wvalid_100 && (write_burst_length_104 <= 1)) begin
-            write_burst_done_105 <= 1;
+          if(_axi_m_dram_rvalid_sb_0 && (write_burst_length_101 <= 1)) begin
+            write_burst_done_102 <= 1;
           end 
-          if(_axi_m_dram_read_wide_wvalid_100 && 0) begin
-            write_burst_done_105 <= 1;
+          if(_axi_m_dram_rvalid_sb_0 && 0) begin
+            write_burst_done_102 <= 1;
           end 
-          if(_axi_m_dram_read_wide_wvalid_100 && (write_burst_length_104 <= 1)) begin
+          if(_axi_m_dram_rvalid_sb_0 && (write_burst_length_101 <= 1)) begin
             write_burst_fsm_0 <= write_burst_fsm_0_init;
           end 
-          if(_axi_m_dram_read_wide_wvalid_100 && 0) begin
+          if(_axi_m_dram_rvalid_sb_0 && 0) begin
             write_burst_fsm_0 <= write_burst_fsm_0_init;
           end 
           if(0) begin
@@ -5083,35 +4967,25 @@ module spm
     end
   end
 
-  localparam _axi_m_dram_write_data_wide_fsm_1 = 1;
-  localparam _axi_m_dram_write_data_wide_fsm_2 = 2;
+  localparam _axi_m_dram_write_data_fsm_1 = 1;
+  localparam _axi_m_dram_write_data_fsm_2 = 2;
 
   always @(posedge CLK) begin
     if(RST) begin
-      _axi_m_dram_write_data_wide_fsm <= _axi_m_dram_write_data_wide_fsm_init;
-      _axi_m_dram_write_wide_count_136 <= 0;
-      _axi_m_dram_write_wide_wdata_145 <= 0;
+      _axi_m_dram_write_data_fsm <= _axi_m_dram_write_data_fsm_init;
     end else begin
-      case(_axi_m_dram_write_data_wide_fsm)
-        _axi_m_dram_write_data_wide_fsm_init: begin
+      case(_axi_m_dram_write_data_fsm)
+        _axi_m_dram_write_data_fsm_init: begin
           if(!_axi_m_dram_write_data_busy && !_axi_m_dram_write_req_fifo_empty && (_axi_m_dram_write_op_sel_fifo == 1)) begin
-            _axi_m_dram_write_data_wide_fsm <= _axi_m_dram_write_data_wide_fsm_1;
+            _axi_m_dram_write_data_fsm <= _axi_m_dram_write_data_fsm_1;
           end 
         end
-        _axi_m_dram_write_data_wide_fsm_1: begin
-          _axi_m_dram_write_wide_count_136 <= 0;
-          _axi_m_dram_write_data_wide_fsm <= _axi_m_dram_write_data_wide_fsm_2;
+        _axi_m_dram_write_data_fsm_1: begin
+          _axi_m_dram_write_data_fsm <= _axi_m_dram_write_data_fsm_2;
         end
-        _axi_m_dram_write_data_wide_fsm_2: begin
-          if(read_burst_rvalid_140 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0))) begin
-            _axi_m_dram_write_wide_wdata_145 <= { read_burst_rdata_144, _axi_m_dram_write_wide_wdata_145[127:64] };
-            _axi_m_dram_write_wide_count_136 <= _axi_m_dram_write_wide_count_136 + 1;
-          end 
-          if(read_burst_rvalid_140 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0)) && (_axi_m_dram_write_wide_count_136 == 1)) begin
-            _axi_m_dram_write_wide_count_136 <= 0;
-          end 
-          if((_axi_m_dram_write_wide_count_136 == 1) && read_burst_rvalid_140 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0)) && read_burst_rlast_141) begin
-            _axi_m_dram_write_data_wide_fsm <= _axi_m_dram_write_data_wide_fsm_init;
+        _axi_m_dram_write_data_fsm_2: begin
+          if((_axi_m_dram_write_op_sel_buf == 1) && read_burst_rvalid_136 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0) && (_axi_m_dram_write_size_buf > 0)) && read_burst_rlast_137) begin
+            _axi_m_dram_write_data_fsm <= _axi_m_dram_write_data_fsm_init;
           end 
         end
       endcase
@@ -5123,41 +4997,41 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       read_burst_fsm_1 <= read_burst_fsm_1_init;
-      read_burst_addr_137 <= 0;
-      read_burst_stride_138 <= 0;
-      read_burst_length_139 <= 0;
-      read_burst_rvalid_140 <= 0;
-      read_burst_rlast_141 <= 0;
+      read_burst_addr_133 <= 0;
+      read_burst_stride_134 <= 0;
+      read_burst_length_135 <= 0;
+      read_burst_rvalid_136 <= 0;
+      read_burst_rlast_137 <= 0;
     end else begin
       case(read_burst_fsm_1)
         read_burst_fsm_1_init: begin
-          read_burst_addr_137 <= _axi_m_dram_write_local_addr_buf;
-          read_burst_stride_138 <= _axi_m_dram_write_local_stride_buf;
-          read_burst_length_139 <= _axi_m_dram_write_size_buf;
-          read_burst_rvalid_140 <= 0;
-          read_burst_rlast_141 <= 0;
-          if((_axi_m_dram_write_data_wide_fsm == 1) && (_axi_m_dram_write_op_sel_buf == 1) && (_axi_m_dram_write_size_buf > 0)) begin
+          read_burst_addr_133 <= _axi_m_dram_write_local_addr_buf;
+          read_burst_stride_134 <= _axi_m_dram_write_local_stride_buf;
+          read_burst_length_135 <= _axi_m_dram_write_size_buf;
+          read_burst_rvalid_136 <= 0;
+          read_burst_rlast_137 <= 0;
+          if((_axi_m_dram_write_data_fsm == 1) && (_axi_m_dram_write_op_sel_buf == 1) && (_axi_m_dram_write_size_buf > 0)) begin
             read_burst_fsm_1 <= read_burst_fsm_1_1;
           end 
         end
         read_burst_fsm_1_1: begin
-          if((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0) && (read_burst_length_139 > 0)) begin
-            read_burst_addr_137 <= read_burst_addr_137 + read_burst_stride_138;
-            read_burst_length_139 <= read_burst_length_139 - 1;
-            read_burst_rvalid_140 <= 1;
+          if((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0) && (_axi_m_dram_write_size_buf > 0) && (read_burst_length_135 > 0)) begin
+            read_burst_addr_133 <= read_burst_addr_133 + read_burst_stride_134;
+            read_burst_length_135 <= read_burst_length_135 - 1;
+            read_burst_rvalid_136 <= 1;
           end 
-          if((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0) && (read_burst_length_139 <= 1)) begin
-            read_burst_rlast_141 <= 1;
+          if((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0) && (_axi_m_dram_write_size_buf > 0) && (read_burst_length_135 <= 1)) begin
+            read_burst_rlast_137 <= 1;
           end 
-          if(read_burst_rlast_141 && read_burst_rvalid_140 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0))) begin
-            read_burst_rvalid_140 <= 0;
-            read_burst_rlast_141 <= 0;
+          if(read_burst_rlast_137 && read_burst_rvalid_136 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0) && (_axi_m_dram_write_size_buf > 0))) begin
+            read_burst_rvalid_136 <= 0;
+            read_burst_rlast_137 <= 0;
           end 
           if(0) begin
-            read_burst_rvalid_140 <= 0;
-            read_burst_rlast_141 <= 0;
+            read_burst_rvalid_136 <= 0;
+            read_burst_rlast_137 <= 0;
           end 
-          if(read_burst_rlast_141 && read_burst_rvalid_140 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0 || (_axi_m_dram_write_wide_count_136 > 0)) && (_axi_m_dram_write_size_buf > 0))) begin
+          if(read_burst_rlast_137 && read_burst_rvalid_136 && ((_axi_m_dram_wready_sb_0 || !_axi_m_dram_wvalid_sb_0) && (_axi_m_dram_write_size_buf > 0))) begin
             read_burst_fsm_1 <= read_burst_fsm_1_init;
           end 
           if(0) begin
@@ -5174,8 +5048,8 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       _axis_out_mac_spm_write_data_wide_fsm <= _axis_out_mac_spm_write_data_wide_fsm_init;
-      _axis_out_mac_spm_write_wide_count_153 <= 0;
-      _axis_out_mac_spm_write_wide_wdata_162 <= 0;
+      _axis_out_mac_spm_write_wide_count_148 <= 0;
+      _axis_out_mac_spm_write_wide_wdata_157 <= 0;
     end else begin
       case(_axis_out_mac_spm_write_data_wide_fsm)
         _axis_out_mac_spm_write_data_wide_fsm_init: begin
@@ -5184,18 +5058,18 @@ module spm
           end 
         end
         _axis_out_mac_spm_write_data_wide_fsm_1: begin
-          _axis_out_mac_spm_write_wide_count_153 <= 0;
+          _axis_out_mac_spm_write_wide_count_148 <= 0;
           _axis_out_mac_spm_write_data_wide_fsm <= _axis_out_mac_spm_write_data_wide_fsm_2;
         end
         _axis_out_mac_spm_write_data_wide_fsm_2: begin
-          if(read_burst_rvalid_157 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0))) begin
-            _axis_out_mac_spm_write_wide_wdata_162 <= { read_burst_rdata_161, _axis_out_mac_spm_write_wide_wdata_162[127:64] };
-            _axis_out_mac_spm_write_wide_count_153 <= _axis_out_mac_spm_write_wide_count_153 + 1;
+          if(read_burst_rvalid_152 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0))) begin
+            _axis_out_mac_spm_write_wide_wdata_157 <= { read_burst_rdata_156, _axis_out_mac_spm_write_wide_wdata_157[127:64] };
+            _axis_out_mac_spm_write_wide_count_148 <= _axis_out_mac_spm_write_wide_count_148 + 1;
           end 
-          if(read_burst_rvalid_157 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0)) && (_axis_out_mac_spm_write_wide_count_153 == 1)) begin
-            _axis_out_mac_spm_write_wide_count_153 <= 0;
+          if(read_burst_rvalid_152 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0)) && (_axis_out_mac_spm_write_wide_count_148 == 1)) begin
+            _axis_out_mac_spm_write_wide_count_148 <= 0;
           end 
-          if((_axis_out_mac_spm_write_wide_count_153 == 1) && read_burst_rvalid_157 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0)) && read_burst_rlast_158) begin
+          if((_axis_out_mac_spm_write_wide_count_148 == 1) && read_burst_rvalid_152 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0)) && read_burst_rlast_153) begin
             _axis_out_mac_spm_write_data_wide_fsm <= _axis_out_mac_spm_write_data_wide_fsm_init;
           end 
         end
@@ -5208,41 +5082,41 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       read_burst_fsm_2 <= read_burst_fsm_2_init;
-      read_burst_addr_154 <= 0;
-      read_burst_stride_155 <= 0;
-      read_burst_length_156 <= 0;
-      read_burst_rvalid_157 <= 0;
-      read_burst_rlast_158 <= 0;
+      read_burst_addr_149 <= 0;
+      read_burst_stride_150 <= 0;
+      read_burst_length_151 <= 0;
+      read_burst_rvalid_152 <= 0;
+      read_burst_rlast_153 <= 0;
     end else begin
       case(read_burst_fsm_2)
         read_burst_fsm_2_init: begin
-          read_burst_addr_154 <= _axis_out_mac_spm_write_local_addr_buf;
-          read_burst_stride_155 <= _axis_out_mac_spm_write_local_stride_buf;
-          read_burst_length_156 <= _axis_out_mac_spm_write_size_buf;
-          read_burst_rvalid_157 <= 0;
-          read_burst_rlast_158 <= 0;
+          read_burst_addr_149 <= _axis_out_mac_spm_write_local_addr_buf;
+          read_burst_stride_150 <= _axis_out_mac_spm_write_local_stride_buf;
+          read_burst_length_151 <= _axis_out_mac_spm_write_size_buf;
+          read_burst_rvalid_152 <= 0;
+          read_burst_rlast_153 <= 0;
           if((_axis_out_mac_spm_write_data_wide_fsm == 1) && (_axis_out_mac_spm_write_op_sel_buf == 1) && (_axis_out_mac_spm_write_size_buf > 0)) begin
             read_burst_fsm_2 <= read_burst_fsm_2_1;
           end 
         end
         read_burst_fsm_2_1: begin
-          if((axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0)) && (read_burst_length_156 > 0)) begin
-            read_burst_addr_154 <= read_burst_addr_154 + read_burst_stride_155;
-            read_burst_length_156 <= read_burst_length_156 - 1;
-            read_burst_rvalid_157 <= 1;
+          if((axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0)) && (read_burst_length_151 > 0)) begin
+            read_burst_addr_149 <= read_burst_addr_149 + read_burst_stride_150;
+            read_burst_length_151 <= read_burst_length_151 - 1;
+            read_burst_rvalid_152 <= 1;
           end 
-          if((axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0)) && (read_burst_length_156 <= 1)) begin
-            read_burst_rlast_158 <= 1;
+          if((axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0)) && (read_burst_length_151 <= 1)) begin
+            read_burst_rlast_153 <= 1;
           end 
-          if(read_burst_rlast_158 && read_burst_rvalid_157 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0))) begin
-            read_burst_rvalid_157 <= 0;
-            read_burst_rlast_158 <= 0;
+          if(read_burst_rlast_153 && read_burst_rvalid_152 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0))) begin
+            read_burst_rvalid_152 <= 0;
+            read_burst_rlast_153 <= 0;
           end 
           if(0) begin
-            read_burst_rvalid_157 <= 0;
-            read_burst_rlast_158 <= 0;
+            read_burst_rvalid_152 <= 0;
+            read_burst_rlast_153 <= 0;
           end 
-          if(read_burst_rlast_158 && read_burst_rvalid_157 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_153 > 0))) begin
+          if(read_burst_rlast_153 && read_burst_rvalid_152 && (axis_out_mac_spm_tready || !axis_out_mac_spm_tvalid || (_axis_out_mac_spm_write_wide_count_148 > 0))) begin
             read_burst_fsm_2 <= read_burst_fsm_2_init;
           end 
           if(0) begin
@@ -5259,9 +5133,9 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       _axis_in_axim_spm_read_data_wide_fsm <= _axis_in_axim_spm_read_data_wide_fsm_init;
-      _axis_in_axim_spm_read_wide_count_175 <= 0;
-      _axis_in_axim_spm_read_wide_wvalid_174 <= 0;
-      _axis_in_axim_spm_read_wide_wdata_173 <= 0;
+      _axis_in_axim_spm_read_wide_count_167 <= 0;
+      _axis_in_axim_spm_read_wide_wvalid_166 <= 0;
+      _axis_in_axim_spm_read_wide_wdata_165 <= 0;
     end else begin
       case(_axis_in_axim_spm_read_data_wide_fsm)
         _axis_in_axim_spm_read_data_wide_fsm_init: begin
@@ -5270,31 +5144,31 @@ module spm
           end 
         end
         _axis_in_axim_spm_read_data_wide_fsm_1: begin
-          _axis_in_axim_spm_read_wide_count_175 <= 0;
-          _axis_in_axim_spm_read_wide_wvalid_174 <= 0;
+          _axis_in_axim_spm_read_wide_count_167 <= 0;
+          _axis_in_axim_spm_read_wide_wvalid_166 <= 0;
           _axis_in_axim_spm_read_data_wide_fsm <= _axis_in_axim_spm_read_data_wide_fsm_2;
         end
         _axis_in_axim_spm_read_data_wide_fsm_2: begin
           if(_axis_in_axim_spm_read_op_sel_buf == 1) begin
-            _axis_in_axim_spm_read_wide_wvalid_174 <= 0;
+            _axis_in_axim_spm_read_wide_wvalid_166 <= 0;
           end 
-          if((_axis_in_axim_spm_read_op_sel_buf == 1) && axis_in_axim_spm_tvalid && (_axis_in_axim_spm_read_wide_count_175 == 0)) begin
-            _axis_in_axim_spm_read_wide_count_175 <= _axis_in_axim_spm_read_wide_count_175 + 1;
-            _axis_in_axim_spm_read_wide_wdata_173 <= axis_in_axim_spm_tdata;
-            _axis_in_axim_spm_read_wide_wvalid_174 <= 1;
+          if((_axis_in_axim_spm_read_op_sel_buf == 1) && axis_in_axim_spm_tvalid && (_axis_in_axim_spm_read_wide_count_167 == 0)) begin
+            _axis_in_axim_spm_read_wide_count_167 <= _axis_in_axim_spm_read_wide_count_167 + 1;
+            _axis_in_axim_spm_read_wide_wdata_165 <= axis_in_axim_spm_tdata;
+            _axis_in_axim_spm_read_wide_wvalid_166 <= 1;
           end 
-          if((_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_wide_count_175 > 0)) begin
-            _axis_in_axim_spm_read_wide_count_175 <= _axis_in_axim_spm_read_wide_count_175 + 1;
-            _axis_in_axim_spm_read_wide_wdata_173 <= _axis_in_axim_spm_read_wide_wdata_173 >> 64;
-            _axis_in_axim_spm_read_wide_wvalid_174 <= 1;
+          if((_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_wide_count_167 > 0)) begin
+            _axis_in_axim_spm_read_wide_count_167 <= _axis_in_axim_spm_read_wide_count_167 + 1;
+            _axis_in_axim_spm_read_wide_wdata_165 <= _axis_in_axim_spm_read_wide_wdata_165 >> 64;
+            _axis_in_axim_spm_read_wide_wvalid_166 <= 1;
           end 
-          if((_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_wide_count_175 == 1)) begin
-            _axis_in_axim_spm_read_wide_count_175 <= 0;
+          if((_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_wide_count_167 == 1)) begin
+            _axis_in_axim_spm_read_wide_count_167 <= 0;
           end 
-          if((_axis_in_axim_spm_read_local_size_buf <= 1) && (_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_wide_count_175 > 0)) begin
+          if((_axis_in_axim_spm_read_local_size_buf <= 1) && (_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_wide_count_167 > 0)) begin
             _axis_in_axim_spm_read_data_wide_fsm <= _axis_in_axim_spm_read_data_wide_fsm_init;
           end 
-          if((_axis_in_axim_spm_read_local_size_buf <= 1) && (_axis_in_axim_spm_read_op_sel_buf == 1) && axis_in_axim_spm_tvalid && (_axis_in_axim_spm_read_wide_count_175 == 0)) begin
+          if((_axis_in_axim_spm_read_local_size_buf <= 1) && (_axis_in_axim_spm_read_op_sel_buf == 1) && axis_in_axim_spm_tvalid && (_axis_in_axim_spm_read_wide_count_167 == 0)) begin
             _axis_in_axim_spm_read_data_wide_fsm <= _axis_in_axim_spm_read_data_wide_fsm_init;
           end 
         end
@@ -5307,37 +5181,37 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       write_burst_fsm_3 <= write_burst_fsm_3_init;
-      write_burst_addr_176 <= 0;
-      write_burst_stride_177 <= 0;
-      write_burst_length_178 <= 0;
-      write_burst_done_179 <= 0;
+      write_burst_addr_168 <= 0;
+      write_burst_stride_169 <= 0;
+      write_burst_length_170 <= 0;
+      write_burst_done_171 <= 0;
     end else begin
       case(write_burst_fsm_3)
         write_burst_fsm_3_init: begin
-          write_burst_addr_176 <= _axis_in_axim_spm_read_local_addr_buf;
-          write_burst_stride_177 <= _axis_in_axim_spm_read_local_stride_buf;
-          write_burst_length_178 <= _axis_in_axim_spm_read_local_size_buf;
-          write_burst_done_179 <= 0;
+          write_burst_addr_168 <= _axis_in_axim_spm_read_local_addr_buf;
+          write_burst_stride_169 <= _axis_in_axim_spm_read_local_stride_buf;
+          write_burst_length_170 <= _axis_in_axim_spm_read_local_size_buf;
+          write_burst_done_171 <= 0;
           if((_axis_in_axim_spm_read_data_wide_fsm == 1) && (_axis_in_axim_spm_read_op_sel_buf == 1) && (_axis_in_axim_spm_read_local_size_buf > 0)) begin
             write_burst_fsm_3 <= write_burst_fsm_3_1;
           end 
         end
         write_burst_fsm_3_1: begin
-          if(_axis_in_axim_spm_read_wide_wvalid_174) begin
-            write_burst_addr_176 <= write_burst_addr_176 + write_burst_stride_177;
-            write_burst_length_178 <= write_burst_length_178 - 1;
-            write_burst_done_179 <= 0;
+          if(_axis_in_axim_spm_read_wide_wvalid_166) begin
+            write_burst_addr_168 <= write_burst_addr_168 + write_burst_stride_169;
+            write_burst_length_170 <= write_burst_length_170 - 1;
+            write_burst_done_171 <= 0;
           end 
-          if(_axis_in_axim_spm_read_wide_wvalid_174 && (write_burst_length_178 <= 1)) begin
-            write_burst_done_179 <= 1;
+          if(_axis_in_axim_spm_read_wide_wvalid_166 && (write_burst_length_170 <= 1)) begin
+            write_burst_done_171 <= 1;
           end 
-          if(_axis_in_axim_spm_read_wide_wvalid_174 && 0) begin
-            write_burst_done_179 <= 1;
+          if(_axis_in_axim_spm_read_wide_wvalid_166 && 0) begin
+            write_burst_done_171 <= 1;
           end 
-          if(_axis_in_axim_spm_read_wide_wvalid_174 && (write_burst_length_178 <= 1)) begin
+          if(_axis_in_axim_spm_read_wide_wvalid_166 && (write_burst_length_170 <= 1)) begin
             write_burst_fsm_3 <= write_burst_fsm_3_init;
           end 
-          if(_axis_in_axim_spm_read_wide_wvalid_174 && 0) begin
+          if(_axis_in_axim_spm_read_wide_wvalid_166 && 0) begin
             write_burst_fsm_3 <= write_burst_fsm_3_init;
           end 
           if(0) begin
@@ -5354,8 +5228,8 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       _axis_out_axim_spm_write_data_wide_fsm <= _axis_out_axim_spm_write_data_wide_fsm_init;
-      _axis_out_axim_spm_write_wide_count_187 <= 0;
-      _axis_out_axim_spm_write_wide_wdata_196 <= 0;
+      _axis_out_axim_spm_write_wide_count_179 <= 0;
+      _axis_out_axim_spm_write_wide_wdata_188 <= 0;
     end else begin
       case(_axis_out_axim_spm_write_data_wide_fsm)
         _axis_out_axim_spm_write_data_wide_fsm_init: begin
@@ -5364,18 +5238,18 @@ module spm
           end 
         end
         _axis_out_axim_spm_write_data_wide_fsm_1: begin
-          _axis_out_axim_spm_write_wide_count_187 <= 0;
+          _axis_out_axim_spm_write_wide_count_179 <= 0;
           _axis_out_axim_spm_write_data_wide_fsm <= _axis_out_axim_spm_write_data_wide_fsm_2;
         end
         _axis_out_axim_spm_write_data_wide_fsm_2: begin
-          if(read_burst_rvalid_191 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0))) begin
-            _axis_out_axim_spm_write_wide_wdata_196 <= { read_burst_rdata_195, _axis_out_axim_spm_write_wide_wdata_196[127:64] };
-            _axis_out_axim_spm_write_wide_count_187 <= _axis_out_axim_spm_write_wide_count_187 + 1;
+          if(read_burst_rvalid_183 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0))) begin
+            _axis_out_axim_spm_write_wide_wdata_188 <= { read_burst_rdata_187, _axis_out_axim_spm_write_wide_wdata_188[127:64] };
+            _axis_out_axim_spm_write_wide_count_179 <= _axis_out_axim_spm_write_wide_count_179 + 1;
           end 
-          if(read_burst_rvalid_191 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0)) && (_axis_out_axim_spm_write_wide_count_187 == 1)) begin
-            _axis_out_axim_spm_write_wide_count_187 <= 0;
+          if(read_burst_rvalid_183 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0)) && (_axis_out_axim_spm_write_wide_count_179 == 1)) begin
+            _axis_out_axim_spm_write_wide_count_179 <= 0;
           end 
-          if((_axis_out_axim_spm_write_wide_count_187 == 1) && read_burst_rvalid_191 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0)) && read_burst_rlast_192) begin
+          if((_axis_out_axim_spm_write_wide_count_179 == 1) && read_burst_rvalid_183 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0)) && read_burst_rlast_184) begin
             _axis_out_axim_spm_write_data_wide_fsm <= _axis_out_axim_spm_write_data_wide_fsm_init;
           end 
         end
@@ -5388,41 +5262,41 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       read_burst_fsm_4 <= read_burst_fsm_4_init;
-      read_burst_addr_188 <= 0;
-      read_burst_stride_189 <= 0;
-      read_burst_length_190 <= 0;
-      read_burst_rvalid_191 <= 0;
-      read_burst_rlast_192 <= 0;
+      read_burst_addr_180 <= 0;
+      read_burst_stride_181 <= 0;
+      read_burst_length_182 <= 0;
+      read_burst_rvalid_183 <= 0;
+      read_burst_rlast_184 <= 0;
     end else begin
       case(read_burst_fsm_4)
         read_burst_fsm_4_init: begin
-          read_burst_addr_188 <= _axis_out_axim_spm_write_local_addr_buf;
-          read_burst_stride_189 <= _axis_out_axim_spm_write_local_stride_buf;
-          read_burst_length_190 <= _axis_out_axim_spm_write_size_buf;
-          read_burst_rvalid_191 <= 0;
-          read_burst_rlast_192 <= 0;
+          read_burst_addr_180 <= _axis_out_axim_spm_write_local_addr_buf;
+          read_burst_stride_181 <= _axis_out_axim_spm_write_local_stride_buf;
+          read_burst_length_182 <= _axis_out_axim_spm_write_size_buf;
+          read_burst_rvalid_183 <= 0;
+          read_burst_rlast_184 <= 0;
           if((_axis_out_axim_spm_write_data_wide_fsm == 1) && (_axis_out_axim_spm_write_op_sel_buf == 1) && (_axis_out_axim_spm_write_size_buf > 0)) begin
             read_burst_fsm_4 <= read_burst_fsm_4_1;
           end 
         end
         read_burst_fsm_4_1: begin
-          if((axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0)) && (read_burst_length_190 > 0)) begin
-            read_burst_addr_188 <= read_burst_addr_188 + read_burst_stride_189;
-            read_burst_length_190 <= read_burst_length_190 - 1;
-            read_burst_rvalid_191 <= 1;
+          if((axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0)) && (read_burst_length_182 > 0)) begin
+            read_burst_addr_180 <= read_burst_addr_180 + read_burst_stride_181;
+            read_burst_length_182 <= read_burst_length_182 - 1;
+            read_burst_rvalid_183 <= 1;
           end 
-          if((axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0)) && (read_burst_length_190 <= 1)) begin
-            read_burst_rlast_192 <= 1;
+          if((axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0)) && (read_burst_length_182 <= 1)) begin
+            read_burst_rlast_184 <= 1;
           end 
-          if(read_burst_rlast_192 && read_burst_rvalid_191 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0))) begin
-            read_burst_rvalid_191 <= 0;
-            read_burst_rlast_192 <= 0;
+          if(read_burst_rlast_184 && read_burst_rvalid_183 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0))) begin
+            read_burst_rvalid_183 <= 0;
+            read_burst_rlast_184 <= 0;
           end 
           if(0) begin
-            read_burst_rvalid_191 <= 0;
-            read_burst_rlast_192 <= 0;
+            read_burst_rvalid_183 <= 0;
+            read_burst_rlast_184 <= 0;
           end 
-          if(read_burst_rlast_192 && read_burst_rvalid_191 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_187 > 0))) begin
+          if(read_burst_rlast_184 && read_burst_rvalid_183 && (axis_out_axim_spm_tready || !axis_out_axim_spm_tvalid || (_axis_out_axim_spm_write_wide_count_179 > 0))) begin
             read_burst_fsm_4 <= read_burst_fsm_4_init;
           end 
           if(0) begin
@@ -5439,9 +5313,9 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       _axis_in_xored_spm_read_data_wide_fsm <= _axis_in_xored_spm_read_data_wide_fsm_init;
-      _axis_in_xored_spm_read_wide_count_206 <= 0;
-      _axis_in_xored_spm_read_wide_wvalid_205 <= 0;
-      _axis_in_xored_spm_read_wide_wdata_204 <= 0;
+      _axis_in_xored_spm_read_wide_count_198 <= 0;
+      _axis_in_xored_spm_read_wide_wvalid_197 <= 0;
+      _axis_in_xored_spm_read_wide_wdata_196 <= 0;
     end else begin
       case(_axis_in_xored_spm_read_data_wide_fsm)
         _axis_in_xored_spm_read_data_wide_fsm_init: begin
@@ -5450,31 +5324,31 @@ module spm
           end 
         end
         _axis_in_xored_spm_read_data_wide_fsm_1: begin
-          _axis_in_xored_spm_read_wide_count_206 <= 0;
-          _axis_in_xored_spm_read_wide_wvalid_205 <= 0;
+          _axis_in_xored_spm_read_wide_count_198 <= 0;
+          _axis_in_xored_spm_read_wide_wvalid_197 <= 0;
           _axis_in_xored_spm_read_data_wide_fsm <= _axis_in_xored_spm_read_data_wide_fsm_2;
         end
         _axis_in_xored_spm_read_data_wide_fsm_2: begin
           if(_axis_in_xored_spm_read_op_sel_buf == 1) begin
-            _axis_in_xored_spm_read_wide_wvalid_205 <= 0;
+            _axis_in_xored_spm_read_wide_wvalid_197 <= 0;
           end 
-          if((_axis_in_xored_spm_read_op_sel_buf == 1) && axis_in_xored_spm_tvalid && (_axis_in_xored_spm_read_wide_count_206 == 0)) begin
-            _axis_in_xored_spm_read_wide_count_206 <= _axis_in_xored_spm_read_wide_count_206 + 1;
-            _axis_in_xored_spm_read_wide_wdata_204 <= axis_in_xored_spm_tdata;
-            _axis_in_xored_spm_read_wide_wvalid_205 <= 1;
+          if((_axis_in_xored_spm_read_op_sel_buf == 1) && axis_in_xored_spm_tvalid && (_axis_in_xored_spm_read_wide_count_198 == 0)) begin
+            _axis_in_xored_spm_read_wide_count_198 <= _axis_in_xored_spm_read_wide_count_198 + 1;
+            _axis_in_xored_spm_read_wide_wdata_196 <= axis_in_xored_spm_tdata;
+            _axis_in_xored_spm_read_wide_wvalid_197 <= 1;
           end 
-          if((_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_wide_count_206 > 0)) begin
-            _axis_in_xored_spm_read_wide_count_206 <= _axis_in_xored_spm_read_wide_count_206 + 1;
-            _axis_in_xored_spm_read_wide_wdata_204 <= _axis_in_xored_spm_read_wide_wdata_204 >> 64;
-            _axis_in_xored_spm_read_wide_wvalid_205 <= 1;
+          if((_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_wide_count_198 > 0)) begin
+            _axis_in_xored_spm_read_wide_count_198 <= _axis_in_xored_spm_read_wide_count_198 + 1;
+            _axis_in_xored_spm_read_wide_wdata_196 <= _axis_in_xored_spm_read_wide_wdata_196 >> 64;
+            _axis_in_xored_spm_read_wide_wvalid_197 <= 1;
           end 
-          if((_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_wide_count_206 == 1)) begin
-            _axis_in_xored_spm_read_wide_count_206 <= 0;
+          if((_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_wide_count_198 == 1)) begin
+            _axis_in_xored_spm_read_wide_count_198 <= 0;
           end 
-          if((_axis_in_xored_spm_read_local_size_buf <= 1) && (_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_wide_count_206 > 0)) begin
+          if((_axis_in_xored_spm_read_local_size_buf <= 1) && (_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_wide_count_198 > 0)) begin
             _axis_in_xored_spm_read_data_wide_fsm <= _axis_in_xored_spm_read_data_wide_fsm_init;
           end 
-          if((_axis_in_xored_spm_read_local_size_buf <= 1) && (_axis_in_xored_spm_read_op_sel_buf == 1) && axis_in_xored_spm_tvalid && (_axis_in_xored_spm_read_wide_count_206 == 0)) begin
+          if((_axis_in_xored_spm_read_local_size_buf <= 1) && (_axis_in_xored_spm_read_op_sel_buf == 1) && axis_in_xored_spm_tvalid && (_axis_in_xored_spm_read_wide_count_198 == 0)) begin
             _axis_in_xored_spm_read_data_wide_fsm <= _axis_in_xored_spm_read_data_wide_fsm_init;
           end 
         end
@@ -5487,37 +5361,37 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       write_burst_fsm_5 <= write_burst_fsm_5_init;
-      write_burst_addr_207 <= 0;
-      write_burst_stride_208 <= 0;
-      write_burst_length_209 <= 0;
-      write_burst_done_210 <= 0;
+      write_burst_addr_199 <= 0;
+      write_burst_stride_200 <= 0;
+      write_burst_length_201 <= 0;
+      write_burst_done_202 <= 0;
     end else begin
       case(write_burst_fsm_5)
         write_burst_fsm_5_init: begin
-          write_burst_addr_207 <= _axis_in_xored_spm_read_local_addr_buf;
-          write_burst_stride_208 <= _axis_in_xored_spm_read_local_stride_buf;
-          write_burst_length_209 <= _axis_in_xored_spm_read_local_size_buf;
-          write_burst_done_210 <= 0;
+          write_burst_addr_199 <= _axis_in_xored_spm_read_local_addr_buf;
+          write_burst_stride_200 <= _axis_in_xored_spm_read_local_stride_buf;
+          write_burst_length_201 <= _axis_in_xored_spm_read_local_size_buf;
+          write_burst_done_202 <= 0;
           if((_axis_in_xored_spm_read_data_wide_fsm == 1) && (_axis_in_xored_spm_read_op_sel_buf == 1) && (_axis_in_xored_spm_read_local_size_buf > 0)) begin
             write_burst_fsm_5 <= write_burst_fsm_5_1;
           end 
         end
         write_burst_fsm_5_1: begin
-          if(_axis_in_xored_spm_read_wide_wvalid_205) begin
-            write_burst_addr_207 <= write_burst_addr_207 + write_burst_stride_208;
-            write_burst_length_209 <= write_burst_length_209 - 1;
-            write_burst_done_210 <= 0;
+          if(_axis_in_xored_spm_read_wide_wvalid_197) begin
+            write_burst_addr_199 <= write_burst_addr_199 + write_burst_stride_200;
+            write_burst_length_201 <= write_burst_length_201 - 1;
+            write_burst_done_202 <= 0;
           end 
-          if(_axis_in_xored_spm_read_wide_wvalid_205 && (write_burst_length_209 <= 1)) begin
-            write_burst_done_210 <= 1;
+          if(_axis_in_xored_spm_read_wide_wvalid_197 && (write_burst_length_201 <= 1)) begin
+            write_burst_done_202 <= 1;
           end 
-          if(_axis_in_xored_spm_read_wide_wvalid_205 && 0) begin
-            write_burst_done_210 <= 1;
+          if(_axis_in_xored_spm_read_wide_wvalid_197 && 0) begin
+            write_burst_done_202 <= 1;
           end 
-          if(_axis_in_xored_spm_read_wide_wvalid_205 && (write_burst_length_209 <= 1)) begin
+          if(_axis_in_xored_spm_read_wide_wvalid_197 && (write_burst_length_201 <= 1)) begin
             write_burst_fsm_5 <= write_burst_fsm_5_init;
           end 
-          if(_axis_in_xored_spm_read_wide_wvalid_205 && 0) begin
+          if(_axis_in_xored_spm_read_wide_wvalid_197 && 0) begin
             write_burst_fsm_5 <= write_burst_fsm_5_init;
           end 
           if(0) begin
@@ -5534,8 +5408,8 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       _axis_out_xored_spm_write_data_wide_fsm <= _axis_out_xored_spm_write_data_wide_fsm_init;
-      _axis_out_xored_spm_write_wide_count_218 <= 0;
-      _axis_out_xored_spm_write_wide_wdata_227 <= 0;
+      _axis_out_xored_spm_write_wide_count_210 <= 0;
+      _axis_out_xored_spm_write_wide_wdata_219 <= 0;
     end else begin
       case(_axis_out_xored_spm_write_data_wide_fsm)
         _axis_out_xored_spm_write_data_wide_fsm_init: begin
@@ -5544,18 +5418,18 @@ module spm
           end 
         end
         _axis_out_xored_spm_write_data_wide_fsm_1: begin
-          _axis_out_xored_spm_write_wide_count_218 <= 0;
+          _axis_out_xored_spm_write_wide_count_210 <= 0;
           _axis_out_xored_spm_write_data_wide_fsm <= _axis_out_xored_spm_write_data_wide_fsm_2;
         end
         _axis_out_xored_spm_write_data_wide_fsm_2: begin
-          if(read_burst_rvalid_222 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0))) begin
-            _axis_out_xored_spm_write_wide_wdata_227 <= { read_burst_rdata_226, _axis_out_xored_spm_write_wide_wdata_227[127:64] };
-            _axis_out_xored_spm_write_wide_count_218 <= _axis_out_xored_spm_write_wide_count_218 + 1;
+          if(read_burst_rvalid_214 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0))) begin
+            _axis_out_xored_spm_write_wide_wdata_219 <= { read_burst_rdata_218, _axis_out_xored_spm_write_wide_wdata_219[127:64] };
+            _axis_out_xored_spm_write_wide_count_210 <= _axis_out_xored_spm_write_wide_count_210 + 1;
           end 
-          if(read_burst_rvalid_222 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0)) && (_axis_out_xored_spm_write_wide_count_218 == 1)) begin
-            _axis_out_xored_spm_write_wide_count_218 <= 0;
+          if(read_burst_rvalid_214 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0)) && (_axis_out_xored_spm_write_wide_count_210 == 1)) begin
+            _axis_out_xored_spm_write_wide_count_210 <= 0;
           end 
-          if((_axis_out_xored_spm_write_wide_count_218 == 1) && read_burst_rvalid_222 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0)) && read_burst_rlast_223) begin
+          if((_axis_out_xored_spm_write_wide_count_210 == 1) && read_burst_rvalid_214 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0)) && read_burst_rlast_215) begin
             _axis_out_xored_spm_write_data_wide_fsm <= _axis_out_xored_spm_write_data_wide_fsm_init;
           end 
         end
@@ -5568,41 +5442,41 @@ module spm
   always @(posedge CLK) begin
     if(RST) begin
       read_burst_fsm_6 <= read_burst_fsm_6_init;
-      read_burst_addr_219 <= 0;
-      read_burst_stride_220 <= 0;
-      read_burst_length_221 <= 0;
-      read_burst_rvalid_222 <= 0;
-      read_burst_rlast_223 <= 0;
+      read_burst_addr_211 <= 0;
+      read_burst_stride_212 <= 0;
+      read_burst_length_213 <= 0;
+      read_burst_rvalid_214 <= 0;
+      read_burst_rlast_215 <= 0;
     end else begin
       case(read_burst_fsm_6)
         read_burst_fsm_6_init: begin
-          read_burst_addr_219 <= _axis_out_xored_spm_write_local_addr_buf;
-          read_burst_stride_220 <= _axis_out_xored_spm_write_local_stride_buf;
-          read_burst_length_221 <= _axis_out_xored_spm_write_size_buf;
-          read_burst_rvalid_222 <= 0;
-          read_burst_rlast_223 <= 0;
+          read_burst_addr_211 <= _axis_out_xored_spm_write_local_addr_buf;
+          read_burst_stride_212 <= _axis_out_xored_spm_write_local_stride_buf;
+          read_burst_length_213 <= _axis_out_xored_spm_write_size_buf;
+          read_burst_rvalid_214 <= 0;
+          read_burst_rlast_215 <= 0;
           if((_axis_out_xored_spm_write_data_wide_fsm == 1) && (_axis_out_xored_spm_write_op_sel_buf == 1) && (_axis_out_xored_spm_write_size_buf > 0)) begin
             read_burst_fsm_6 <= read_burst_fsm_6_1;
           end 
         end
         read_burst_fsm_6_1: begin
-          if((axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0)) && (read_burst_length_221 > 0)) begin
-            read_burst_addr_219 <= read_burst_addr_219 + read_burst_stride_220;
-            read_burst_length_221 <= read_burst_length_221 - 1;
-            read_burst_rvalid_222 <= 1;
+          if((axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0)) && (read_burst_length_213 > 0)) begin
+            read_burst_addr_211 <= read_burst_addr_211 + read_burst_stride_212;
+            read_burst_length_213 <= read_burst_length_213 - 1;
+            read_burst_rvalid_214 <= 1;
           end 
-          if((axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0)) && (read_burst_length_221 <= 1)) begin
-            read_burst_rlast_223 <= 1;
+          if((axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0)) && (read_burst_length_213 <= 1)) begin
+            read_burst_rlast_215 <= 1;
           end 
-          if(read_burst_rlast_223 && read_burst_rvalid_222 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0))) begin
-            read_burst_rvalid_222 <= 0;
-            read_burst_rlast_223 <= 0;
+          if(read_burst_rlast_215 && read_burst_rvalid_214 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0))) begin
+            read_burst_rvalid_214 <= 0;
+            read_burst_rlast_215 <= 0;
           end 
           if(0) begin
-            read_burst_rvalid_222 <= 0;
-            read_burst_rlast_223 <= 0;
+            read_burst_rvalid_214 <= 0;
+            read_burst_rlast_215 <= 0;
           end 
-          if(read_burst_rlast_223 && read_burst_rvalid_222 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_218 > 0))) begin
+          if(read_burst_rlast_215 && read_burst_rvalid_214 && (axis_out_xored_spm_tready || !axis_out_xored_spm_tvalid || (_axis_out_xored_spm_write_wide_count_210 > 0))) begin
             read_burst_fsm_6 <= read_burst_fsm_6_init;
           end 
           if(0) begin

@@ -16,7 +16,7 @@ counter_size = protection_size // 32 # 2MB
 counter_base = tag_base + tag_size
 HEIGHT = 4
 
-SPM_DATA_SIZE = 64 * 64 # 64line * 64B
+SPM_DATA_SIZE = 64 * 64 * 16# 64line * 64B * 16 
 SPM_CTRL_SIZE = 0x1000
 MAC_CTRL_SIZE = 0x1000
 AES_CTRL_SIZE = 0x1000
@@ -24,9 +24,9 @@ AXIM_CTRL_SIZE = 0x1000
 XOR_CTRL_SIZE = 0x1000
 MEMREQ_CTRL_SIZE = 0x1000
 
-MMIO_BASE = 0x6000_0000
-SPM_DATA_BOUND = SPM_DATA_SIZE
-SPM_CTRL_BASE = SPM_DATA_SIZE
+MMIO_BASE = 0x6000_0000 
+SPM_DATA_BOUND = SPM_DATA_SIZE + MMIO_BASE
+SPM_CTRL_BASE = SPM_DATA_SIZE + MMIO_BASE
 SPM_CTRL_BOUND = SPM_DATA_BOUND + SPM_CTRL_SIZE
 MAC_CTRL_BASE = SPM_CTRL_BASE + SPM_CTRL_SIZE
 MAC_CTRL_BOUND = SPM_CTRL_BOUND + MAC_CTRL_SIZE
@@ -36,6 +36,7 @@ AXIM_CTRL_BASE = AES_CTRL_BASE + AES_CTRL_SIZE
 AXIM_CTRL_BOUND = AES_CTRL_BOUND + AXIM_CTRL_SIZE
 XOR_CTRL_BASE = AXIM_CTRL_BASE + AXIM_CTRL_SIZE
 XOR_CTRL_BOUND = AXIM_CTRL_BOUND + XOR_CTRL_SIZE
+MEMREQ_CTRL_BASE = XOR_CTRL_BASE + XOR_CTRL_SIZE
 MEMREQ_CTRL_BOUND = XOR_CTRL_BOUND + MEMREQ_CTRL_SIZE
 
 def height_base(height):
@@ -514,7 +515,7 @@ def slave_bridge():
     axi_includes = (
     r'CLK', r'RST',               # クロック・リセット
     r'axi_m_dram_*',                      # AXI4 master #0
-    r'axi_s_llc_*',                       # AXI4 slave #0
+    # r'axi_s_llc_*',                       # AXI4 slave #0
     )
     # bridge = slave_bridge()
     ports = m.copy_sim_ports(wrapper,exclude=axi_includes)
@@ -539,6 +540,9 @@ def slave_bridge():
     # AXIManager
     maxi_ctrl_axim = vthread.AXIMLite(m,"axi_m_ctrl_axim", clk, rst, 64, addrwidth=32, noio=True)
     maxi_ctrl_axim.connect(ports, 'axi_s_ctrl_axim')
+    # MEMREQ
+    maxi_ctrl_memreq = vthread.AXIMLite(m,"axi_m_ctrl_memreq", clk, rst, 64, addrwidth=32, noio=True)
+    maxi_ctrl_memreq.connect(ports, 'axi_s_ctrl_memreq')
     # rocket coreからのリクエストを受け取る
     saxi_bridge = axi.AxiSlave(m,'axi_s_bridge', clk, rst, datawidth=64, addrwidth=32,waddr_id_width=4, wdata_id_width=4, wresp_id_width=4,
                  raddr_id_width=4, rdata_id_width=4,)
@@ -558,6 +562,7 @@ def slave_bridge():
         while(1):
             if status.value == 0:            
                 if request_valid == 1:
+                    print(" Bridge request: addr=%x write=%d data=%x" % (addr_reg.value, is_write.value, write_data.value))
                     if addr_reg < SPM_DATA_BOUND:
                         # print(" Accessing SPM data addr: %x data : %x" % (addr_reg, write_data.value))
                         if is_write == 1:
@@ -589,7 +594,12 @@ def slave_bridge():
                             maxi_ctrl_xor.write(addr_reg - AXIM_CTRL_BOUND, write_data)
                         else :
                             read_data.value = maxi_ctrl_xor.read(addr_reg - AXIM_CTRL_BOUND)
-                    # elif addr_reg < MEMREQ_CTRL_BOUND:
+                    elif addr_reg < MEMREQ_CTRL_BOUND:
+                        print(" Accessing MEMREQ addr: %x data : %x" % (addr_reg, write_data.value))
+                        if is_write == 1:
+                            maxi_ctrl_memreq.write(addr_reg - XOR_CTRL_BOUND, write_data)
+                        else :
+                            read_data.value = maxi_ctrl_memreq.read(addr_reg - XOR_CTRL_BOUND)
                     else :
                         print(" Invalid address: %x" % addr_reg)
                     request_complete.value = 1
@@ -649,7 +659,7 @@ def bridge_main(memimg_name=None):
     rst = ports['RST']
     axi_m_bridge = vthread.AXIM(m, 'axi_m_bridge', clk, rst, datawidth=64, addrwidth=32, noio=True)
     axi_m_bridge.connect(ports, 'axi_s_bridge')
-    memory = axi.AxiMemoryModel(m, 'v_memory', clk, rst, memimg_name=memimg_name,datawidth=128,mem_addrwidth=27)
+    memory = axi.AxiMemoryModel(m, 'v_memory', clk, rst, memimg_name=memimg_name,datawidth=64,mem_addrwidth=27)
     memory.connect(ports, 'axi_m_dram')
 
     tmp = m.Reg('tmp',64, initval=0)
@@ -782,6 +792,7 @@ def bridge_main(memimg_name=None):
         if height.value < HEIGHT:
             counter_blockaddr.value = counter_blockaddr.value + 64 * (2 ** (5 * (height.value - 1)))
         height.value = height.value + 1
+        print(" spm_local_addr: %x, spm_dram_addr: %x" % (spm_local_addr.value + 448 // 8, spm_dram_addr.value))
         print("  Verified level %d: expected tag %x, calculated tag %x" % (height.value - 1, expected_tag.value, tag.value))
         # return (tag.value == expected_tag.value)
 
@@ -817,6 +828,7 @@ def bridge_main(memimg_name=None):
         spm_local_addr.value = 64 * (2 + height.value)
         axi_m_bridge.write(spm_local_addr.value + 448 // 8, tag.value)
         setblockdirty(56 * 64 + (2 + height.value) * 8)
+        print("  Authenticated level %d: new tag %x, spm_local_addr: %x, spm_dram_addr: %x" % (height.value, tag.value, spm_local_addr.value + 448 // 8, spm_dram_addr.value))
         if height.value < HEIGHT:
             counter_blockaddr.value = counter_blockaddr.value + 64 * (2 ** (5 * (height.value - 1)))
         height.value = height.value + 1
@@ -826,8 +838,9 @@ def bridge_main(memimg_name=None):
         for i in range(HEIGHT-1):
             counter_blockaddr.value = counter_blockaddr.value + 64 * (2 ** (5 * i))
         minor_counter_bitoffset.value = 64 + ( ( (req_addr.value // 64) % 32) * 8)
-        spm_dram_addr.value = counter_blockaddr.value
+        spm_dram_addr.value = counter_blockaddr.value + (req_addr.value // 64 // 32) * 64
         spm_local_addr.value = 64 * 6
+        ensureBlockAddr()
         print(" Counter block addr: %x, minor counter bit offset: %d" % (counter_blockaddr.value, minor_counter_bitoffset.value))
         major_minor_counter_load()
         print(" Major counter: %d, minor counter: %d" % (major_counter.value, minor_counter.value))
@@ -994,6 +1007,10 @@ def bridge_main(memimg_name=None):
         # axi_m_bridge.write(0,1)
         # b = axi_m_bridge.read(1024)
         # print("AXI read/write test: %x" % b)
+        # リクエストを生成コマンド
+        axi_m_bridge.write(MEMREQ_CTRL_BASE + MEMREQ_RANGE * 8, 1024 * 1024)
+        axi_m_bridge.write(MEMREQ_CTRL_BASE + MEMREQ_NUM * 8, 64) # Start
+        print("Initialization completed")
         while(1):
             while(1):
                 if (axi_m_bridge.read(AXIM_CTRL_BASE + AXIM_STATUS*8) != 0):
@@ -1017,44 +1034,44 @@ def bridge_main(memimg_name=None):
     th_ctrl = vthread.Thread(m, 'ctrl_thread', clk, rst, ctrl)
     th_ctrl.start()
 
-    # LLC接続用ポートを生成
-    llc_requester = vthread.AXIM(m, 'llc_requester', clk, rst, datawidth=128, addrwidth=32, noio=True)
-    llc_requester.connect(ports, 'axi_s_llc')
-    ram_addrwidth = 20
-    request_ram = vthread.RAM(m, 'request_ram', clk, rst, 128, addrwidth=ram_addrwidth)
-    receive_ram = vthread.RAM(m, 'receive_ram', clk, rst, 128, addrwidth=ram_addrwidth)
-    # LLCへデータを書き込むテスト
-    read_llc_data = m.TmpReg(128, initval=0, prefix='read_llc_data')
-    a = m.TmpReg(64, initval=0, prefix='a')
-    c = m.TmpReg(64, initval=0, prefix='c')
-    N = m.TmpReg(64, initval=0, prefix='N')
-    x = m.TmpReg(64, initval=0, prefix='x')
-    y = m.TmpReg(64, initval=0, prefix='y')
-    def lcg_random():
-        # 0~N-1の乱数を生成
-        y.value = (x.value * a.value + c.value) % N.value
-    def make_request():
-        # データを作る
-        request_width = 14
-        for i in range(2 ** request_width):
-            request_ram.write(i, i*2)
-        for i in range(2 ** request_width // 4):
-            llc_requester.dma_write(request_ram, global_addr=i * 64,local_size=4,local_addr=i*4)
-        a.value = 1664525
-        c.value = 1013904223
-        N.value = 2 ** request_width // 4
-        for i in range(N.value):
-            x.value = i
-            lcg_random()
-            print(" LLC write addr: %d" % (y.value))
-            llc_requester.dma_read(receive_ram, global_addr=y.value * 64, local_size=4, local_addr=y.value * 4)
-        for i in range(2 ** request_width):
-            read_llc_data.value = receive_ram.read(i)
-            if read_llc_data.value != i*2:
-                print("LLC data mismatch %d: %x" % (i, read_llc_data.value))
-        print("LLC read/write completed")
-    th_request = vthread.Thread(m, 'request_thread', clk, rst, make_request)
-    th_request.start()
+    # # LLC接続用ポートを生成
+    # llc_requester = vthread.AXIM(m, 'llc_requester', clk, rst, datawidth=128, addrwidth=32, noio=True)
+    # llc_requester.connect(ports, 'axi_s_llc')
+    # ram_addrwidth = 20
+    # request_ram = vthread.RAM(m, 'request_ram', clk, rst, 128, addrwidth=ram_addrwidth)
+    # receive_ram = vthread.RAM(m, 'receive_ram', clk, rst, 128, addrwidth=ram_addrwidth)
+    # # LLCへデータを書き込むテスト
+    # read_llc_data = m.TmpReg(128, initval=0, prefix='read_llc_data')
+    # a = m.TmpReg(64, initval=0, prefix='a')
+    # c = m.TmpReg(64, initval=0, prefix='c')
+    # N = m.TmpReg(64, initval=0, prefix='N')
+    # x = m.TmpReg(64, initval=0, prefix='x')
+    # y = m.TmpReg(64, initval=0, prefix='y')
+    # def lcg_random():
+    #     # 0~N-1の乱数を生成
+    #     y.value = (x.value * a.value + c.value) % N.value
+    # def make_request():
+    #     # データを作る
+    #     request_width = 14
+    #     for i in range(2 ** request_width):
+    #         request_ram.write(i, i*2)
+    #     for i in range(2 ** request_width // 4):
+    #         llc_requester.dma_write(request_ram, global_addr=i * 64,local_size=4,local_addr=i*4)
+    #     a.value = 1664525
+    #     c.value = 1013904223
+    #     N.value = 2 ** request_width // 4
+    #     for i in range(N.value):
+    #         x.value = i
+    #         lcg_random()
+    #         print(" LLC write addr: %d" % (y.value))
+    #         llc_requester.dma_read(receive_ram, global_addr=y.value * 64, local_size=4, local_addr=y.value * 4)
+    #     for i in range(2 ** request_width):
+    #         read_llc_data.value = receive_ram.read(i)
+    #         if read_llc_data.value != i*2:
+    #             print("LLC data mismatch %d: %x" % (i, read_llc_data.value))
+    #     print("LLC read/write completed")
+    # th_request = vthread.Thread(m, 'request_thread', clk, rst, make_request)
+    # th_request.start()
 
     m.Instance(bridge, 'uut',
                params=m.connect_params(bridge),
@@ -1092,7 +1109,7 @@ if __name__ == '__main__':
     # bridge = bridge_main()
     # bridge.to_verilog("bridge.v")
     run(filename="main.v")
-    slave = slave_bridge()
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    bridge_dir = os.path.join(current_dir, '../verilog/bridge.v')
-    slave.to_verilog(bridge_dir)
+    # slave = slave_bridge()
+    # current_dir = os.path.dirname(os.path.abspath(__file__))
+    # bridge_dir = os.path.join(current_dir, '../verilog/bridge.v')
+    # slave.to_verilog(bridge_dir)

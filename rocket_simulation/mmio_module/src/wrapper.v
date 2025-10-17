@@ -25,8 +25,11 @@ module wrapper
   output [2-1:0] axi_s_ctrl_spm_rresp,
   output axi_s_ctrl_spm_rvalid,
   input axi_s_ctrl_spm_rready,
-  output [32-1:0] axi_m_dram_awaddr,
-  output [8-1:0] axi_m_dram_awlen,
+
+  // Master Interface to DRAM
+  output  [4-1:0] axi_m_dram_awid,
+  output  [32-1:0] axi_m_dram_awaddr,
+  output  [8-1:0] axi_m_dram_awlen,
   output [3-1:0] axi_m_dram_awsize,
   output [2-1:0] axi_m_dram_awburst,
   output [1-1:0] axi_m_dram_awlock,
@@ -34,16 +37,18 @@ module wrapper
   output [3-1:0] axi_m_dram_awprot,
   output [4-1:0] axi_m_dram_awqos,
   output [2-1:0] axi_m_dram_awuser,
-  output axi_m_dram_awvalid,
+  output  axi_m_dram_awvalid,
   input axi_m_dram_awready,
   output [128-1:0] axi_m_dram_wdata,
   output [16-1:0] axi_m_dram_wstrb,
   output axi_m_dram_wlast,
   output axi_m_dram_wvalid,
   input axi_m_dram_wready,
+  input [4-1:0] axi_m_dram_bid,
   input [2-1:0] axi_m_dram_bresp,
   input axi_m_dram_bvalid,
   output axi_m_dram_bready,
+  output [4-1:0] axi_m_dram_arid,
   output [32-1:0] axi_m_dram_araddr,
   output [8-1:0] axi_m_dram_arlen,
   output [3-1:0] axi_m_dram_arsize,
@@ -55,11 +60,13 @@ module wrapper
   output [2-1:0] axi_m_dram_aruser,
   output axi_m_dram_arvalid,
   input axi_m_dram_arready,
+  input [4-1:0] axi_m_dram_rid,
   input [128-1:0] axi_m_dram_rdata,
   input [2-1:0] axi_m_dram_rresp,
   input axi_m_dram_rlast,
   input axi_m_dram_rvalid,
   output axi_m_dram_rready,
+
   input [32-1:0] axi_s_ctrl_mac_awaddr,
   input [4-1:0] axi_s_ctrl_mac_awcache,
   input [3-1:0] axi_s_ctrl_mac_awprot,
@@ -144,41 +151,9 @@ module wrapper
   output [2-1:0] axi_s_ctrl_axim_rresp,
   output axi_s_ctrl_axim_rvalid,
   input axi_s_ctrl_axim_rready,
-    input [32-1:0] axi_s_llc_awaddr,
-  input [8-1:0] axi_s_llc_awlen,
-  input [3-1:0] axi_s_llc_awsize,
-  input [2-1:0] axi_s_llc_awburst,
-  input [1-1:0] axi_s_llc_awlock,
-  input [4-1:0] axi_s_llc_awcache,
-  input [3-1:0] axi_s_llc_awprot,
-  input [4-1:0] axi_s_llc_awqos,
-  input [2-1:0] axi_s_llc_awuser,
-  input axi_s_llc_awvalid,
-  output axi_s_llc_awready,
-  input [128-1:0] axi_s_llc_wdata,
-  input [16-1:0] axi_s_llc_wstrb,
-  input axi_s_llc_wlast,
-  input axi_s_llc_wvalid,
-  output axi_s_llc_wready,
-  output [2-1:0] axi_s_llc_bresp,
-  output axi_s_llc_bvalid,
-  input axi_s_llc_bready,
-  input [32-1:0] axi_s_llc_araddr,
-  input [8-1:0] axi_s_llc_arlen,
-  input [3-1:0] axi_s_llc_arsize,
-  input [2-1:0] axi_s_llc_arburst,
-  input [1-1:0] axi_s_llc_arlock,
-  input [4-1:0] axi_s_llc_arcache,
-  input [3-1:0] axi_s_llc_arprot,
-  input [4-1:0] axi_s_llc_arqos,
-  input [2-1:0] axi_s_llc_aruser,
-  input axi_s_llc_arvalid,
-  output axi_s_llc_arready,
-  output [128-1:0] axi_s_llc_rdata,
-  output [2-1:0] axi_s_llc_rresp,
-  output axi_s_llc_rlast,
-  output axi_s_llc_rvalid,
-  input axi_s_llc_rready,
+  // LLC リクエスト
+
+  // DATA SPM
   input [32-1:0] axi_s_spm_data_awaddr,
   input [4-1:0] axi_s_spm_data_awcache,
   input [3-1:0] axi_s_spm_data_awprot,
@@ -199,7 +174,29 @@ module wrapper
   output [64-1:0] axi_s_spm_data_rdata,
   output [2-1:0] axi_s_spm_data_rresp,
   output axi_s_spm_data_rvalid,
-  input axi_s_spm_data_rready
+  input axi_s_spm_data_rready,
+  // MEMREQ
+  input [32-1:0] axi_s_ctrl_memreq_awaddr,
+  input [4-1:0] axi_s_ctrl_memreq_awcache,
+  input [3-1:0] axi_s_ctrl_memreq_awprot,
+  input axi_s_ctrl_memreq_awvalid,
+  output axi_s_ctrl_memreq_awready,
+  input [64-1:0] axi_s_ctrl_memreq_wdata,
+  input [8-1:0] axi_s_ctrl_memreq_wstrb,
+  input axi_s_ctrl_memreq_wvalid,
+  output axi_s_ctrl_memreq_wready,
+  output [2-1:0] axi_s_ctrl_memreq_bresp,
+  output axi_s_ctrl_memreq_bvalid,
+  input axi_s_ctrl_memreq_bready,
+  input [32-1:0] axi_s_ctrl_memreq_araddr,
+  input [4-1:0] axi_s_ctrl_memreq_arcache,
+  input [3-1:0] axi_s_ctrl_memreq_arprot,
+  input axi_s_ctrl_memreq_arvalid,
+  output axi_s_ctrl_memreq_arready,
+  output [64-1:0] axi_s_ctrl_memreq_rdata,
+  output [2-1:0] axi_s_ctrl_memreq_rresp,
+  output axi_s_ctrl_memreq_rvalid,
+  input axi_s_ctrl_memreq_rready
 );
 // --- モジュール間接続のためのwire定義 ---
 // wire定義　SPM-> MAC
@@ -243,6 +240,44 @@ wire [63:0] ram_spm_1_rdata;
 wire [63:0] ram_spm_1_addr;
 wire ram_spm_1_wenable;
 wire ram_spm_1_enable;
+
+
+// --- LLC リクエスト ---
+wire [32-1:0] axi_s_llc_awaddr;
+wire [8-1:0] axi_s_llc_awlen;
+wire [3-1:0] axi_s_llc_awsize;
+wire [2-1:0] axi_s_llc_awburst;
+wire [1-1:0] axi_s_llc_awlock;
+wire [4-1:0] axi_s_llc_awcache;
+wire [3-1:0] axi_s_llc_awprot;
+wire [4-1:0] axi_s_llc_awqos;
+wire [2-1:0] axi_s_llc_awuser;
+wire axi_s_llc_awvalid;
+wire axi_s_llc_awready;
+wire [128-1:0] axi_s_llc_wdata;
+wire [16-1:0] axi_s_llc_wstrb;
+wire axi_s_llc_wlast;
+wire axi_s_llc_wvalid;
+wire axi_s_llc_wready;
+wire [2-1:0] axi_s_llc_bresp;
+wire axi_s_llc_bvalid;
+wire axi_s_llc_bready;
+wire [32-1:0] axi_s_llc_araddr;
+wire [8-1:0] axi_s_llc_arlen;
+wire [3-1:0] axi_s_llc_arsize;
+wire [2-1:0] axi_s_llc_arburst;
+wire [1-1:0] axi_s_llc_arlock;
+wire [4-1:0] axi_s_llc_arcache;
+wire [3-1:0] axi_s_llc_arprot;
+wire [4-1:0] axi_s_llc_arqos;
+wire [2-1:0] axi_s_llc_aruser;
+wire axi_s_llc_arvalid;
+wire axi_s_llc_arready;
+wire [128-1:0] axi_s_llc_rdata;
+wire [2-1:0] axi_s_llc_rresp;
+wire axi_s_llc_rlast;
+wire axi_s_llc_rvalid;
+wire axi_s_llc_rready;
 
 spm spm_inst (
   .CLK(CLK),
@@ -306,14 +341,18 @@ spm spm_inst (
   .axi_m_dram_awuser(axi_m_dram_awuser),
   .axi_m_dram_awvalid(axi_m_dram_awvalid),
   .axi_m_dram_awready(axi_m_dram_awready),
+  .axi_m_dram_awid(axi_m_dram_awid),
+  // .axi_m_dram_wid(axi_m_dram_wid),
   .axi_m_dram_wdata(axi_m_dram_wdata),
   .axi_m_dram_wstrb(axi_m_dram_wstrb),
   .axi_m_dram_wlast(axi_m_dram_wlast),
   .axi_m_dram_wvalid(axi_m_dram_wvalid),
   .axi_m_dram_wready(axi_m_dram_wready),
+  .axi_m_dram_bid(axi_m_dram_bid),
   .axi_m_dram_bresp(axi_m_dram_bresp),
   .axi_m_dram_bvalid(axi_m_dram_bvalid),
   .axi_m_dram_bready(axi_m_dram_bready),
+  .axi_m_dram_arid(axi_m_dram_arid),
   .axi_m_dram_araddr(axi_m_dram_araddr),
   .axi_m_dram_arlen(axi_m_dram_arlen),
   .axi_m_dram_arsize(axi_m_dram_arsize),
@@ -325,6 +364,7 @@ spm spm_inst (
   .axi_m_dram_aruser(axi_m_dram_aruser),
   .axi_m_dram_arvalid(axi_m_dram_arvalid),
   .axi_m_dram_arready(axi_m_dram_arready),
+  .axi_m_dram_rid(axi_m_dram_rid),
   .axi_m_dram_rdata(axi_m_dram_rdata),
   .axi_m_dram_rresp(axi_m_dram_rresp),
   .axi_m_dram_rlast(axi_m_dram_rlast),
@@ -548,6 +588,67 @@ ram_wrapper inst_wrapper(
   .ram_spm_1_addr(ram_spm_1_addr),
   .ram_spm_1_wenable(ram_spm_1_wenable),
   .ram_spm_1_enable(ram_spm_1_enable)
+);
+
+memreq inst_memreq(
+  .CLK(CLK),
+  .RST(RST),
+  .axi_s_ctrl_memreq_awaddr(axi_s_ctrl_memreq_awaddr),
+  .axi_s_ctrl_memreq_awcache(axi_s_ctrl_memreq_awcache),
+  .axi_s_ctrl_memreq_awprot(axi_s_ctrl_memreq_awprot),
+  .axi_s_ctrl_memreq_awvalid(axi_s_ctrl_memreq_awvalid),
+  .axi_s_ctrl_memreq_awready(axi_s_ctrl_memreq_awready),
+  .axi_s_ctrl_memreq_wdata(axi_s_ctrl_memreq_wdata),
+  .axi_s_ctrl_memreq_wstrb(axi_s_ctrl_memreq_wstrb),
+  .axi_s_ctrl_memreq_wvalid(axi_s_ctrl_memreq_wvalid),
+  .axi_s_ctrl_memreq_wready(axi_s_ctrl_memreq_wready),
+  .axi_s_ctrl_memreq_bresp(axi_s_ctrl_memreq_bresp),
+  .axi_s_ctrl_memreq_bvalid(axi_s_ctrl_memreq_bvalid),
+  .axi_s_ctrl_memreq_bready(axi_s_ctrl_memreq_bready),
+  .axi_s_ctrl_memreq_araddr(axi_s_ctrl_memreq_araddr),
+  .axi_s_ctrl_memreq_arcache(axi_s_ctrl_memreq_arcache),
+  .axi_s_ctrl_memreq_arprot(axi_s_ctrl_memreq_arprot),
+  .axi_s_ctrl_memreq_arvalid(axi_s_ctrl_memreq_arvalid),
+  .axi_s_ctrl_memreq_arready(axi_s_ctrl_memreq_arready),
+  .axi_s_ctrl_memreq_rdata(axi_s_ctrl_memreq_rdata),
+  .axi_s_ctrl_memreq_rresp(axi_s_ctrl_memreq_rresp),
+  .axi_s_ctrl_memreq_rvalid(axi_s_ctrl_memreq_rvalid),
+  .axi_s_ctrl_memreq_rready(axi_s_ctrl_memreq_rready),
+  .axi_m_llc_awaddr(axi_s_llc_awaddr),
+  .axi_m_llc_awlen(axi_s_llc_awlen),
+  .axi_m_llc_awsize(axi_s_llc_awsize),
+  .axi_m_llc_awburst(axi_s_llc_awburst),
+  .axi_m_llc_awlock(axi_s_llc_awlock),
+  .axi_m_llc_awcache(axi_s_llc_awcache),
+  .axi_m_llc_awprot(axi_s_llc_awprot),
+  .axi_m_llc_awqos(axi_s_llc_awqos),
+  .axi_m_llc_awuser(axi_s_llc_awuser),
+  .axi_m_llc_awvalid(axi_s_llc_awvalid),
+  .axi_m_llc_awready(axi_s_llc_awready),
+  .axi_m_llc_wdata(axi_s_llc_wdata),
+  .axi_m_llc_wstrb(axi_s_llc_wstrb),
+  .axi_m_llc_wlast(axi_s_llc_wlast),
+  .axi_m_llc_wvalid(axi_s_llc_wvalid),
+  .axi_m_llc_wready(axi_s_llc_wready),
+  .axi_m_llc_bresp(axi_s_llc_bresp),
+  .axi_m_llc_bvalid(axi_s_llc_bvalid),
+  .axi_m_llc_bready(axi_s_llc_bready),
+  .axi_m_llc_araddr(axi_s_llc_araddr),
+  .axi_m_llc_arlen(axi_s_llc_arlen),
+  .axi_m_llc_arsize(axi_s_llc_arsize),
+  .axi_m_llc_arburst(axi_s_llc_arburst),
+  .axi_m_llc_arlock(axi_s_llc_arlock),
+  .axi_m_llc_arcache(axi_s_llc_arcache),
+  .axi_m_llc_arprot(axi_s_llc_arprot),
+  .axi_m_llc_arqos(axi_s_llc_arqos),
+  .axi_m_llc_aruser(axi_s_llc_aruser),
+  .axi_m_llc_arvalid(axi_s_llc_arvalid),
+  .axi_m_llc_arready(axi_s_llc_arready),
+  .axi_m_llc_rdata(axi_s_llc_rdata),
+  .axi_m_llc_rresp(axi_s_llc_rresp),
+  .axi_m_llc_rlast(axi_s_llc_rlast),
+  .axi_m_llc_rvalid(axi_s_llc_rvalid),
+  .axi_m_llc_rready(axi_s_llc_rready)
 );
 endmodule
 

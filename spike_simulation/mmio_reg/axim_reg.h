@@ -4,9 +4,9 @@
 #include "spm_reg.h"
 // ヘルパー関数群
 void axim_copy(const uint64_t spm_offset){
-    // while(AXIM_BUSY_REG); // busy待ち
-    // AXIM_SPM_ADDR_REG = spm_offset;
-    // AXIM_COMMAND_REG = 1; // WRITE_BACK
+    while(AXIM_BUSY_REG); // busy待ち
+    AXIM_SPM_ADDR_REG = spm_offset;
+    AXIM_COMMAND_REG = 1; // WRITE_BACK
     spm_wait_idle();
     SPM_DRAM_ADDRESS  = 0;
     SPM_LOCAL_ADDRESS = spm_offset;

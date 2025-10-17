@@ -14,7 +14,8 @@ def main(memimg=None):
     rst = m.Input('RST')
     # SPM
     axi_s_ctrl_spm = vthread.AXISLiteRegister(m,"axi_s_ctrl_spm", clk, rst, 64, length=7, noio=False)
-    axi_m_dram = vthread.AXIM(m,"axi_m_dram", clk, rst, 128, addrwidth=32, noio=False)
+    axi_m_dram = vthread.AXIM(m,"axi_m_dram", clk, rst, 128, addrwidth=32, noio=False,waddr_id_width=4, wdata_id_width=4, wresp_id_width=4,
+                 raddr_id_width=4, rdata_id_width=4,)
     # MAC
     axi_s_ctrl_mac = vthread.AXISLiteRegister(m,"axi_s_ctrl_mac", clk, rst, 64, length=7, noio=False)
     # XOR
@@ -24,6 +25,8 @@ def main(memimg=None):
     # AXIManager
     axi_s_ctrl_manager = vthread.AXISLiteRegister(m,"axi_s_ctrl_axim", clk, rst, 64, length=6, noio=False)
     axi_s_llc = axi.AxiSlave(m, 'axi_s_llc', clk, rst, datawidth=128, addrwidth=32, noio=False)
+    # MEMREQ
+    axi_s_ctrl_memreq = vthread.AXISLiteRegister(m,"axi_s_ctrl_memreq", clk, rst, 64, length=7, noio=False)
     return m
 
 if __name__ == '__main__':

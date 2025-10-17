@@ -55,6 +55,8 @@ module ram_spm
 endmodule
 """
 
+
+
 def main(memimg=None):
     m = Module('wrapper')
     clk = m.Input('CLK')

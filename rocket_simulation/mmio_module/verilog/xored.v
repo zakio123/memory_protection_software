@@ -2102,6 +2102,7 @@ module xored
           mac_buffer_thread <= mac_buffer_thread_14;
         end
         mac_buffer_thread_14: begin
+          // $display("%h ^ %h = %h", data_21, otp_22, xored_23);
           mac_buffer_thread <= mac_buffer_thread_15;
         end
         mac_buffer_thread_15: begin
