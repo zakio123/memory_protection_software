@@ -43,17 +43,11 @@ static inline void spm_sd64(uint64_t off, uint64_t v) {
   *(volatile uint64_t *)((uintptr_t)(SPM_MEM_BASE + off)) = v;
 }
 
-static inline void setBlockdirty(uint64_t manage_addr, uint64_t block_addr){
+static inline void setBlockdirty(uint64_t spm_manage, uint64_t block_addr){
   uint64_t new_info = ((block_addr >> 6) << 6) | 0x3; // dirty | valid
-  spm_sd64(manage_addr, new_info);
+  spm_sd64(spm_manage, new_info);
 }
-static inline void clearBlockdirty(uint64_t manage_addr, uint64_t block_addr){
+static inline void clearBlockdirty(uint64_t spm_manage, uint64_t block_addr){
   uint64_t new_info = ((block_addr >> 6) << 6) | 0x1; // valid
-  spm_sd64(manage_addr, new_info);
+  spm_sd64(spm_manage, new_info);
 }
-/**
-     * @brief 指定されたブロックがSPMに存在することを確認し、なければロードする
-     * @param required_block_addr DRAM上の必要なブロックの先頭アドレス
-     * @param spm_block_addr SPM上の格納先アドレス
-     * @param spm_management_addr SPM上の管理情報のアドレス
-*/

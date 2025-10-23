@@ -7,13 +7,13 @@
 void mac_buffer_set(uint64_t spm_offset){
     // MAC_SPM_ADDR = spm_offset;
     // MAC_SPM_START = 1;
-    // while (MAC_SPM_START); // busy待ち
+    while (MAC_STATUS); // busy待ち
     spm_wait_idle();
     SPM_DRAM_ADDRESS  = 0;
     SPM_LOCAL_ADDRESS = spm_offset;
     SPM_SIZE_REG      = 64;
     SPM_DIRECTION     = 1;
-    SPM_DESTINATION   = 2;           
+    SPM_DESTINATION   = 2;
     SPM_START         = 1;
     spm_wait_idle();
 }

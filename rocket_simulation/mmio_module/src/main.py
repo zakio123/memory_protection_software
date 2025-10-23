@@ -1,5 +1,4 @@
 # 複数のMMIOモジュールを使用する場合のmain.pyの例
-
 import os
 import sys
 from veriloggen import *
@@ -9,7 +8,7 @@ import veriloggen.types.axi as axi
 from mmio_map import *
 import numpy as np
 
-protection_size = 1024 * 1024 * 64 # 64MB
+protection_size = 1024 * 1024 * 64 # 64MB 0x400_0000
 tag_base = protection_size
 tag_size = protection_size // 8 # 8MB
 counter_size = protection_size // 32 # 2MB
@@ -24,7 +23,7 @@ AXIM_CTRL_SIZE = 0x1000
 XOR_CTRL_SIZE = 0x1000
 MEMREQ_CTRL_SIZE = 0x1000
 
-MMIO_BASE = 0x6000_0000 
+MMIO_BASE = 0x6000_0000
 SPM_DATA_BOUND = SPM_DATA_SIZE + MMIO_BASE
 SPM_CTRL_BASE = SPM_DATA_SIZE + MMIO_BASE
 SPM_CTRL_BOUND = SPM_DATA_BOUND + SPM_CTRL_SIZE
