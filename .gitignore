@@ -3,3 +3,5 @@ tmp
 *.out
 rocket_simulation/obj_dir/*
 rocket_simulation/mmio_module/obj_dir/*
+**/obj_dir/
+**/out/
