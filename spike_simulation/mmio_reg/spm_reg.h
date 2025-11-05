@@ -20,7 +20,7 @@ static inline void spm_copy_to_local(uint64_t dram_pa, uint64_t local_off, uint6
   SPM_DIRECTION     = 0;
   SPM_DESTINATION   = 1;           /* DRAM */
   SPM_START         = 1;           /* GO */
-  spm_wait_idle();
+  // spm_wait_idle();
 }
 
 /* SPM -> DRAM */
@@ -32,7 +32,7 @@ static inline void spm_write_back(uint64_t local_off, uint64_t dram_pa, uint64_t
   SPM_DIRECTION     = 1;
   SPM_DESTINATION   = 1;           /* DRAM */
   SPM_START         = 1;
-  spm_wait_idle();
+  // spm_wait_idle();
 }
 
 /* データ窓の直接アクセス（必要なら 1/2/4 も追加） */

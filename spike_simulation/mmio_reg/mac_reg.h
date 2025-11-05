@@ -7,7 +7,7 @@
 void mac_buffer_set(uint64_t spm_offset){
     // MAC_SPM_ADDR = spm_offset;
     // MAC_SPM_START = 1;
-    while (MAC_STATUS); // busy待ち
+    while (MAC_SPM_START); // busy待ち
     spm_wait_idle();
     SPM_DRAM_ADDRESS  = 0;
     SPM_LOCAL_ADDRESS = spm_offset;
@@ -18,17 +18,17 @@ void mac_buffer_set(uint64_t spm_offset){
     spm_wait_idle();
 }
 void mac_init(void){
+    while (MAC_STATUS & 1);
     MAC_COMMAND = 1; // INIT
-    while (MAC_STATUS & 1); // busy待ち
 }
 void mac_update(uint64_t start_bit, uint64_t end_bit){
+    while (MAC_STATUS & 1); // busy待ち
     MAC_START_BIT = start_bit;
     MAC_END_BIT = end_bit;
     MAC_COMMAND = 2; // UPDATE
-    while (MAC_STATUS & 1); // busy待ち
 }
 uint64_t mac_final(void){
-    MAC_COMMAND = 4; // NOP
     while (MAC_STATUS & 1); // busy待ち
+    MAC_COMMAND = 4; // NOP
     return MAC_RESULT;
 }

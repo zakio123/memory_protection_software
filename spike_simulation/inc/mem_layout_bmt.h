@@ -21,11 +21,14 @@ extern "C" {
 #define MAIN_TAGS_PER_BLOCK    8u
 #define MAIN_TAG_BYTES         8u
 #define MAIN_TAG_BLOCK_BYTES   64u
+#define MAIN_ARY             8u
 #define MAIN_PROTECTION_SIZE       (1024ULL * 1024ULL * 8ULL) /* 16GB */
 #define MAIN_DATA_TAG_BASE         (MAIN_PROTECTION_BASE + MAIN_PROTECTION_SIZE)
-#define MAIN_DATA_TAG_SIZE         (MAIN_PROTECTION_SIZE / 8) /* 2GB */
+#define MAIN_DATA_TAG_SIZE         (MAIN_PROTECTION_SIZE / 8ULL) /* 2GB */
 #define MAIN_COUNTER_BASE          (MAIN_DATA_TAG_BASE + MAIN_DATA_TAG_SIZE)
-
+#define MAIN_COUNTER_SIZE        ((MAIN_PROTECTION_SIZE / 2048ULL) * 64ULL) /* 4GB */
+#define MAIN_NODE_BASE         (MAIN_COUNTER_BASE + MAIN_COUNTER_SIZE)
+#define MAIN_NODE_SIZE         (64ULL * (((1ULL << (3ULL *MAIN_HEIGHT)) - 1ULL) / (MAIN_ARY - 1ULL)))
 
 /* ---- Optional: also expose as typed constants for C++ ---- */
 #ifdef __cplusplus
@@ -41,6 +44,10 @@ static constexpr uint64_t PROTECTION_SIZE = MAIN_PROTECTION_SIZE;
 static constexpr uint64_t DATA_TAG_BASE   = MAIN_DATA_TAG_BASE;
 static constexpr uint64_t DATA_TAG_SIZE   = MAIN_DATA_TAG_SIZE;
 static constexpr uint64_t COUNTER_BASE    = MAIN_COUNTER_BASE;
+static constexpr uint64_t COUNTER_SIZE    = MAIN_COUNTER_SIZE;
+static constexpr uint64_t NODE_BASE       = MAIN_NODE_BASE;
+static constexpr uint64_t NODE_SIZE       = MAIN_NODE_SIZE;
+static constexpr uint32_t ARY            = MAIN_ARY;
 #endif
 
 #ifdef __cplusplus
