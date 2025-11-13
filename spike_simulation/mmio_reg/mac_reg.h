@@ -30,5 +30,6 @@ void mac_update(uint64_t start_bit, uint64_t end_bit){
 uint64_t mac_final(void){
     while (MAC_STATUS & 1); // busy待ち
     MAC_COMMAND = 4; // NOP
+    while (MAC_STATUS & 1); // busy待ち
     return MAC_RESULT;
 }

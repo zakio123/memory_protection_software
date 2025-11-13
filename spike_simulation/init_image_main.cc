@@ -209,13 +209,14 @@ int main(int argc, char** argv){
     if(!fo) die("cannot open out.img");
     fo.write(reinterpret_cast<const char*>(image.data()), image.size());
   }
-
+  // 16進数で情報表示
   std::cout << "[OK] image=" << out_path
-            << " data_sz=" << sz_data
-            << " tag_sz="  << sz_tag
-            << " tree_sz=" << sz_tree
-            << " blocks="  << n_blocks
-            << " nodes="   << total_nodes
+            << " data_sz=" << std::hex << sz_data << std::dec
+            << " tag_sz="  << std::hex << sz_tag << std::dec
+            << " tree_sz=" << std::hex << sz_tree << std::dec
+            << " blocks="  << std::hex << n_blocks << std::dec
+            << " nodes="   <<  total_nodes
             << std::endl;
+  std::cout << "nodes= " << total_nodes << std::endl;
   return 0;
 }

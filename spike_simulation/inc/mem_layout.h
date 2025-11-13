@@ -15,13 +15,13 @@ extern "C" {
 
 /* ---- Constants (C-compatible macros) ---- */
 #define MAIN_PROTECTION_BASE       0x90000000ULL
-#define MAIN_HEIGHT            4u      /* tree levels (1=root) */
+#define MAIN_HEIGHT            6u      /* tree levels (1=root) */
 #define MAIN_BLK64             64u     /* data block size [bytes] */
 #define MAIN_NODE_BYTES        64u     /* counter tree node size [bytes] */
 #define MAIN_TAGS_PER_BLOCK    8u
 #define MAIN_TAG_BYTES         8u
 #define MAIN_TAG_BLOCK_BYTES   64u
-#define MAIN_PROTECTION_SIZE       (1024ULL * 1024ULL * 8ULL) /* 16GB */
+#define MAIN_PROTECTION_SIZE       (1024ULL * 1024ULL * 32ULL * 64ULL * 8ULL) /* 16GB */
 #define MAIN_DATA_TAG_BASE         (MAIN_PROTECTION_BASE + MAIN_PROTECTION_SIZE)
 #define MAIN_DATA_TAG_SIZE         (MAIN_PROTECTION_SIZE / 8) /* 2GB */
 #define MAIN_COUNTER_BASE          (MAIN_DATA_TAG_BASE + MAIN_DATA_TAG_SIZE)

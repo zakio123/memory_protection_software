@@ -17,9 +17,6 @@ void axim_copy(const uint64_t spm_offset){
     spm_wait_idle();
 }
 void axim_write(const uint64_t spm_offset){
-    // while(AXIM_BUSY_REG); // busy待ち
-    // AXIM_SPM_ADDR_REG = spm_offset;
-    // AXIM_COMMAND_REG = 2; // READ_DATA
     spm_wait_idle();
     SPM_DRAM_ADDRESS  = 0;
     SPM_LOCAL_ADDRESS = spm_offset;
@@ -38,6 +35,7 @@ void axim_decrypt(){
     AXIM_COMMAND_REG = 8; // DECRYPT
 }
 void axim_read_return(){
+    spm_wait_idle();
     while(AXIM_BUSY_REG); // busy待ち
     AXIM_COMMAND_REG = 16; // READ_RETURN
 }
