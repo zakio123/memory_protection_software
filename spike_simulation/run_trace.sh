@@ -44,3 +44,4 @@ done
 
 echo "=================================================" | tee -a "$LOG_FILE"
 echo "すべてのSpike実行が完了: $(date)" | tee -a "$LOG_FILE"
+

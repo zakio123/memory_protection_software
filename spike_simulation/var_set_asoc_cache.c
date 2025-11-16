@@ -6,7 +6,7 @@
 #include "mmio_reg/memreq_reg.h"
 #include "mmio_reg/xor_reg.h"
 #include "mmio_reg/reg_map.h"
-// #include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdbool.h>
 #include "mem_layout.h"
@@ -513,8 +513,9 @@ void write_only(){
     axim_write_return();
 }
 void read_only(){
-    // struct AddressContext ctx = setupAddressContext();
-    spm_copy_to_local(AXIM_REQ_ADDR, 0x040, 64);
+    struct AddressContext ctx = setupAddressContext();
+    printf("address: %016llx\n", ctx.request_addr);
+    spm_copy_to_local(ctx.request_addr, 0x040, 64);
     axim_write(0x040);
     axim_read_return();
 }
@@ -523,6 +524,9 @@ void decryption_tag(){
     struct Info tag_info = tag_check(ctx.counterblock_addr);
     if (!tag_info.hit){
       ensureBlockInSpm(ctx.counterblock_addr, tag_info);
+    }
+    for (int i=0;i<8;i++){
+      printf("%02x ", spm_ld64(ctx.spm_data + i * 8));
     }
     uint64_t major_counter = spm_ld64(tag_info.spm_offset);
     // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
@@ -550,7 +554,7 @@ void decryption_tag(){
     // print
     uint64_t expected_mac = spm_ld64(tag_info.spm_offset + ctx.dmac_byte_offset);
     if (mac_result != expected_mac) {
-        // エラー処理: MAC不一致
+        printf("[Core FW] Decryption Tag failed: MAC mismatch! Computed: %016llx, Expected: %016llx\n", mac_result, expected_mac);
         exit(1);
     }
     // --- 手順2: AXI ManagerにOTPとともにXORを実行し、暗号化を指示 ---
@@ -624,7 +628,15 @@ void encryption_tag(){
 int main(void){
   /* MEMREQの設定 */
   uint64_t size = PROTECTION_SIZE; // 32KB
-  memreq_make(size, 2); // 64B, 1リクエスト
+  // memreq_make(size, 2); // 64B, 1リクエスト
+  printf("abc\n");
+  printf("bcd\n");
+  for(;;){
+    if(AXIM_STATUS_REG & 1) break; // リクエストが来るまで待つ
+  }
+  uint64_t addr = AXIM_REQ_ADDR_REG;
+  printf("addr=%016llx\n", addr);
+  // return 0;
   for (uint64_t i=0; i<512; i++){
     spm_sd64(i*8, 0); // SPMの初期化
   }
@@ -640,20 +652,19 @@ int main(void){
     } else {
       if(AXIM_STATUS_REG & 2){ // writeリクエスト
         setStats(1);
-        // write_only();
+        write_only();
         // encryption_only();
         // encryption_tag();
-        Authentication();
+        // Authentication();
         setStats(0);
         return 0;
       } else {
         // read_only();
         // decryption_only();
-        // decryption_tag();
-        Verification();
-        return 0;
-
+        decryption_tag();
+        // Verification();
       }
     }
   }
 }
+
