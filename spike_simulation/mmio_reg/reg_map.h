@@ -21,7 +21,8 @@
 #define SPM_REG_START        (SPM_CTRL_BASE + 0x20ULL) /* write 1=start / read: busy */
 #define SPM_REG_STATUS       (SPM_CTRL_BASE + 0x28ULL)
 #define SPM_REG_DESTINATION  (SPM_CTRL_BASE + 0x30ULL) /* 1:DRAM 2:MAC, 4:AXIManager (OR可) */
-
+#define SPM_REG_ID           (SPM_CTRL_BASE + 0x38ULL)
+#define SPM_REG_COMPLETE_ID  (SPM_CTRL_BASE + 0x40ULL)
 /* データ窓のベース */
 #define SPM_MEM_BASE   (SPM_BASE)
 /* --- MMIO アクセスヘルパ --- */
@@ -35,6 +36,8 @@
 #define SPM_START          SPM_REG64(SPM_REG_START)
 #define SPM_STATUS         SPM_REG64(SPM_REG_STATUS)
 #define SPM_DESTINATION    SPM_REG64(SPM_REG_DESTINATION) /* 1:DRAM 2:MAC, 4:AXIManager (OR可) */
+#define SPM_ID             SPM_REG64(SPM_REG_ID)
+#define SPM_COMPLETE_ID    SPM_REG64(SPM_REG_COMPLETE_ID)
 #endif // SPM_ADDRMAP_H
 
 #ifndef MAC_ADDRMAP_H
