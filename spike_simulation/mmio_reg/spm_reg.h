@@ -48,11 +48,3 @@ static inline void spm_sd64(uint64_t off, uint64_t v) {
   *(volatile uint64_t *)((uintptr_t)(SPM_MEM_BASE + off)) = v;
 }
 
-static inline void setBlockdirty(uint64_t spm_manage, uint64_t block_addr){
-  uint64_t new_info = ((block_addr >> 6) << 6) | 0x3; // dirty | valid
-  spm_sd64(spm_manage, new_info);
-}
-static inline void clearBlockdirty(uint64_t spm_manage, uint64_t block_addr){
-  uint64_t new_info = ((block_addr >> 6) << 6) | 0x1; // valid
-  spm_sd64(spm_manage, new_info);
-}

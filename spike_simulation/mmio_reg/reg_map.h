@@ -8,7 +8,7 @@
 #define SPM_ADDRMAP_H
 /* --- SPM アドレスマップ（定数マクロに統一） --- */
 #define SPM_BASE        0x60000000ULL
-#define SPM_CTRL_SIZE   0x00001000ULL /* 4 KiB */
+#define SPM_CTRL_SIZE   0x00000100ULL /* 4 KiB */
 #define SPM_MEM_SIZE    0x00020000ULL /* 128 KiB */
 #define SPM_TOTAL_SIZE  (SPM_CTRL_SIZE + SPM_MEM_SIZE)
 
@@ -46,7 +46,7 @@
 
 // ベースアドレスとサイズ
 #define MAC_BASE        (SPM_BASE + SPM_TOTAL_SIZE)
-#define MAC_CTRL_SIZE   0x00001000ULL  // 4 KiB
+#define MAC_CTRL_SIZE   0x00000100ULL  // 4 KiB
 
 // レジスタオフセット（BASEからの相対）
 #define MAC_REG_SPM_ADDR    0x00
@@ -75,7 +75,7 @@
 
 // ベースアドレスとサイズ
 #define AES_BASE        (MAC_BASE + MAC_CTRL_SIZE)
-#define AES_CTRL_SIZE   0x00001000ULL  // 4 KiB
+#define AES_CTRL_SIZE   0x00000100ULL  // 4 KiB
 // レジスタオフセット（BASEからの相対）
 #define AES_INPUT_0    0x00
 #define AES_INPUT_1    0x08
@@ -105,7 +105,7 @@
 
 
 #define AXIM_BASE           (AES_BASE + AES_CTRL_SIZE)
-#define AXIM_CTRL_SIZE      0x00001000ULL
+#define AXIM_CTRL_SIZE      0x00000100ULL
 #define AXIM_STATUS         0x00ULL
 #define AXIM_REQ_ADDR       0x08ULL
 #define AXIM_REQ_ID         0x10ULL
@@ -128,7 +128,7 @@
 #ifndef XOR_ADDRMAP_H
 #define XOR_ADDRMAP_H
 #define XOR_BASE         (AXIM_BASE + AXIM_CTRL_SIZE)
-#define XOR_CTRL_SIZE    0x00001000ULL
+#define XOR_CTRL_SIZE    0x00000100ULL
 #define XOR_START        0x00ULL
 #define XOR_START_REG    REG64(XOR_BASE, XOR_START)
 #endif // XOR_ADDRMAP_H
@@ -137,7 +137,7 @@
 #ifndef MEMREQ_ADDRMAP_H
 #define MEMREQ_ADDRMAP_H
 #define MEMREQ_BASE         (XOR_BASE + XOR_CTRL_SIZE)
-#define MEMREQ_CTRL_SIZE    0x00001000ULL
+#define MEMREQ_CTRL_SIZE    0x00000100ULL
 #define MEMREQ_MEM_SIZE     0x00ULL
 #define MEMREQ_NUM          0x08ULL
 

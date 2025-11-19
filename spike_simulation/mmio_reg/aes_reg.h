@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include "reg_map.h"
 void set_seed(const uint64_t major_counter, const uint8_t minor_counter, const uint64_t request_addr){
-    printf("[Core FW] AES Seed set: major=%llu, minor=%u, addr=%016llx\n", major_counter, minor_counter, request_addr);
+    // printf("[Core FW] Set Seed: major_counter=%016llx, minor_counter=%02x, request_addr=%016llx\n", major_counter, minor_counter, request_addr);
     uint64_t seed_0 = request_addr + major_counter;
     uint64_t seed_1 = request_addr + (minor_counter);
     uint64_t seed_2 = request_addr + 16 + major_counter;
