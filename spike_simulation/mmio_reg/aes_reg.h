@@ -2,15 +2,14 @@
 #include <stddef.h>
 #include "reg_map.h"
 void set_seed(const uint64_t major_counter, const uint8_t minor_counter, const uint64_t request_addr){
-    // printf("[Core FW] Set Seed: major_counter=%016llx, minor_counter=%02x, request_addr=%016llx\n", major_counter, minor_counter, request_addr);
-    uint64_t seed_0 = request_addr + major_counter;
-    uint64_t seed_1 = request_addr + (minor_counter);
-    uint64_t seed_2 = request_addr + 16 + major_counter;
-    uint64_t seed_3 = request_addr + 16 + (minor_counter);
-    uint64_t seed_4 = request_addr + 32 + major_counter;
-    uint64_t seed_5 = request_addr + 32 + (minor_counter);
-    uint64_t seed_6 = request_addr + 48 + major_counter;
-    uint64_t seed_7 = request_addr + 48 + (minor_counter);
+    uint64_t seed_0 = major_counter;
+    uint64_t seed_1 = (uint64_t)minor_counter << 56 | request_addr;
+    uint64_t seed_2 = major_counter;
+    uint64_t seed_3 = (uint64_t)minor_counter << 56 | (request_addr + 16);
+    uint64_t seed_4 = major_counter;
+    uint64_t seed_5 = (uint64_t)minor_counter << 56 | (request_addr + 32);
+    uint64_t seed_6 = major_counter;
+    uint64_t seed_7 = (uint64_t)minor_counter << 56 | (request_addr + 48);
     AES_INPUT_0_REG = seed_0;
     AES_INPUT_1_REG = seed_1;
     AES_INPUT_2_REG = seed_2;

@@ -56,10 +56,6 @@ static inline void clearBlockdirty(uint64_t spm_offset){
 uint64_t get_spm_manage(uint64_t spm_offset) {
     return SPM_METADATA_BASE + spm_offset / 8;
 }
-
-uint32_t total_count = 0;
-uint32_t hit_count = 0;
-
 uint64_t ensureBlockInSpm(uint64_t required_block_addr, struct Info tag_info,uint64_t id){
   uint64_t read_id = id;
   // uint64_t manage_addr = get_spm_manage(tag_info.spm_offset);
@@ -86,7 +82,6 @@ struct Info tag_check(uint64_t dram_addr){
   uint64_t count = 0;
   uint64_t way_index = 0;
   uint32_t lru_counter_max = 0;
-  total_count++;
     // wayを決定
   for (uint64_t i = 0; i < CACHE_WAYS; ++i) {
         if (cache_metadata[set_index][i].valid) {
@@ -97,7 +92,6 @@ struct Info tag_check(uint64_t dram_addr){
             tag_info.dirty = cache_metadata[set_index][i].dirty;
             tag_info.hit = true;
             tag_info.spm_offset = spm_offset;
-            hit_count++;
             break;
           } else {
             // wayが空いていない時、カウンタをインクリメントしてLRUを決定
@@ -116,7 +110,8 @@ struct Info tag_check(uint64_t dram_addr){
           // 空きwayが見つかった場合、そのwayを使用
           way_index = i;
           tag_info.spm_offset = spm_offset;
-          break;
+          return tag_info;
+          // break;
         }
         spm_offset += 64;
     }
@@ -442,7 +437,7 @@ struct AddressContext setupAddressContext() {
 // //     mac_update(64, 71);
 // //     uint64_t new_mac = mac_final();
 // // }
-static inline uint64_t decryption_only(uint64_t id){
+uint64_t decryption_only(uint64_t id){
     struct AddressContext ctx = setupAddressContext();
     struct Info tag_info = tag_check(ctx.counterblock_addr);
       // --- 手順1: アドレスとカウンター値を元にSeed値を計算し、AES_moduleに書き込み起動する ---
@@ -546,7 +541,6 @@ uint64_t decryption_tag(uint64_t id){
     uint64_t data_id = counter_id + 1;
     spm_copy_to_local(ctx.request_addr, ctx.spm_data, 64,data_id);
     if (!tag_info.hit){
-      // printf("[Core FW] Decryption Tag: Waiting for counter block id %llu %llu\n", counter_id, SPM_COMPLETE_ID);
       spm_wait(counter_id);
     }
     uint64_t major_counter = spm_ld64(tag_info.spm_offset);
@@ -563,18 +557,12 @@ uint64_t decryption_tag(uint64_t id){
     }
     spm_wait(data_id);
     while(AES_START_REG); // busy待ち
-    write_xor(ctx.spm_data);
-    xor_start();
-    copy_xor(ctx.spm_data+0x40);
-    axim_write(ctx.spm_data+0x40);
-    axim_read_return();
     mac_init();
     mac_buffer_set(ctx.spm_data);
     mac_update(0, 511);
     // SPMからカウンターブロックをコピーし、update
     mac_buffer_set(tag_info.spm_offset);
     mac_update(ctx.counter_bit_offset, ctx.counter_bit_offset + 7); 
-    // MAC計算完了
     // --- 手順6: Hashモジュールの計算完了を待ち、結果を取得しSPMから正しい結果をload ---
     // SPMに当該MACブロックがあるかを確認。なければコピー。
     uint64_t mac_result = mac_final();
@@ -585,6 +573,11 @@ uint64_t decryption_tag(uint64_t id){
     if (mac_result != expected_mac) {
         exit(1);
     }
+    write_xor(ctx.spm_data);
+    xor_start();
+    copy_xor(ctx.spm_data);
+    axim_write(ctx.spm_data);
+    axim_read_return();
     return tag_id;
 }
 
@@ -671,8 +664,8 @@ int main(void){
         // Authentication();
       } else {
         // dma_id = read_only(dma_id);
-        dma_id = decryption_only(dma_id);
-        // dma_id = decryption_tag(dma_id);
+        // dma_id = decryption_only(dma_id);
+        dma_id = decryption_tag(dma_id);
         // Verification();
       }
     }

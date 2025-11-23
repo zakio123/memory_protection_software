@@ -11,3 +11,4 @@ rocket_simulation/mmio_module/obj_dir/*
 *.vcd
 *.fst
 *.elf
+*.dump
