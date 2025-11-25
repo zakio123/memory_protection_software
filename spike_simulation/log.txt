@@ -1,8 +1,0 @@
-[Spike] Initial image file size: 77662272 bytes
-[Spike] Checking memory region [80000000, 1080000000)
-mcycle = 30150
-minstret = 30155
-[TB] Initializing final memory state at block 0
-
-[TB] Generating 8 test cases...
-[TB] Write Ack received for ID 1.
