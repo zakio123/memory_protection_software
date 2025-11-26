@@ -18,6 +18,7 @@ void xor_start(bool input_from_reqio, bool output_to_reqio) {
         reg += 4;
     }
     XOR_START_REG = reg;
+    // printf("[core fw input] is %d\n", reg);
     xor_is_busy();
     return;
 }
