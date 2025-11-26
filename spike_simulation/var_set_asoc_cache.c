@@ -129,9 +129,7 @@ uint64_t ensureBlockInSpm(uint64_t required_block_addr, struct Info tag_info,uin
   uint64_t read_id = id;
   uint64_t tmp = 0x000000049035ba80;
   if (tag_info.dirty) {
-    if (tmp == required_block_addr){
-      printf("Writing back dirty block: addr=%016llx, way=%u, spm_offset=%u\n", tag_info.block_addr, tag_info.way, tag_info.spm_offset);
-    }
+    // Dirtyなら書き戻し
     spm_write_back(tag_info.spm_offset, tag_info.block_addr, 64,0);
   }
   spm_copy_to_local(required_block_addr, tag_info.spm_offset, 64,read_id);
@@ -521,9 +519,12 @@ uint64_t Authentication(uint64_t id, uint64_t request_addr){
   mac_buffer_set(DATA_SPM_OFFSET); 
   mac_update(0, 511);
   mac_buffer_set(spm_offset_array[HEIGHT-1]);
-  mac_update(counter_bit_offset, counter_bit_offset + 7); // 8bit = 1B
+  mac_update(counter_bit_offset, counter_bit_offset + 7); // 
   // MAC計算完了
   uint64_t computed_mac = mac_final();
+  if (!tag_info.hit){
+    spm_wait(tag_id);
+  }
   uint64_t tmp = 0x000000049035ba80;
   uint64_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
   spm_sd64(tag_info.spm_offset + dmac_byte_offset, computed_mac);
@@ -535,14 +536,14 @@ uint64_t Authentication(uint64_t id, uint64_t request_addr){
   //     uint64_t val = spm_ld64(tag_info.spm_offset + i*8);
   //     printf("tag_data[%d]: %016llx\n", i, val);
   //   }
-  //   for (int i=0;i<8;i++){
-  //     uint64_t val = spm_ld64(spm_offset_array[HEIGHT-1] + i*8);
-  //     printf("data_block[%d]: %016llx\n", i, val);
-  //   }
-  //   for (int i=0;i<8;i++){
-  //     uint64_t val = spm_ld64(DATA_SPM_OFFSET + i*8);
-  //     printf("data_after_xor[%d]: %016llx\n", i, val);
-  //   }
+  //   // for (int i=0;i<8;i++){
+  //   //   uint64_t val = spm_ld64(spm_offset_array[HEIGHT-1] + i*8);
+  //   //   printf("data_block[%d]: %016llx\n", i, val);
+  //   // }
+  //   // for (int i=0;i<8;i++){
+  //   //   uint64_t val = spm_ld64(DATA_SPM_OFFSET + i*8);
+  //   //   printf("data_after_xor[%d]: %016llx\n", i, val);
+  //   // }
   //   // tag_infoの情報を表示
   //   printf("Tag Info - valid: %d, dirty: %d, hit: %d, spm_offset: %u, block_addr: %016llx, way: %u\n",
   //          tag_info.valid, tag_info.dirty, tag_info.hit, tag_info.spm_offset, tag_info.block_addr, tag_info.way);
@@ -915,7 +916,6 @@ int main(void){
       return 0;
     } else {
       if(AXIM_STATUS_REG & 2){ // writeリクエスト
-        printf("[Core FW] Write request\n");
         // dma_id = write_only(dma_id, addr);
         // dma_id = encryption_only(dma_id, addr);
         // dma_id = encryption_tag(dma_id, addr);
