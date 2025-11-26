@@ -238,7 +238,7 @@ bool verify_one_height(uint32_t child_spm_offset, uint32_t parent_spm_offset, ui
   return true;
 }
 
-void update_one_height(uint32_t child_spm_offset, uint32_t parent_spm_offset, uint64_t node_index, bool update_counter=true){
+void update_one_height(uint32_t child_spm_offset, uint32_t parent_spm_offset, uint64_t node_index, bool update_counter){
   mac_init();
   if (parent_spm_offset == 0){
       uint64_t root = spm_ld64(parent_spm_offset);
@@ -282,83 +282,83 @@ void update_one_height(uint32_t child_spm_offset, uint32_t parent_spm_offset, ui
   spm_sd64(child_spm_offset + 56, computed_mac);
 }
 
-uint64_t evicted_node_update(struct Info tag_info, uint64_t id){
-  // 追い出すノードのインデックスと階層を計算
-  uint32_t victim_level = 0;
-  for (int l = 0;l<HEIGHT;l++){
-    uint64_t level_base_addr = calculate_level_base_addr(l+1);
-    if (tag_info.block_addr >= COUNTER_BASE + level_base_addr){
-      victim_level = l;
-    } else {
-      break;
-    }
-  }
-  // HEIGHT-1がリーフ、0が高さ1
-  uint64_t path_indecis[HEIGHT];
-  struct Info info_array[HEIGHT];
-  uint32_t spm_offset_array[HEIGHT];
-  uint64_t dram_addr_array[HEIGHT];
-  uint64_t start_level = 0;
-  uint32_t victim_index = (tag_info.block_addr - COUNTER_BASE - calculate_level_base_addr(level)) / 64;
-  for(uint64_t i=level; i<HEIGHT; ++i){
-      uint64_t index = victim_index / (1ULL << (5 * (level - i)));
-      path_indecis[HEIGHT - 1 - i ] = index;
-      struct Info info;
-      uint64_t dram_addr;
-      if (i == level){
-        dram_addr = tag_info.block_addr;
-        info = tag_info;
-      } else {
-        dram_addr = COUNTER_BASE + index / 32 * 64 + calculate_level_base_addr(HEIGHT - i);
-        info = tag_check(dram_addr);
-      }
-      info_array[HEIGHT - 1 - i] = info;
-      if (info.hit){
-        spm_offset_array[HEIGHT - 1 - i] = info.spm_offset;
-        break;
-      } else {
-        spm_offset_array[HEIGHT - 1 - i] = pop_temp_buffer();
-        dram_addr_array[HEIGHT - 1 - i] = dram_addr;
-      }
-  }
-  uint64_t tmp_id = id;
-  // 上から順にSPMにロード
-  for (uint64_t i = 0;i<level;i++){
-    if (!info_array[i].hit){
-      tmp_id += 1;
-      uint64_t dram_addr = COUNTER_BASE + path_indecis[i] / 32 * 64 + calculate_level_base_addr(i+1);
-      spm_copy_to_local(dram_addr, spm_offset_array[i], 64, tmp_id);
-    }
-  }
-  for (uint64_t i = 0;i<victim_level;i++){
-    uint32_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
-    id += 1;
-    bool verify = verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], id);
-    if (verify == false){
-      printf("[Core FW] Verification failed at level %llu\n", i);
-      exit(1);
-    }
-  }
-  // 木の更新：ルートからvictimまで降りていく
-  for (uint64_t i=0;i<victim_level;i++){
-    if (i == victim_level - 1){
-      update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], false);
-    }else {
-      update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i]);
-    }
-    if (info_array[i].hit){
-      setParentUpdated(spm_offset_array[i], info_array[i].way);
-      setBlockdirty(spm_offset_array[i], info_array[i].way);
-    }
-  }
-  // tempに入れたものを全て書き戻す
-  for (uint64_t i = 0;i<victim_level;i++){
-    if (!info_array[i].hit) {
-      spm_write_back(spm_offset_array[i], dram_addr_array[i], 64, 0);
-      push_temp_buffer(spm_offset_array[i]);
-    }
-  }
-}
+// uint64_t evicted_node_update(struct Info tag_info, uint64_t id){
+//   // 追い出すノードのインデックスと階層を計算
+//   uint32_t victim_level = 0;
+//   for (int l = 0;l<HEIGHT;l++){
+//     uint64_t level_base_addr = calculate_level_base_addr(l+1);
+//     if (tag_info.block_addr >= COUNTER_BASE + level_base_addr){
+//       victim_level = l;
+//     } else {
+//       break;
+//     }
+//   }
+//   // HEIGHT-1がリーフ、0が高さ1
+//   uint64_t path_indecis[HEIGHT];
+//   struct Info info_array[HEIGHT];
+//   uint32_t spm_offset_array[HEIGHT];
+//   uint64_t dram_addr_array[HEIGHT];
+//   uint64_t start_level = 0;
+//   uint32_t victim_index = (tag_info.block_addr - COUNTER_BASE - calculate_level_base_addr(level)) / 64;
+//   for(uint64_t i=level; i<HEIGHT; ++i){
+//       uint64_t index = victim_index / (1ULL << (5 * (level - i)));
+//       path_indecis[HEIGHT - 1 - i ] = index;
+//       struct Info info;
+//       uint64_t dram_addr;
+//       if (i == level){
+//         dram_addr = tag_info.block_addr;
+//         info = tag_info;
+//       } else {
+//         dram_addr = COUNTER_BASE + index / 32 * 64 + calculate_level_base_addr(HEIGHT - i);
+//         info = tag_check(dram_addr);
+//       }
+//       info_array[HEIGHT - 1 - i] = info;
+//       if (info.hit){
+//         spm_offset_array[HEIGHT - 1 - i] = info.spm_offset;
+//         break;
+//       } else {
+//         spm_offset_array[HEIGHT - 1 - i] = pop_temp_buffer();
+//         dram_addr_array[HEIGHT - 1 - i] = dram_addr;
+//       }
+//   }
+//   uint64_t tmp_id = id;
+//   // 上から順にSPMにロード
+//   for (uint64_t i = 0;i<level;i++){
+//     if (!info_array[i].hit){
+//       tmp_id += 1;
+//       uint64_t dram_addr = COUNTER_BASE + path_indecis[i] / 32 * 64 + calculate_level_base_addr(i+1);
+//       spm_copy_to_local(dram_addr, spm_offset_array[i], 64, tmp_id);
+//     }
+//   }
+//   for (uint64_t i = 0;i<victim_level;i++){
+//     uint32_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
+//     id += 1;
+//     bool verify = verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], id);
+//     if (verify == false){
+//       printf("[Core FW] Verification failed at level %llu\n", i);
+//       exit(1);
+//     }
+//   }
+//   // 木の更新：ルートからvictimまで降りていく
+//   for (uint64_t i=0;i<victim_level;i++){
+//     if (i == victim_level - 1){
+//       update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], false);
+//     }else {
+//       update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i]);
+//     }
+//     if (info_array[i].hit){
+//       setParentUpdated(spm_offset_array[i], info_array[i].way);
+//       setBlockdirty(spm_offset_array[i], info_array[i].way);
+//     }
+//   }
+//   // tempに入れたものを全て書き戻す
+//   for (uint64_t i = 0;i<victim_level;i++){
+//     if (!info_array[i].hit) {
+//       spm_write_back(spm_offset_array[i], dram_addr_array[i], 64, 0);
+//       push_temp_buffer(spm_offset_array[i]);
+//     }
+//   }
+// }
 
 
 uint64_t Authentication(uint64_t id, uint64_t request_addr){
@@ -406,7 +406,7 @@ uint64_t Authentication(uint64_t id, uint64_t request_addr){
   }
   // 木の更新：ルートから葉まで降りていく
   for (uint64_t i=load_start_index;i<HEIGHT;i++){
-    update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i]);
+    update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true);
     if (i == load_start_index){
       clearParentUpdated(spm_offset_array[i], info_array[i].way);
       setBlockdirty(spm_offset_array[i], info_array[i].way);
@@ -445,8 +445,8 @@ uint64_t Authentication(uint64_t id, uint64_t request_addr){
   }
   while(AES_START_REG);
   write_xor(DATA_SPM_OFFSET);
-  xor_start();
-  copy_xor(DATA_SPM_OFFSET);
+  xor_start(true, false);
+  // copy_xor(DATA_SPM_OFFSET);
   // ハッシュ関数の内部状態を初期化
   // SPMに当該MACブロックがあればそのままmodify,なければ今あるブロックをDRAMにwrite backしてから適切なブロックをSPMにDRAMコピー
   mac_init();
@@ -555,10 +555,13 @@ uint64_t Verification(uint64_t id, uint64_t request_addr){
   }
   // --- 手順7: AXI managerに対し、read bufferにあるデータをリターンするように指示 ---
   while(AES_START_REG); // busy待ち
+  printf("[Core FW] Data MAC verification succeeded: mac=%016llx\n", mac_result);
   write_xor(DATA_SPM_OFFSET);
-  xor_start();
-  copy_xor(DATA_SPM_OFFSET);
-  axim_write(DATA_SPM_OFFSET);
+  printf("[Core FW] Verification: spm_offset=%016llx\n", DATA_SPM_OFFSET);
+  xor_start(false, true);
+  printf("[Core FW] Verification: xor started\n");
+  // copy_xor(DATA_SPM_OFFSET);
+  // axim_write(DATA_SPM_OFFSET);
   axim_read_return();
   return tag_id;
 }

@@ -8,9 +8,16 @@ static inline void xor_is_busy() {
     while(XOR_START_REG); // busy==1 の間スピン
     return;
 }
-void xor_start() {
+void xor_start(bool input_from_reqio, bool output_to_reqio) {
     xor_is_busy();
-    XOR_START_REG = 1;
+    uint64_t reg = 1;
+    if (input_from_reqio){
+        reg += 2;
+    }
+    if (output_to_reqio){
+        reg += 4;
+    }
+    XOR_START_REG = reg;
     xor_is_busy();
     return;
 }
