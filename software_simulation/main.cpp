@@ -148,6 +148,7 @@ int main() {
     // --- 3. テストシナリオを生成 (40回のランダムなRead/Write) ---
     std::random_device rd;
     std::mt19937 gen(rd());
+<<<<<<< Updated upstream:software_simulation/main.cpp
     std::uniform_int_distribution<uint32_t> addr_dist(0, 0x04000000 / 64 - 1); // 64Bアラインされたアドレス範囲
     std::vector<std::pair<uint64_t, AxiManagerModule::DataBlock>> test_plan;
     std::map<uint64_t, AxiManagerModule::DataBlock> final_memory_state;
@@ -167,6 +168,25 @@ int main() {
     // read
     for (const auto& test_case : test_plan) {
         tb.addReadTest(test_case.first, final_memory_state[test_case.first]);
+=======
+    std::uniform_int_distribution<uint32_t> addr_dist(0, 2048 * 128); 
+    std::uniform_int_distribution<int> op_dist(0, 1);
+
+    const int NUM_TESTS = 8000;
+    for (int i = 0; i < NUM_TESTS; ++i) {
+        uint64_t addr = addr_dist(gen) * 64; // 64Bアライン
+        AxiManagerModule::DataBlock data;
+        for(size_t j=0; j<data.size(); ++j) data[j] = i; // 簡単なデータパターン
+        tb.addWriteTest(addr, data); // まず書き込みテストを追加
+        tb.addReadTest(addr, data);  // 続けて読み出しテストを追加
+    }
+    for (int i = 0; i < NUM_TESTS; ++i) {
+        uint64_t addr = addr_dist(gen) * 64; // 64Bアライン
+        AxiManagerModule::DataBlock data;
+        for(size_t j=0; j<data.size(); ++j) data[j] = 2*i; // 簡単なデータパターン
+        tb.addWriteTest(addr, data); // まず書き込みテストを追加
+        tb.addReadTest(addr, data);  // 続けて読み出しテストを追加
+>>>>>>> Stashed changes:main.cpp
     }
     // --- 4. テストスイートを実行 ---
     tb.run();

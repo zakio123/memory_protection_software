@@ -1,7 +1,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "reg_map.h"
-void set_seed(const uint64_t major_counter, const uint8_t minor_counter, const uint64_t request_addr){
+#include "config.h"
+void set_seed(const uint64_t major_counter, const uint8_t minor_counter, const dram_addr_t request_addr){
     // printf("[Core FW] Setting AES Seed: major=%016llx, minor=%02x, addr=%016llx\n", major_counter, minor_counter, request_addr);
     uint64_t seed_0 = major_counter;
     uint64_t seed_1 = (uint64_t)minor_counter << 56 | request_addr;

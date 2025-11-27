@@ -2,24 +2,25 @@
 #include <stddef.h>
 #include "reg_map.h"
 #include "spm_reg.h"
+#include "config.h"
 // ヘルパー関数群
-void axim_copy(const uint64_t spm_offset){
+void axim_copy(const spm_offset_t spm_offset){
     while(AXIM_BUSY_REG); // busy待ち
-    AXIM_SPM_ADDR_REG = spm_offset;
+    AXIM_SPM_ADDR_REG = (uint64_t)spm_offset;
     AXIM_COMMAND_REG = 1; // WRITE_BACK
     spm_wait_idle();
     SPM_DRAM_ADDRESS  = 0;
-    SPM_LOCAL_ADDRESS = spm_offset;
+    SPM_LOCAL_ADDRESS = (uint64_t)spm_offset;
     SPM_SIZE_REG      = 64;
     SPM_DIRECTION     = 0;
     SPM_DESTINATION   = 4;           /* spm->axim */
     SPM_START         = 1;
     spm_wait_idle();
 }
-void axim_write(const uint64_t spm_offset){
+void axim_write(const spm_offset_t spm_offset){
     spm_wait_idle();
     SPM_DRAM_ADDRESS  = 0;
-    SPM_LOCAL_ADDRESS = spm_offset;
+    SPM_LOCAL_ADDRESS = (uint64_t)spm_offset;
     SPM_SIZE_REG      = 64;
     SPM_DIRECTION     = 1;
     SPM_DESTINATION   = 4;           /* axim->spm */

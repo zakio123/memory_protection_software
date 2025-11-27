@@ -2,10 +2,12 @@
 #include <stddef.h>
 #include "reg_map.h"
 #include "spm_reg.h"
-void mac_buffer_set(uint64_t spm_offset){
+#include "config.h"
+
+void mac_buffer_set(spm_offset_t spm_offset){
     while (MAC_SPM_START); // busy待ち
     SPM_DRAM_ADDRESS  = 0;
-    SPM_LOCAL_ADDRESS = spm_offset;
+    SPM_LOCAL_ADDRESS = (uint64_t)spm_offset;
     SPM_DIRECTION     = 1;
     SPM_DESTINATION   = 2;
     SPM_START         = 1;

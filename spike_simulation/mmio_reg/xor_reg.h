@@ -18,26 +18,22 @@ void xor_start(bool input_from_reqio, bool output_to_reqio) {
         reg += 4;
     }
     XOR_START_REG = reg;
-    // printf("[core fw input] is %d\n", reg);
     xor_is_busy();
     return;
 }
-
-void write_xor(uint64_t spm_offset){
+void write_xor(const spm_offset_t spm_offset){
     spm_wait_idle();
     SPM_DRAM_ADDRESS  = 0;
-    SPM_LOCAL_ADDRESS = spm_offset;
-    SPM_SIZE_REG      = 64;
+    SPM_LOCAL_ADDRESS = (uint64_t)spm_offset;
     SPM_DIRECTION     = 1;
     SPM_DESTINATION   = 8;           /* SPM->XOR */
     SPM_START         = 1;
     spm_wait_idle();
 }
-void copy_xor(const uint64_t spm_offset){
+void copy_xor(const spm_offset_t spm_offset){
     spm_wait_idle();
     SPM_DRAM_ADDRESS  = 0;
-    SPM_LOCAL_ADDRESS = spm_offset;
-    SPM_SIZE_REG      = 64;
+    SPM_LOCAL_ADDRESS = (uint64_t)spm_offset;
     SPM_DIRECTION     = 0;
     SPM_DESTINATION   = 8;           /* XOR->SPM */
     SPM_START         = 1;
