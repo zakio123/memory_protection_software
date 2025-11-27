@@ -137,6 +137,7 @@ dma_id_t ensureBlockInSpm(dram_addr_t required_dram_addr, struct Info tag_info,d
 static inline void swapp_temp_cache(dram_addr_t dram_addr, struct Info tag_info, spm_offset_t spm_offset,bool dirty){
   index_t set_index = get_cache_set_index(dram_addr);
   if (tag_info.valid && tag_info.dirty){
+    dram_addr_t old_dram_addr = COUNTER_BASE;
     spm_write_back(tag_info.spm_offset, tag_info.block_addr, 64, 0);
   }    
   cache_metadata[set_index][tag_info.way].spm_offset = spm_offset;
@@ -306,7 +307,6 @@ void update_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_of
 // ===========================================================================
 
 dma_id_t evicted_node_update(struct Info tag_info, dma_id_t id) {
-  printf("[Core FW] Evicted Node Update: addr=0x%016llx, way=%u\n", tag_info.block_addr, tag_info.way);
     // ---------------------------------------------------------
     // 1. Victimのレベル(階層)とインデックスを特定
     // ---------------------------------------------------------
@@ -329,111 +329,113 @@ dma_id_t evicted_node_update(struct Info tag_info, dma_id_t id) {
     }
     // ガード: Root(Lv.0)はEvictされないはずなので無視
     if (v_level == 0) return id;
-    // Victimのインデックス (そのレベル内での通し番号)
-    uint64_t v_index = (tag_info.block_addr - COUNTER_BASE - v_level_base_addr) / 64;
-    // ---------------------------------------------------------
-    // 2. パス情報の準備 (Root -> Victim)
-    // ---------------------------------------------------------
-    struct PathNode {
-        dram_addr_t dram_addr;
-        spm_offset_t spm_offset;
-        uint64_t node_index; // 親への書き込み位置特定用
-        bool hit;
-        bool needs_wb;
-    } path[HEIGHT+1];
-
-    // ループ: Level 0 (Root) から Level v_level (Victim) まで
-    for (int l = 0; l <= v_level; l++) {
-      if (l == 0) {
-          path[l].node_index = 0; // Rootのインデックスは0
-          path[l].dram_addr = 0; // Rootはアクセスしないのでダミー
-          path[l].spm_offset = 0;
-          path[l].hit = true;
-          path[l].needs_wb = false;
+    // 何個めのブロックか
+    dram_addr_t v_index = (tag_info.block_addr - (COUNTER_BASE + v_level_base_addr))/ 64 * 32;
+    uint64_t path_indecis[HEIGHT] = {0};
+  struct Info info_array[HEIGHT] = {0};
+  spm_offset_t spm_offset_array[HEIGHT] = {0};
+  dram_addr_t dram_addr_array[HEIGHT] = {0};
+  uint64_t start_level = 0;
+  bool hit_found = false;
+  // victim_levelの一個上から順にレベルをチェックしていく
+  for(uint64_t i=1; i<v_level; ++i){
+      uint64_t index = v_index >> (5 * i);
+      path_indecis[v_level - 1 - i] = index;
+      dram_addr_t dram_addr = COUNTER_BASE + index / 32 * 64 + calculate_level_base_addr(v_level - i);
+      struct Info info = tag_check(dram_addr);
+      info_array[v_level - 1 - i] = info;
+      if (info.hit){
+        hit_found = true;
+        start_level = v_level - 1 - i;
+        spm_offset_array[v_level - 1 - i] = info.spm_offset;
+        dram_addr_array[v_level - 1 - i] = dram_addr;
+        break;
       } else {
-        // インデックス計算: Victimから逆算
-        // Level l のインデックス = VictimIndex >> (5 * (v_level - l))
-        uint64_t current_index = v_index >> (5 * (v_level - l));
-        path[l].node_index = current_index;
-        // DRAMアドレス計算
-        if (l == 0) {
-            path[l].dram_addr = 0; // Rootはアクセスしないのでダミー
-        } else {
-            path[l].dram_addr = COUNTER_BASE + calculate_level_base_addr(l) + (current_index * 64);
-        }
+        spm_offset_array[v_level - 1 - i] = pop_temp_buffer();
+        dram_addr_array[v_level - 1 - i] = dram_addr;
       }
+  }
+  dram_addr_t tmp = COUNTER_BASE + v_index / 32 * 64 + calculate_level_base_addr(v_level);
+  // if (tmp != tag_info.block_addr){
+  //     printf("[Core FW]   Warning: Calculated dram addr %016llx does not match victim block addr %016llx\n", tmp, tag_info.block_addr);
+  // }
+  spm_offset_array[v_level - 1] = tag_info.spm_offset;
+  dram_addr_array[v_level - 1] = tag_info.block_addr;
+  info_array[v_level - 1] = tag_info;
+  path_indecis[v_level - 1] = v_index;
+  // ---------------------------------------------------------
+  // 2. SPMへのロードと検証、更新、スワップ
+  // ---------------------------------------------------------
+  uint64_t load_start_index = hit_found ? (start_level + 1) : 0;
+  dma_id_t tmp_id = id;
+  // 上から順にSPMにロード
+  for (uint64_t i = load_start_index;i<v_level-1;i++){
+    if (!info_array[i].hit){
+      tmp_id += 1;
+      dram_addr_t dram_addr = dram_addr_array[i];
+      spm_copy_to_local(dram_addr, spm_offset_array[i], 64, tmp_id);
     }
-    // ---------------------------------------------------------
-    // 3. ロードフェーズ (Top-Down: Root -> Victim)
-    // ---------------------------------------------------------
-    for (int l = 1; l <= v_level; l++) {
-        struct Info info = tag_check(path[l].dram_addr);
-        if (info.hit) {
-            path[l].spm_offset = info.spm_offset;
-            path[l].hit = true;
-            path[l].needs_wb = false;
-        } else {
-            // キャッシュミス: Temp Poolにロード
-            path[l].spm_offset = pop_temp_buffer();
-            path[l].hit = false;
-            path[l].needs_wb = true;
-            id++;
-            spm_copy_to_local(path[l].dram_addr, path[l].spm_offset, 64, id);
-        }
+    else {
+      printf("[Core FW] Unexpected hit during load phase at level %llu\n", i);
+      exit(1);
     }
-    spm_wait(id); // ロード完了待ち
-    // ---------------------------------------------------------
-    // 3.5 ロードしたノードの検証フェーズ (Top-Down: Root -> Victimの一個上まで)
-    // ---------------------------------------------------------
-    for (int l = 1; l <= v_level-1; l++) {
-      int parent_lvl = l - 1;
-      bool verify = verify_one_height(
-          path[l].spm_offset,          // Child
-          path[parent_lvl].spm_offset, // Parent
-          path[l].node_index,          // Child Index
-          id
-      );
-      if (verify == false){
-        printf("[Core FW] Verification failed at level %d during Evicted Node Update\n", l);
-        exit(1);
-      }
+  }
+  // id = tmp_id;
+  for (uint64_t i = load_start_index;i<v_level-1;i++){
+    uint32_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
+    id += 1;
+    bool verify = verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], id);
+    if (verify == false){
+      printf("[Core FW] Verification failed at level %llu\n", i);
+      exit(1);
     }
-    // ---------------------------------------------------------
-    // 4. 更新フェーズ (Top-Down: Root -> Victim)
-    // ---------------------------------------------------------
-    // l=1 (Rootの子) から開始 (Root自体は更新起点)
-    // rootノードの値を更新
+  }
+  // 一時的なルートノードのアップデート
+  if (load_start_index == 0){
+    // rootノードの更新
     uint64_t root = spm_ld64(0);
     root += 1;
     spm_sd64(0, root);
-    for (int l = 1; l <= v_level; l++) {
-      int parent_lvl = l - 1;
-      // 親の情報を使って子のMACを再計算・更新
-      // update_counter=false: Evictionなのでカウンタは進めず、MAC整合のみ取る
-      bool update = (l == v_level) ? false : true;
-      update_one_height(
-          path[l].spm_offset,          // Child
-          path[parent_lvl].spm_offset, // Parent
-          path[l].node_index,          // Child Index
-          update                      // update_counter
-      );
-      // キャッシュ上のノードを変更した場合はDirtyにする
-      if (path[l].hit) {
-        struct Info info = tag_check(path[l].dram_addr);   
-        setParentUpdated(path[l].dram_addr, info.way);
-        setBlockdirty(path[l].dram_addr, info.way);
-      }
+  } else {
+    uint64_t major_counter = spm_ld64(spm_offset_array[start_level]);
+    uint64_t minor_counter_byte_address = spm_offset_array[start_level] + 8 + (path_indecis[start_level] % 32) / 8 * 8;
+    uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
+    // ここから過去のminor counterを取り出す
+    uint8_t minor_counter_value = (minor_counter >> ((path_indecis[start_level] % 8) * 8)) & 0xFF;
+    uint8_t new_minor_counter = 0;
+    if (minor_counter_value == 0xFF){
+        // uint64_t new_major_counter = major_counter + 1;
+        // spm_sd64(spm_offset_array[load_start_index - 1], new_major_counter);
+        new_minor_counter = 0; 
+    } else {
+        new_minor_counter = minor_counter_value + 1;
     }
-    // ---------------------------------------------------------
-    // 5. 書き戻しフェーズ (Temp Pool -> DRAM)
-    // ---------------------------------------------------------
-    for (int l = 0; l <= v_level; l++) {
-        if (path[l].needs_wb) {
-          spm_write_back(path[l].spm_offset, path[l].dram_addr, 64, 0);
-          push_temp_buffer(path[l].spm_offset);
-        }
-    }
-    return id;
+    uint64_t shift_amount = (path_indecis[load_start_index - 1] % 8) * 8;
+    uint64_t clear_mask = ~(0xFFULL << shift_amount);
+    uint64_t cleared_minor_counter = minor_counter & clear_mask;
+    uint64_t shifted_new_value = (new_minor_counter);
+    shifted_new_value <<= shift_amount;
+    uint64_t final_word = cleared_minor_counter | shifted_new_value;
+    // 書き戻し
+    spm_sd64(minor_counter_byte_address, final_word);
+    // 一時的なルートなので、parent updatedはfalseにしておく
+    clearParentUpdated(dram_addr_array[start_level], info_array[start_level].way);
+    setBlockdirty(dram_addr_array[start_level], info_array[start_level].way);
+  }
+  // 木の更新：ルートから葉まで降りていく
+  for (uint64_t i=load_start_index;i<v_level;i++){
+    bool upd = (i == v_level - 1) ? false : true;
+    update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], upd);
+  }
+  // スワップ
+  for (uint64_t i = load_start_index;i<v_level-1;i++){
+    // 全部swappしない
+    spm_write_back(spm_offset_array[i], dram_addr_array[i], 64, 0);
+    push_temp_buffer(spm_offset_array[i]);
+  }
+  spm_write_back(spm_offset_array[v_level - 1], dram_addr_array[v_level - 1], 64, 0);
+  setParentUpdated(dram_addr_array[v_level - 1], info_array[v_level - 1].way);
+  return id;
 }
 
 
@@ -486,20 +488,12 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr){
     }
   }
   // 一時的なルートノードのアップデート
-  if (start_level == 0){
+  if (load_start_index == 0){
     // rootノードの更新
     uint64_t root = spm_ld64(0);
     root += 1;
     spm_sd64(0, root);
   } else {
-    if (!hit_found){
-      printf("[Core FW] Error: No hit found but start_level is not zero.\n");
-      exit(1);
-    }
-    if (info_array[start_level].hit == false){
-      printf("[Core FW] Error: start_level node is not a hit.\n");
-      exit(1);
-    }
     uint64_t major_counter = spm_ld64(spm_offset_array[start_level]);
     uint64_t minor_counter_byte_address = spm_offset_array[start_level] + 8 + (path_indecis[start_level] % 32) / 8 * 8;
     uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
@@ -548,8 +542,7 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr){
   uint64_t minor_counter;
   uint8_t minor_counter_value;
   major_counter = spm_ld64(spm_offset_array[HEIGHT-1]);
-  // axim_copy(DATA_SPM_OFFSET);
-  // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
+
   uint64_t counter_bit_offset = 64 + (request_addr / 64) % 32 * 8;
   minor_counter_byte_address = spm_offset_array[HEIGHT-1] + (counter_bit_offset / 64) * 8;
   minor_counter = spm_ld64(minor_counter_byte_address);
@@ -647,13 +640,14 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr){
   }
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
     struct Info info = tag_check(dram_addr_array[i]);
-    bool mac_updated = (i == 0) ? true : is_mac_updated(dram_addr_array[i], info.way);
+    bool mac_updated = is_mac_updated(dram_addr_array[i], info.way);
     if (mac_updated){
       swapp_temp_cache(dram_addr_array[i], info, spm_offset_array[i],false);
     } else {
       // 親が更新されていない場合は、evicted node updateを行う またはpush
-      // id = evicted_node_update(info_array[i], id);
-      push_temp_buffer(spm_offset_array[i]);
+      tag_id = evicted_node_update(info, tag_id);
+      swapp_temp_cache(dram_addr_array[i], info, spm_offset_array[i],false);
+      // push_temp_buffer(spm_offset_array[i]);
     }
   }
   // --- 手順3: SPM DMAを起動し、DRAMから暗号文をSPMにコピー ---
