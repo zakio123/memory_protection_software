@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #pragma once
 #include <stdint.h>
 #include <stddef.h>
@@ -145,3 +149,7 @@
 #define MEMREQ_MEM_SIZE_REG REG64(MEMREQ_BASE, MEMREQ_MEM_SIZE)
 #define MEMREQ_NUM_REG      REG64(MEMREQ_BASE, MEMREQ_NUM)
 #endif // MEMREQ_ADDRMAP_H
+
+#ifdef __cplusplus
+}
+#endif

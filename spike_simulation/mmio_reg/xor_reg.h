@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -39,3 +43,6 @@ void copy_xor(const spm_offset_t spm_offset){
     SPM_START         = 1;
     spm_wait_idle();
 }
+#ifdef __cplusplus
+}
+#endif

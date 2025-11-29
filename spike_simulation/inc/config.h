@@ -1,4 +1,14 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
 // SPM内でのキャッシュメタデータ領域のベースアドレス (例: SPMの 56 * 64 から開始)
+#include "mem_layout.h"
+#define PROTECTION_BASE  MAIN_PROTECTION_BASE
+#define HEIGHT  MAIN_HEIGHT
+#define PROTECTION_SIZE MAIN_PROTECTION_SIZE
+#define DATA_TAG_BASE  (PROTECTION_BASE + PROTECTION_SIZE) // 0x04000000
+#define DATA_TAG_SIZE  (PROTECTION_SIZE / 8) // 8MB
+#define COUNTER_BASE (DATA_TAG_BASE + DATA_TAG_SIZE) // 0x04800000
 #define DATA_SPM_OFFSET (0x40)
 #define CACHE_WAYS (4)
 #define CACHE_SETS (128) // 768line
@@ -13,3 +23,7 @@ typedef uint64_t  dma_id_t;
 typedef uint32_t  spm_offset_t;
 typedef uint64_t mac_t;
 typedef uint32_t index_t;
+
+#ifdef __cplusplus
+}
+#endif

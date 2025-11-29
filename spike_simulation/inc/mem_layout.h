@@ -1,3 +1,6 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
 #pragma once
 // #include <cstdint>
 
@@ -48,3 +51,7 @@ static constexpr uint64_t COUNTER_BASE    = MAIN_COUNTER_BASE;
 #endif
 
 #endif /* MEM_LAYOUT_PARAMS_H */
+
+#ifdef __cplusplus
+}
+#endif

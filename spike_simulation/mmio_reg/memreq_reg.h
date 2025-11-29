@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -10,3 +14,6 @@ static inline void memreq_make(uint64_t size, uint64_t num) {
     // printf("[Core FW] MEMREQ: size=%llu, num=%llu\n", size, num);
   return;
 }
+#ifdef __cplusplus
+}
+#endif

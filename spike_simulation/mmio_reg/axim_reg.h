@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include "reg_map.h"
@@ -44,3 +48,6 @@ void axim_write_return(){
     while(AXIM_BUSY_REG); // busy待ち
     AXIM_COMMAND_REG = 32; // WRITE_RETURN
 }
+#ifdef __cplusplus
+}
+#endif

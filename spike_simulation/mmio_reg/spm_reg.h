@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #pragma once
 #include <stdint.h>
 #include <stdbool.h>
@@ -48,3 +52,6 @@ static inline void spm_sd64(spm_offset_t off, uint64_t v) {
   *(volatile uint64_t *)((uintptr_t)(SPM_MEM_BASE + (uint64_t)off)) = v;
 }
 
+#ifdef __cplusplus
+}
+#endif

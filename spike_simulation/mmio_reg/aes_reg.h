@@ -1,7 +1,11 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include <stdint.h>
 #include <stddef.h>
 #include "reg_map.h"
 #include "config.h"
+
 void set_seed(const uint64_t major_counter, const uint8_t minor_counter, const dram_addr_t request_addr){
     // printf("[Core FW] Setting AES Seed: major=%016llx, minor=%02x, addr=%016llx\n", major_counter, minor_counter, request_addr);
     uint64_t seed_0 = major_counter;
@@ -23,3 +27,6 @@ void set_seed(const uint64_t major_counter, const uint8_t minor_counter, const d
     AES_START_REG = 1; // start
     // while (AES_START_REG); // busy待ち
 }
+#ifdef __cplusplus
+}
+#endif

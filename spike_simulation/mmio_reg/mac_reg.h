@@ -1,3 +1,7 @@
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stddef.h>
 #include "reg_map.h"
@@ -28,3 +32,6 @@ uint64_t mac_final(void){
     while (MAC_STATUS & 1); // busy待ち
     return MAC_RESULT;
 }
+#ifdef __cplusplus
+}
+#endif
