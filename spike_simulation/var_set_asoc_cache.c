@@ -303,6 +303,7 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr){
   // struct Info info_array[HEIGHT] = {0};
   spm_offset_t spm_offset_array[HEIGHT] = {0};
   dram_addr_t dram_addr_array[HEIGHT] = {0};
+  int temp_idx_array[HEIGHT] = {0};
   uint64_t start_level = 0;
   bool hit_found = false;
   index_t way_index = 0;
@@ -320,6 +321,7 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr){
         spm_offset_array[HEIGHT - 1 - i] = info.spm_offset;
         dram_addr_array[HEIGHT - 1 - i] = dram_addr;
         way_index = info.way;
+        temp_idx_array[HEIGHT - 1 - i] = -1;
         break;
       } else {
         dram_addr_array[HEIGHT - 1 - i] = dram_addr;
@@ -331,6 +333,7 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr){
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
       tmp_id += 1;
       spm_offset_array[i] = pop_temp_buffer();
+      temp_idx_array[i] = alloc_temp_entry(dram_addr_array[i], spm_offset_array[i]);
       dram_addr_t dram_addr = dram_addr_array[i];
       spm_copy_to_local(dram_addr, spm_offset_array[i], 64, tmp_id);
     // }
@@ -390,14 +393,17 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr){
     bool mac_updated = is_mac_updated(dram_addr_array[i], info_i.way);
     if (mac_updated){
       // swappして良い
-      spm_write_back(spm_offset_array[i], dram_addr_array[i], 64, 0);
-      swapp_temp_cache(dram_addr_array[i], info_i, spm_offset_array[i],false);
+      // spm_write_back(spm_offset_array[i], dram_addr_array[i], 64, 0);
+      swapp_temp_cache(dram_addr_array[i], info_i, spm_offset_array[i],true);
       setParentUpdated(dram_addr_array[i], info_i.way);
     } else{
-      // id = evicted_node_update(info_array[i], id);
-      spm_write_back(spm_offset_array[i], dram_addr_array[i], 64, 0);
-      push_temp_buffer(spm_offset_array[i]);
+      id = evicted_node_update(info_i, id);
+      swapp_temp_cache(dram_addr_array[i], info_i, spm_offset_array[i], true);
+      // spm_write_back(spm_offset_array[i], dram_addr_array[i], 64, 0);
+      // push_temp_buffer(spm_offset_array[i]);
     }
+    invalidate_temp_entry_by_index(temp_idx_array[i]);
+    
   }
   uint64_t major_counter;
   uint64_t minor_counter_byte_address;

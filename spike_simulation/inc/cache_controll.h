@@ -99,6 +99,7 @@ static inline void push_temp_buffer(spm_offset_t spm_addr) {
 typedef struct {
     bool        valid;
     bool        dirty;
+    int     ref_count;
     dram_addr_t dram_addr;
     spm_offset_t spm_offset;
 } temp_entry_t;
@@ -111,6 +112,7 @@ void temp_system_init(spm_offset_t temp_region_base){
         temp_table[i].dirty = false;
         temp_table[i].dram_addr = 0;
         temp_table[i].spm_offset = 0;
+        temp_table[i].ref_count = 0;
     }
     // free stack に SPM オフセットを積む
     temp_pool_top = -1;
@@ -136,6 +138,7 @@ static int alloc_temp_entry(dram_addr_t dram_addr, spm_offset_t spm_offset) {
             temp_table[i].dirty = false;
             temp_table[i].dram_addr = dram_addr;
             temp_table[i].spm_offset = spm_offset;
+            temp_table[i].ref_count = 0;
             return i;
         }
     }
@@ -146,6 +149,11 @@ static void invalidate_temp_entry_by_index(int idx){
       printf("Error: Attempt to invalidate invalid temp entry index %d\n", idx);
       return;
     }
+    if (temp_table[idx].ref_count > 0) {
+      printf("Error: Attempt to invalidate temp entry index %d which is still in use (ref_count=%d)\n", idx, temp_table[idx].ref_count);
+      return;
+    }
+    
     temp_table[idx].valid = false;
     temp_table[idx].dirty = false;
 }
@@ -163,6 +171,27 @@ static bool is_dirty_temp_entry_by_index(int idx){
     }
     return temp_table[idx].dirty;
 }
+static bool acquire_temp_entry_by_index(int idx){
+    if (idx < 0 || temp_table[idx].valid == false) {
+      printf("Error: Attempt to acquire invalid temp entry index %d\n", idx);
+      return false;
+    }
+    temp_table[idx].ref_count += 1;
+    return true;
+  }
+static bool release_temp_entry_by_index(int idx){
+    if (idx < 0 || temp_table[idx].valid == false) {
+      printf("Error: Attempt to release invalid temp entry index %d\n", idx);
+      return false;
+    }
+    if (temp_table[idx].ref_count == 0) {
+      printf("Error: Attempt to release temp entry index %d which has ref_count 0\n", idx);
+      return false;
+    }
+    temp_table[idx].ref_count -= 1;
+    return true;
+  }
+
 // --- タグチェック関数 (ヒット/ミス判定および置換way決定、カウンター更新) ---
 struct Info tag_check(dram_addr_t dram_addr){
   struct Info tag_info = {false, false, 0, 0, 0};
