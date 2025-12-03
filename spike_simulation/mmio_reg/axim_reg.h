@@ -39,14 +39,17 @@ void axim_decrypt(){
     while(AXIM_BUSY_REG); // busy待ち
     AXIM_COMMAND_REG = 8; // DECRYPT
 }
-void axim_read_return(){
+void axim_read_return(uint32_t req_id){
     spm_wait_idle();
     while(AXIM_BUSY_REG); // busy待ち
-    AXIM_COMMAND_REG = 16; // READ_RETURN
+    uint64_t tmp = ((uint64_t)req_id) << 32;
+    // printf("[Core FW] AXIM Read Return for ID=%u\n", req_id);
+    AXIM_COMMAND_REG =  tmp | 16; // READ_RETURN
 }
-void axim_write_return(){
+void axim_write_return(uint32_t req_id){
     while(AXIM_BUSY_REG); // busy待ち
-    AXIM_COMMAND_REG = 32; // WRITE_RETURN
+    uint64_t tmp = ((uint64_t)req_id) << 32;
+    AXIM_COMMAND_REG =  tmp | 32; // WRITE_RETURN
 }
 #ifdef __cplusplus
 }
