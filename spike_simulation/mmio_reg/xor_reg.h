@@ -12,7 +12,7 @@ static inline void xor_is_busy() {
     while(XOR_START_REG); // busy==1 の間スピン
     return;
 }
-void xor_start(bool input_from_reqio, bool output_to_reqio) {
+void xor_start(bool input_from_reqio, bool output_to_reqio, uint32_t req_id) {
     xor_is_busy();
     uint64_t reg = 1;
     if (input_from_reqio){
@@ -21,6 +21,7 @@ void xor_start(bool input_from_reqio, bool output_to_reqio) {
     if (output_to_reqio){
         reg += 4;
     }
+    reg |= (uint64_t)req_id << 32;
     XOR_START_REG = reg;
     xor_is_busy();
     return;

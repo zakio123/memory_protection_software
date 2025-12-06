@@ -1,27 +1,33 @@
 static inline dma_id_t ensureBlockInSpm(dram_addr_t required_dram_addr, struct Info tag_info,dma_id_t id){
   dma_id_t read_id = id;
+  index_t set_index = get_cache_set_index(required_dram_addr);
   if (tag_info.dirty) {
+    if (ref_count_metadata[set_index][tag_info.way] > 0){
+      exit(1);
+    }
     spm_write_back(tag_info.spm_offset, tag_info.block_addr, 64,0);
   }
   spm_copy_to_local(required_dram_addr, tag_info.spm_offset, 64,read_id);
-  index_t set_index = get_cache_set_index(required_dram_addr);
-  cache_metadata[set_index][tag_info.way].valid = true;
-  cache_metadata[set_index][tag_info.way].dirty = false;
-  cache_metadata[set_index][tag_info.way].access_count = 0;
-  cache_metadata[set_index][tag_info.way].block_addr = required_dram_addr;
+  valid_metadata[set_index][tag_info.way] = true;
+  dirty_metadata[set_index][tag_info.way] = false;
+  access_count_metadata[set_index][tag_info.way] = 0;
+  block_addr_metadata[set_index][tag_info.way] = required_dram_addr;
+  ref_count_metadata[set_index][tag_info.way] = 0;
+  loaded_metadata[set_index][tag_info.way] = false;
   return read_id;
 }
+// static inlinve void activa
 
 static inline void swapp_temp_cache(dram_addr_t dram_addr, struct Info tag_info, spm_offset_t spm_offset,bool dirty){
   index_t set_index = get_cache_set_index(dram_addr);
   if (tag_info.dirty){
     spm_write_back(tag_info.spm_offset, tag_info.block_addr, 64, 0);
   }
-  cache_metadata[set_index][tag_info.way].spm_offset = spm_offset;
-  cache_metadata[set_index][tag_info.way].valid = true;
-  cache_metadata[set_index][tag_info.way].dirty = dirty;
-  cache_metadata[set_index][tag_info.way].access_count = 0;
-  cache_metadata[set_index][tag_info.way].block_addr = dram_addr;
+  valid_metadata[set_index][tag_info.way] = true;
+  dirty_metadata[set_index][tag_info.way] = dirty;
+  access_count_metadata[set_index][tag_info.way] = 0;
+  block_addr_metadata[set_index][tag_info.way] = dram_addr;
+  spm_offset_metadata[set_index][tag_info.way] = spm_offset;
   push_temp_buffer(tag_info.spm_offset);
 }
 
@@ -35,14 +41,13 @@ static inline bool verify_one_height(spm_offset_t child_spm_offset, spm_offset_t
       mac_buffer_set(parent_spm_offset);
       mac_update(start_bit, start_bit + 7);
   }
-  spm_wait(child_id);
+  // spm_wait(child_id);
   mac_buffer_set(child_spm_offset);
   mac_update(0, 447);
   mac_t computed_mac = mac_final();
   mac_t stored_mac = spm_ld64(child_spm_offset + 56);
   if (computed_mac != stored_mac){
     printf("[Core FW] MAC verification failed: computed=%016llx, stored=%016llx\n", computed_mac, stored_mac);
-    printf("path index=%llu, child_spm_offset=0x%08x, parent_spm_offset=0x%08x\n", node_index, child_spm_offset, parent_spm_offset);
     return false;
   }
   return true;
@@ -247,13 +252,10 @@ dma_id_t evicted_node_update(struct Info tag_info, dma_id_t id) {
       push_temp_buffer(spm_offset_array[i]);
       invalidate_temp_entry_by_index(temp_idx_array[i]);
     } else {
-      // printf("set dirty true for dram addr %016llx at spm offset %016llx\n", dram_addr_array[i], spm_offset_array[i]);
       dirty_temp_entry_by_index(temp_idx_array[i]);
-      // printf("dirty %d, valid %d\n", is_dirty_temp_entry_by_index(temp_idx_array[i]), temp_table[temp_idx_array[i]].valid);
     }
   }
   spm_write_back(spm_offset_array[v_level - 1], dram_addr_array[v_level - 1], 64, 0);
   setParentUpdated(dram_addr_array[v_level - 1], tag_info.way);
-  // printf("eviction update done\n");
   return id;
 }
