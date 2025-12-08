@@ -51,6 +51,7 @@ extern "C" {
 // ベースアドレスとサイズ
 #define MAC_BASE        (SPM_BASE + SPM_TOTAL_SIZE)
 #define MAC_CTRL_SIZE   0x00000100ULL  // 4 KiB
+#define MAC_RESULT_SIZE 0x00000080ULL  // 128 B (1024 bit)
 
 // レジスタオフセット（BASEからの相対）
 #define MAC_REG_SPM_ADDR    0x00
