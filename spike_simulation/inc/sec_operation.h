@@ -1,44 +1,5 @@
-static inline dma_id_t ensureBlockInSpm(dram_addr_t required_dram_addr, struct Info tag_info,dma_id_t id){
-  dma_id_t read_id = id;
-  index_t set_index = get_cache_set_index(required_dram_addr);
-  if (tag_info.dirty) {
-    if (ref_count_metadata[set_index][tag_info.way] > 0){
-      exit(1);
-    }
-    spm_write_back(tag_info.spm_offset, tag_info.block_addr, 64,0);
-  }
-  spm_copy_to_local(required_dram_addr, tag_info.spm_offset, 64,read_id);
-  valid_metadata[set_index][tag_info.way] = true;
-  dirty_metadata[set_index][tag_info.way] = false;
-  access_count_metadata[set_index][tag_info.way] = 0;
-  block_addr_metadata[set_index][tag_info.way] = required_dram_addr;
-  ref_count_metadata[set_index][tag_info.way] = 0;
-  loaded_metadata[set_index][tag_info.way] = false;
-  return read_id;
-}
-// static inlinve void activa
 
-static inline void swapp_temp_cache(dram_addr_t dram_addr, struct Info tag_info, spm_offset_t spm_offset,bool dirty){
-  index_t set_index = get_cache_set_index(dram_addr);
-  if (tag_info.dirty){
-    dram_addr_t debug_addr = 0x0000000510001940;
-    // if (tag_info.block_addr == debug_addr){
-    //     for (int k = 0; k < 8; k++) {
-    //         printf("    Word %d: %016llx\n", k, spm_ld64(tag_info.spm_offset + k * 8));
-    //     }
-    //     printf("[Core FW] Writing back dirty evicted node at addr %016llx\n", debug_addr);
-    // }
-    spm_write_back(tag_info.spm_offset, tag_info.block_addr, 64, 0);
-  }
-  valid_metadata[set_index][tag_info.way] = true;
-  dirty_metadata[set_index][tag_info.way] = dirty;
-  access_count_metadata[set_index][tag_info.way] = 0;
-  block_addr_metadata[set_index][tag_info.way] = dram_addr;
-  spm_offset_metadata[set_index][tag_info.way] = spm_offset;
-  ref_count_metadata[set_index][tag_info.way] = 0;
-  loaded_metadata[set_index][tag_info.way] = true;
-  push_temp_buffer(tag_info.spm_offset);
-}
+// static inlinve void activa
 
 static inline bool verify_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, dma_id_t child_id){
   mac_init();

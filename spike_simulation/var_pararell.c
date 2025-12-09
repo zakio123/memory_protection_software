@@ -11,7 +11,7 @@
 #include <stdbool.h>
 #include "util.h"
 #include "config.h"
-#include "cache_controll.h"
+#include "cache_controll_hash.h"
 #include "addr_util.h"
 #include "sec_operation.h"
 int aes_lock = -1;
@@ -57,8 +57,6 @@ typedef struct {
     uint32_t load_start_index;
     dma_id_t internal_wait_id;
     mac_t computed_mac;
-    index_t root_way;
-    index_t tag_way;
     bool tag_hit;
     dma_id_t wait_tag_dma_id;
     bool load_needed[HEIGHT];
@@ -83,28 +81,17 @@ while(1){
             uint64_t index = (request_addr - PROTECTION_BASE) / (64  * (1ULL << (5 * i)));
             context->path_indecis[HEIGHT - 1 - i] = index;
             dram_addr_t dram_addr = ((index >> 5) << 6) + level_base[HEIGHT - i];
-            light_tag_info_t info = light_tag_check(dram_addr);
+            struct Info info = tag_check(dram_addr);
             context->path_dram_addrs[HEIGHT - 1 - i] = dram_addr;
             if (info.hit){
                 context->load_start_index = HEIGHT - i;
-                index_t set_index = get_cache_set_index(dram_addr);
-                spm_offset_t spm_offset = get_cache_block_spm_offset(set_index, info.way);
-                update_counter_on_access(set_index, info.way);
+                index_t set_index = get_cache_hash_index(dram_addr);
+                spm_offset_t spm_offset = get_cache_block_spm_offset(set_index);
                 context->path_spm_offsets[HEIGHT - 1 - i] = spm_offset;
-                context->root_way = info.way;
                 context->temp_index[HEIGHT - 1 - i] = -1;
-                acquire_cache_block(dram_addr, info.way);
+                acquire_cache_block(set_index);
                 context->load_needed[HEIGHT - 1 - i] = false;
                 break;
-            } else if (info.way != -1){
-                // 空きwayが見つかった場合、そのwayを使用
-                index_t set_index = get_cache_set_index(dram_addr);
-                index_t way_index = info.way;
-                spm_offset_t spm_offset = get_cache_block_spm_offset(set_index, way_index);
-                context->path_spm_offsets[HEIGHT - 1 - i] = spm_offset;
-                context->temp_index[HEIGHT - 1 - i] = -1;
-                context->load_needed[HEIGHT - 1 - i] = true;
-                acquire_cache_block(dram_addr, way_index);
             } else {
                 int temp_idx = find_temp_entry(dram_addr);
                 if (temp_idx == -1){
@@ -163,9 +150,11 @@ while(1){
             context->internal_wait_id += 1;
             if (context->temp_index[i] >= 0){
                 set_loaded_temp_entry_by_index(context->temp_index[i]);
-            } else {
-                light_tag_info_t info = light_tag_check(context->path_dram_addrs[i]);
-                set_loaded(context->path_dram_addrs[i],info.way);
+            } 
+            else {
+                struct Info info = tag_check(context->path_dram_addrs[i]);
+                index_t set_index = get_cache_hash_index(context->path_dram_addrs[i]);
+                set_loaded(set_index);
             }
         } else {
             if (context->temp_index[i] >= 0) {
@@ -173,17 +162,14 @@ while(1){
                     return current_state;
                 }
             } else {
-                light_tag_info_t info = light_tag_check(context->path_dram_addrs[i]);
-                index_t set_index = get_cache_set_index(context->path_dram_addrs[i]);
-                if (!is_loaded(context->path_dram_addrs[i], info.way)) {
+                struct Info info = tag_check(context->path_dram_addrs[i]);
+                index_t set_index = get_cache_hash_index(context->path_dram_addrs[i]);
+                if (!is_loaded(set_index)) {
                     return current_state;
                 }
             }
         }
-        uint64_t start_inst = read_instret();
         bool verify = verify_one_height(context->path_spm_offsets[i], parent_spm, context->path_indecis[i], context->internal_wait_id);
-        uint64_t end_inst = read_instret();
-        printf("[Core FW] verify_one_height instret %llu at level %llu\n", end_inst - start_inst, i);
         //
         dram_addr_t debug_addr = 0x0000000510001940;
         if (verify == false){
@@ -262,18 +248,11 @@ while(1){
             // 書き戻し
             spm_sd64(minor_counter_byte_address, final_word);
             // 一時的なルートなので、parent updatedはfalseにしておく
-            clearParentUpdated(context->path_dram_addrs[start_level], context->root_way);
-            setBlockdirty(context->path_dram_addrs[start_level], context->root_way);
-            dram_addr_t debug_addr = 0x0000000510001940;
-            // if (context->path_dram_addrs[start_level] == debug_addr){
-            //     printf("update");
-            //     for (int k = 0; k < 8; k++) {
-            //         printf("    Word %d: %016llx\n", k, spm_ld64(context->path_spm_offsets[start_level] + k * 8));
-            //     }
-            // }
+            index_t set_index = get_cache_hash_index(context->path_dram_addrs[start_level]);
+            clearParentUpdated(set_index);
+            setBlockdirty(set_index);
         }
         current_state = RS_TREE_UPDATE;
-        // return current_state;
         break;
     }
     case RS_TREE_UPDATE:{
@@ -283,8 +262,8 @@ while(1){
             if (context->temp_index[i] >= 0){
                 dirty_temp_entry_by_index(context->temp_index[i]);
             } else {
-                light_tag_info_t info = light_tag_check(context->path_dram_addrs[i]);
-                setBlockdirty(context->path_dram_addrs[i], info.way);
+                index_t set_index = get_cache_hash_index(context->path_dram_addrs[i]);
+                setBlockdirty(set_index);
             }
         }
         current_state = RS_SET_SEED;
@@ -295,33 +274,42 @@ while(1){
         // temp <-> cache スワップ & lazy update
         // キャッシュしていたノードのref_countを減らす
         if (context->load_start_index > 0){
-            release_cache_block(context->path_dram_addrs[context->load_start_index - 1], context->root_way);
+            index_t set_index = get_cache_hash_index(context->path_dram_addrs[context->load_start_index - 1]);
+            release_cache_block(set_index);
         }
         for (uint64_t i = context->load_start_index;i<HEIGHT;i++){
             if (context->temp_index[i] == -1){
-                light_tag_info_t info = light_tag_check(context->path_dram_addrs[i]);
-                release_cache_block(context->path_dram_addrs[i], info.way);
+                index_t set_index = get_cache_hash_index(context->path_dram_addrs[i]);
+                release_cache_block(set_index);
                 continue;
             }
             release_temp_entry_by_index(context->temp_index[i]);
-            if (swappable_temp_entry_by_index(context->temp_index[i])){
-                struct Info info_i = tag_check(context->path_dram_addrs[i]);
-                bool mac_updated = is_mac_updated(context->path_dram_addrs[i], info_i.way);
+            index_t set_index = get_cache_hash_index(context->path_dram_addrs[i]);
+            if (swappable_temp_entry_by_index(context->temp_index[i]) ){
                 bool dirty = is_dirty_temp_entry_by_index(context->temp_index[i]);
-                dram_addr_t debug_addr = 0x0000000510001940;
-                if (mac_updated){
-                    // swappして良い
-                    swapp_temp_cache(context->path_dram_addrs[i], info_i, context->path_spm_offsets[i], dirty);
-                    setParentUpdated(context->path_dram_addrs[i], info_i.way);
-                } else{
-                    // temp_id = evicted_node_update(info_i, temp_id);
-                    // swapp_temp_cache(context->path_dram_addrs[i], info_i, context->path_spm_offsets[i], dirty);
-                    spm_write_back(context->path_spm_offsets[i], context->path_dram_addrs[i], 64, 0);
+                if (swappable_cache_block(set_index)){
+                    struct Info info_i = tag_check(context->path_dram_addrs[i]);
+                    bool mac_updated = is_mac_updated(set_index);
+                    if (mac_updated){
+                        // swappして良い
+                        swapp_temp_cache(context->path_dram_addrs[i], info_i, context->path_spm_offsets[i], dirty);
+                        setParentUpdated(set_index);
+                    } else{
+                        // temp_id = evicted_node_update(info_i, temp_id);
+                        // swapp_temp_cache(context->path_dram_addrs[i], info_i, context->path_spm_offsets[i], dirty);
+                        if (dirty){
+                            spm_write_back(context->path_spm_offsets[i], context->path_dram_addrs[i], 64, 0);
+                        }
+                        push_temp_buffer(context->path_spm_offsets[i]);
+                    }
+                } else {
+                    if (dirty){
+                        spm_write_back(context->path_spm_offsets[i], context->path_dram_addrs[i], 64, 0);
+                    }
                     push_temp_buffer(context->path_spm_offsets[i]);
                 }
                 invalidate_temp_entry_by_index(context->temp_index[i]);
-            }
-            uint64_t end_instret = read_instret();
+            } 
         }
         if ( context->is_write){
             current_state = RS_DONE;
@@ -338,10 +326,11 @@ while(1){
         // データMACの検証/認証
         dram_addr_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
         dram_addr_t datamac_addr = get_datamacblock_addr(request_addr);
+        index_t set_index = get_cache_hash_index(datamac_addr);
         if (context->is_write){
             // 書き込みの場合はMACを書き込むだけ
             spm_sd64(context->mac_spm_offset + dmac_byte_offset, context->computed_mac);
-            setBlockdirty(datamac_addr, context->tag_way);
+            setBlockdirty(set_index);
             current_state = RS_SWAP_OR_EVICT;
         } else {
             mac_t stored_mac = spm_ld64(context->mac_spm_offset + dmac_byte_offset);
@@ -351,7 +340,6 @@ while(1){
                 // 色々な情報を表示
                 printf("Request address: %016llx\n", request_addr);
                 printf("Data MAC block address: %016llx\n", datamac_addr);
-                printf("Tag way: %d\n", context->tag_way);
                 printf("Request ID: %d\n", context->req_id);
                 printf("Path SPM Offsets:\n");
                 for (int i = 0; i < HEIGHT; i++) {
@@ -378,7 +366,7 @@ while(1){
             }
             current_state = RS_SWAP_OR_EVICT;
         }
-        release_cache_block(datamac_addr, context->tag_way);
+        release_cache_block(set_index);
         break;
     }
     case RS_DATAMAC_UPDATE:{
@@ -410,14 +398,15 @@ while(1){
     case RS_DATAMAC_WAIT: {
         // DMA待ち
         dram_addr_t mac_addr = get_datamacblock_addr(request_addr);
+        index_t set_index = get_cache_hash_index(mac_addr);
         if (context->tag_hit == false){
             if (dma_wait(context->wait_tag_dma_id)){
                 current_state = RS_DATAMAC_VERIFY_AUTHENTICATE;
-                set_loaded(mac_addr, context->tag_way);
+                set_loaded(set_index);
             } else {
                 return current_state;
             }
-        } else if (is_loaded(mac_addr, context->tag_way)){
+        } else if (is_loaded(set_index)){
             current_state = RS_DATAMAC_VERIFY_AUTHENTICATE;
         } else {
             return current_state;
@@ -433,22 +422,22 @@ while(1){
         break;
       } case RS_DATAMAC_DMA:{
             dram_addr_t mac_addr = get_datamacblock_addr(request_addr);
+            index_t set_index = get_cache_hash_index(mac_addr);
             struct Info mac_info = tag_check(mac_addr);
-            if (mac_info.way < 0){
-                printf("[Core FW] Error: No valid way found for Data MAC block addr=%016llx\n", mac_addr);
+            if (mac_info.valid == false){
                 return current_state;
             }
             context->mac_spm_offset = mac_info.spm_offset;
-            context->tag_way = mac_info.way;
             context->tag_hit = mac_info.hit;
             dma_id_t dma_id = *global_dma_id;
+
             if (context->tag_hit == false){
                 dma_id++;
                 dma_id = ensureBlockInSpm(mac_addr, mac_info, dma_id);
                 context->wait_tag_dma_id = dma_id;
             }
             *global_dma_id = dma_id;
-            acquire_cache_block(mac_addr, context->tag_way);
+            acquire_cache_block(set_index);
             current_state = RS_DATAMAC_UPDATE;
             break;
       } case RS_AES_XOR_WAIT: {
@@ -513,7 +502,7 @@ int main(void){
   // rootノードの初期化
   spm_sd64(0,1);
   init_cache_system();
-  temp_system_init(CACHE_DATA_SPM_BASE + CACHE_SETS * CACHE_WAYS * 64);
+  temp_system_init(CACHE_DATA_SPM_BASE + TOTAL_SLOTS * 64);
   dma_id_t dma_id = 0;
   int active_processes = 0;
   const int MAX_PROCESSES = 3;
@@ -561,11 +550,11 @@ int main(void){
           active_processes--;
           states[i] = RS_IDLE;
       }  else {
-        // printf("process slot %d  state %d\n", i,  states[i]);
-        // uint64_t step_start_instret = read_instret();
+        printf("process slot %d  state %d\n", i,  states[i]);
+        uint64_t step_start_instret = read_instret();
         states[i] = step(&process_list[i], i, &dma_id, states[i],request_addr[i]);
-        // uint64_t step_end_instret = read_instret();
-        // printf("next state %d step instret %llu\n", states[i], step_end_instret - step_start_instret);
+        uint64_t step_end_instret = read_instret();
+        printf("next state %d step instret %llu\n", states[i], step_end_instret - step_start_instret);
       }
     }
   }
