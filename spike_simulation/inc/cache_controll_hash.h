@@ -11,6 +11,7 @@ dram_addr_t block_addr_metadata[TOTAL_SLOTS] = {0};
 spm_offset_t spm_offset_metadata[TOTAL_SLOTS] = {0};
 uint32_t ref_count_metadata[TOTAL_SLOTS] = {0};
 bool loaded_metadata[TOTAL_SLOTS] = {0};
+int access_count_metadata[TOTAL_SLOTS] = {0};
 struct Info {
     bool valid;
     bool dirty;
@@ -72,6 +73,7 @@ static inline bool is_loaded(index_t set_index){
 static inline bool acquire_cache_block(index_t set_index){
   // printf("Acquiring cache block S:%u, current ref_count=%u\n", set_index, ref_count_metadata[set_index]);
   // printf("set 240 ref count %u\n", ref_count_metadata[240]);
+  access_count_metadata[set_index] += 1;
   if (valid_metadata[set_index] == false){
       printf("Error: Attempt to acquire invalid cache block S:%u\n", set_index);
       exit(1);
@@ -97,6 +99,14 @@ static inline void release_cache_block(index_t set_index){
     }
     ref_count_metadata[set_index] -= 1;
 }
+void printf_access(){
+  for (int i = 0; i < TOTAL_SLOTS; i++) {
+      if (access_count_metadata[i] > 0) {
+          printf("Cache Slot %d accessed %d times\n", i, access_count_metadata[i]);
+      }
+  }
+}
+
 
 static inline bool swappable_cache_block(index_t set_index){
   return (ref_count_metadata[set_index] == 0);

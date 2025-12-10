@@ -13,11 +13,11 @@ extern "C" {
 #define TOTAL_SLOTS (512)
 #define DATA_TAG_SLOTS_DM (64)
 #define TREE_SLOTS_DM (TOTAL_SLOTS - DATA_TAG_SLOTS_DM)
-#define CACHE_WAYS (4)
+#define CACHE_WAYS (2)
 #define CACHE_SETS (TOTAL_SLOTS / CACHE_WAYS) // 128line
 #define CACHE_DATA_SPM_BASE (64 * 8) // データ領域のベースアドレス
 #define SPM_METADATA_BASE (CACHE_DATA_SPM_BASE + (CACHE_SETS * CACHE_WAYS * 64)) // メタデータ領域のベースアドレス
-#define DATA_TAG_SETS (16)
+#define DATA_TAG_SETS (64 / CACHE_WAYS) // 32line
 #define TREE_SETS (CACHE_SETS - DATA_TAG_SETS)
 
 #define TEMP_POOL_SIZE (16)

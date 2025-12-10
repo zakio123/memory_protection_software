@@ -1,8 +1,8 @@
 
 // static inlinve void activa
 
-static inline bool verify_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, dma_id_t child_id){
-  mac_init();
+static inline void verify_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, uint32_t mac_req_id){
+  mac_init(mac_req_id);
   if (parent_spm_offset == 0){
       mac_buffer_set(0);
       mac_update(0,63);
@@ -13,13 +13,11 @@ static inline bool verify_one_height(spm_offset_t child_spm_offset, spm_offset_t
   }
   mac_buffer_set(child_spm_offset);
   mac_update(0, 447);
-  mac_t computed_mac = mac_digest(0);
-  mac_t stored_mac = spm_ld64(child_spm_offset + 56);
-  return true;
+  mac_result_compare(child_spm_offset + 56);
 }
 
-static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, bool update_counter){
-  mac_init();
+static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, bool update_counter, uint32_t mac_req_id){
+  mac_init(mac_req_id);
   if (parent_spm_offset == 0){
       mac_buffer_set(0);
       mac_update(0,63);
@@ -54,8 +52,7 @@ static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t
   }
   mac_buffer_set(child_spm_offset);
   mac_update(0, 447);
-  mac_t computed_mac = mac_digest(0);
-  spm_sd64(child_spm_offset + 56, computed_mac);
+  mac_digest(child_spm_offset + 56);
 }
 
 // ===========================================================================
