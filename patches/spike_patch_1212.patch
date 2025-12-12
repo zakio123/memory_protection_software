@@ -6734,7 +6734,7 @@ index 00000000..dbf8f00d
 +};
 diff --git a/riscv/mmio_devices/mac_device.h b/riscv/mmio_devices/mac_device.h
 new file mode 100644
-index 00000000..34162c23
+index 00000000..967df290
 --- /dev/null
 +++ b/riscv/mmio_devices/mac_device.h
 @@ -0,0 +1,146 @@
@@ -6844,7 +6844,7 @@ index 00000000..34162c23
 +        command = 0;
 +        start_bit = 0;
 +        end_bit = 0;
-+        mac = 0;
++        mac = FNV_OFFSET_BASIS;
 +        counter = 0;
 +        busy = false;
 +        status = 0;

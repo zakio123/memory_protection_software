@@ -24,11 +24,18 @@ static inline uint64_t div_ceil_u64(uint64_t a, uint64_t b){
 // 仕様：cipher64B + 1B(counter) をMAC
 // ここではデフォルトFNV-1a: tag = FNV(cipher64)→FNV(minor_byte)
 static inline uint64_t compute_data_tag(uint8_t cipher64[64], uint8_t counter_byte){
-    uint64_t mac = 0;
+    uint64_t mac = FNV_OFFSET_BASIS;
     for (int i=0;i<64;++i) {
         mac ^= cipher64[i];
         mac *= FNV_PRIME;
     }
+    // メジャーカウンター部分を混ぜる
+    for (int i=0;i<8;i++){
+      uint8_t byte = 0;
+      mac ^= byte;
+      mac *= FNV_PRIME;
+    }
+    // マイナーカウンター部分を混ぜる
     mac ^= counter_byte;
     mac *= FNV_PRIME;
     return mac;
@@ -40,8 +47,17 @@ static inline uint64_t compute_data_tag(uint8_t cipher64[64], uint8_t counter_by
 
 static inline uint64_t compute_node_mac(const uint64_t major_counter, const uint8_t minor_couter, const uint64_t parent_counter,uint32_t size){
     uint8_t buffer[56];
-    uint64_t mac = 0;
+    uint64_t mac = FNV_OFFSET_BASIS;
     // 親ノードカウンターを混ぜる
+    // 親ノード
+    if (size == 8) {
+        // rootノードではない場合、親ノードのメジャーカウンターを混ぜる
+        for (int i=0;i<8;++i) {
+            mac ^= 0;
+            mac *= FNV_PRIME;
+        }
+    }
+    // 親ノードのマイナーカウンター
     for (int i=0;i<size/8;++i) {
         mac ^= (uint8_t)((parent_counter >> (8*i)) & 0xFF);
         mac *= FNV_PRIME;
@@ -53,7 +69,6 @@ static inline uint64_t compute_node_mac(const uint64_t major_counter, const uint
         mac ^= buffer[i];
         mac *= FNV_PRIME;
     }
-
   return mac;
 }
 
