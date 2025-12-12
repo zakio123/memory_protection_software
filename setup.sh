@@ -10,6 +10,5 @@ echo "--- Applying patches to 'spike' submodule... ---"
 # `spike`ディレクトリに対して、`patches`ディレクトリ内の全てのパッチファイルを適用する
 # git -C spike apply ../patches/*.patch
 git -C spike apply ../patches/spike_patch_1212.patch
-git -C Champsim apply ../patches/champsim_patch_1212.patch
 
 echo "--- Setup complete! You can now build the project. ---"
