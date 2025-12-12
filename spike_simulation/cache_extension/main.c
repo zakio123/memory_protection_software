@@ -1,12 +1,9 @@
 #include <stdint.h>
 #include <stdio.h>
-/* エンコーディング定義 */
-#define TMX_OPCODE 0x0b
-#define TMX_F3     0x0
+#include "tmx_encoding.h"
 
 /* インラインアセンブラマクロ */
 /* .insn r opcode, funct3, funct7, rd, rs1, rs2 */
-
 #define TMX_INSN_R(funct7, rd, rs1, rs2) \
     asm volatile ( \
         ".insn r %1, %2, %3, %0, %4, %5" \
@@ -18,64 +15,74 @@
 
 static inline long temp_find(uint64_t dram_addr) {
     long ret;
-    TMX_INSN_R(0x00, ret, dram_addr, 0); // rs2=x0
+    TMX_INSN_R(F7_TMX_FIND, ret, dram_addr, 0); // rs2=x0
     return ret;
 }
 
 static inline uint64_t temp_get_spm(long idx) {
     uint64_t ret;
-    TMX_INSN_R(0x01, ret, idx, 0);
+    TMX_INSN_R(F7_TMX_GET_SPM, ret, idx, 0);
     return ret;
 }
 
 static inline long temp_alloc(uint64_t dram_addr, uint64_t spm_offset) {
     long ret;
-    TMX_INSN_R(0x02, ret, dram_addr, spm_offset);
+    TMX_INSN_R(F7_TMX_ALLOC, ret, dram_addr, spm_offset);
     return ret;
 }
 
 static inline long temp_invalidate(long idx) {
     long ret;
-    TMX_INSN_R(0x03, ret, idx, 0);
+    TMX_INSN_R(F7_TMX_INVALID, ret, idx, 0);
     return ret;
 }
 
 static inline void temp_set_dirty(long idx) {
     long ret;
-    TMX_INSN_R(0x04, ret, idx, 0);
+    TMX_INSN_R(F7_TMX_SET_D, ret, idx, 0);
 }
 
 static inline int temp_is_dirty(long idx) {
     long ret;
-    TMX_INSN_R(0x05, ret, idx, 0);
+    TMX_INSN_R(F7_TMX_IS_D, ret, idx, 0);
     return (int)ret;
 }
 
 static inline void temp_acquire(long idx) {
     long ret;
-    TMX_INSN_R(0x06, ret, idx, 0);
+    TMX_INSN_R(F7_TMX_ACQ, ret, idx, 0);
 }
 
 static inline void temp_release(long idx) {
     long ret;
-    TMX_INSN_R(0x07, ret, idx, 0);
+    TMX_INSN_R(F7_TMX_REL, ret, idx, 0);
 }
 
 static inline void temp_set_loaded(long idx) {
     long ret;
-    TMX_INSN_R(0x08, ret, idx, 0);
+    TMX_INSN_R(F7_TMX_SET_L, ret, idx, 0);
 }
 
 static inline int temp_is_loaded(long idx) {
     long ret;
-    TMX_INSN_R(0x09, ret, idx, 0);
+    TMX_INSN_R(F7_TMX_IS_L, ret, idx, 0);
     return (int)ret;
 }
 
 static inline int temp_swappable(long idx) {
     long ret;
-    TMX_INSN_R(0x0A, ret, idx, 0);
+    TMX_INSN_R(F7_TMX_SWAP, ret, idx, 0);
     return (int)ret;
+}
+static inline int temp_push(uint64_t spm_offset) {
+    long ret;
+    TMX_INSN_R(F7_TMX_PUSH, ret, spm_offset, 0);
+    return (int)ret;
+}
+static inline uint64_t temp_pop() {
+    uint64_t ret;
+    TMX_INSN_R(F7_TMX_POP, ret, 0, 0);
+    return ret;
 }
 void check(int condition, const char* message) {
     if (condition) {
@@ -87,11 +94,16 @@ void check(int condition, const char* message) {
 /* --- 4. メイン --- */
 int main() {
     printf("=== Starting TMX (Temp Management Extension) Tests ===\n");
+    uint64_t temp_region_base = 0x10000000; // 仮のSPMベースアドレス
+    for (int i = 0; i < TEMP_MAX_ENTRIES; i++) {
+        int j = temp_push(temp_region_base + i * 64); // 各tempエントリに64バイト割り当て
+        printf("Pushed SPM Offset: %#lx, Return Index: %d\n", temp_region_base + i * 64, j);
+    }
 
     uint64_t addr1 = 0x80001000;
-    uint64_t spm1  = 0x100;
+    uint64_t spm1  = temp_pop();
     uint64_t addr2 = 0x80002000;
-    uint64_t spm2  = 0x200;
+    uint64_t spm2  = temp_pop();
 
     // --- Test 1: Alloc & Find ---
     printf("\n--- Test 1: Allocation & Search ---\n");
@@ -160,3 +172,4 @@ int main() {
     printf("\n=== All Tests Completed ===\n");
     return 0;
 }
+

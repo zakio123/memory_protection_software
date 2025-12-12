@@ -15,12 +15,17 @@
 #include "addr_util.h"
 #include "sec_operation.h"
 
+static inline uint64_t read_instret() {
+    uint64_t val;
+    asm volatile ("csrr %0, minstret" : "=r" (val));
+    return val;
+}
+
 
 
 dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   // HEIGHT-1がリーフ、0が高さ1
   uint64_t path_indecis[HEIGHT] = {0};
-  // struct Info info_array[HEIGHT] = {0};
   spm_offset_t spm_offset_array[HEIGHT] = {0};
   dram_addr_t dram_addr_array[HEIGHT] = {0};
   int temp_idx_array[HEIGHT] = {0};
@@ -30,18 +35,33 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
       uint64_t index = (request_addr - PROTECTION_BASE) / (64 * (1ULL << (5 * i)));
       path_indecis[HEIGHT - 1 - i ] = index;
       dram_addr_t dram_addr = COUNTER_BASE + index / 32 * 64 + calculate_level_base_addr(HEIGHT - i);
+      dram_addr_array[HEIGHT - 1 - i] = dram_addr;
+      #ifdef ENABLE_TMU_HARDWARE
+      struct Info info = tag_check(dram_addr);
+      if (info.hit){
+        load_start_index = HEIGHT - i;
+        spm_offset_array[HEIGHT - 1 - i] = info.spm_offset;
+        way_index = info.way;
+        temp_idx_array[HEIGHT - 1 - i] = -1;
+        index_t set_index = get_cache_set_index(dram_addr);
+        // printf("tree verification node cache acquire S:%u W:%u\n", set_index, info.way);
+        // acquire_cache_block(set_index, info.way);
+        break;
+      }
+      #else
       light_tag_info_t info = light_tag_check(dram_addr);
       if (info.hit){
         load_start_index = HEIGHT - i;
         struct Info info = tag_check(dram_addr);
         spm_offset_array[HEIGHT - 1 - i] = info.spm_offset;
-        dram_addr_array[HEIGHT - 1 - i] = dram_addr;
         way_index = info.way;
         temp_idx_array[HEIGHT - 1 - i] = -1;
+        index_t set_index = get_cache_set_index(dram_addr);
+        // printf("tree verification node cache acquire S:%u W:%u\n", set_index, info.way);
+        // acquire_cache_block(set_index, info.way);
         break;
-      } else {
-        dram_addr_array[HEIGHT - 1 - i] = dram_addr;
       }
+      #endif
   }
   dma_id_t tmp_id = id;
   // 上から順にSPMにロード
@@ -51,15 +71,13 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
       temp_idx_array[i] = alloc_temp_entry(dram_addr_array[i], spm_offset_array[i]);
       dram_addr_t dram_addr = dram_addr_array[i];
       spm_copy_to_local(dram_addr, spm_offset_array[i], 64, tmp_id);
+      acquire_temp_entry_by_index(temp_idx_array[i]);
   }
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
     uint32_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     id += 1;
-    bool verify = verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], id);
-    if (verify == false){
-      printf("[Core FW] Verification failed at level %llu\n", i);
-      exit(1);
-    }
+    spm_wait(id);
+    verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], id);
   }
   // 一時的なルートノードのアップデート
   if (load_start_index == 0){
@@ -91,22 +109,25 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     // 書き戻し
     spm_sd64(minor_counter_byte_address, final_word);
     // 一時的なルートなので、parent updatedはfalseにしておく
-    clearParentUpdated(dram_addr_array[start_level], way_index);
-    setBlockdirty(dram_addr_array[start_level], way_index);
+    index_t set_index = get_cache_set_index(dram_addr_array[start_level]);
+    clearParentUpdated(set_index, way_index);
+    set_block_dirty(set_index, way_index);
   }
   // 木の更新：ルートから葉まで降りていく
   for (uint64_t i=load_start_index;i<HEIGHT;i++){
-    update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true);
+    update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,1);
   }
   // スワップ
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
     struct Info info_i = tag_check(dram_addr_array[i]);
-    bool mac_updated = is_mac_updated(dram_addr_array[i], info_i.way);
+    index_t set_index = get_cache_set_index(dram_addr_array[i]);
+    bool mac_updated = is_mac_updated(set_index, info_i.way);
+    release_temp_entry_by_index(temp_idx_array[i]);
     if (mac_updated){
       // swappして良い
       // spm_write_back(spm_offset_array[i], dram_addr_array[i], 64, 0);
       swapp_temp_cache(dram_addr_array[i], info_i, spm_offset_array[i],true);
-      setParentUpdated(dram_addr_array[i], info_i.way);
+      setParentUpdated(set_index, info_i.way);
     } else{
       // id = evicted_node_update(info_i, id);
       // swapp_temp_cache(dram_addr_array[i], info_i, spm_offset_array[i], true);
@@ -135,27 +156,32 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     tag_id += 1;
     ensureBlockInSpm(datamacblock_addr, tag_info, tag_id);
   }
+  index_t set_index = get_cache_set_index(datamacblock_addr);
+  // printf("authentication mac cache acquire S:%u W:%u\n", set_index, tag_info.way);
+  acquire_cache_block(set_index, tag_info.way);
   while(AES_START_REG);
   // write_xor(DATA_SPM_OFFSET);
   xor_start(true, false,req_id,DATA_SPM_OFFSET);
   // copy_xor(DATA_SPM_OFFSET);
   // ハッシュ関数の内部状態を初期化
   // SPMに当該MACブロックがあればそのままmodify,なければ今あるブロックをDRAMにwrite backしてから適切なブロックをSPMにDRAMコピー
-  mac_init();
+  mac_init(tag_id);
   mac_buffer_set(DATA_SPM_OFFSET); 
   mac_update(0, 511);
   mac_buffer_set(spm_offset_array[HEIGHT-1]);
   mac_update(counter_bit_offset, counter_bit_offset + 7); // 
-  // MAC計算完了
-  uint64_t computed_mac = mac_digest(0);
   if (!tag_info.hit){
     spm_wait(tag_id);
   }
-  uint64_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
-  spm_sd64(tag_info.spm_offset + dmac_byte_offset, computed_mac);
-  setBlockdirty(datamacblock_addr, tag_info.way);
+  // MAC計算完了
+  mac_digest(tag_info.spm_offset + ((request_addr - PROTECTION_BASE) / 64) % 8 * 8);
+  mac_wait(tag_id);
+  // uint64_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
+  // spm_sd64(tag_info.spm_offset + dmac_byte_offset, computed_mac);
+  set_block_dirty(set_index, tag_info.way);
   spm_write_back(DATA_SPM_OFFSET, request_addr, 64, 0);
   axim_write_return(req_id);
+  release_cache_block(set_index, tag_info.way);
   return tag_id;
 }
 
@@ -166,22 +192,39 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   dram_addr_t dram_addr_array[HEIGHT] = {0};
   int temp_idx_array[HEIGHT] = {0};
   uint64_t load_start_index = 0;
+  index_t way_index = 0;
   // パス上のノードのタグチェックを行う
+  uint64_t verify_start = read_instret();
   for(uint64_t i=0; i<HEIGHT; ++i){
       uint64_t index = (request_addr - PROTECTION_BASE) / (64 * (1ULL << (5 * i)));
       path_indecis[HEIGHT - 1 - i ] = index;
       dram_addr_t dram_addr = COUNTER_BASE + index / 32 * 64 + calculate_level_base_addr(HEIGHT - i);
-      light_tag_info_t info = light_tag_check(dram_addr);
-      if (info.hit){
+      dram_addr_array[HEIGHT - 1 - i] = dram_addr;
+      #ifdef ENABLE_TMU_HARDWARE
+      struct Info info = tag_check(dram_addr);
+      if (info .hit){
         load_start_index = HEIGHT - i;
-        dram_addr_array[HEIGHT - 1 - i] = dram_addr;
-        struct Info info = tag_check(dram_addr);
         spm_offset_array[HEIGHT - 1 - i] = info.spm_offset;
+        way_index = info.way;
+        temp_idx_array[HEIGHT - 1 - i] = -1;
+        index_t set_index = get_cache_set_index(dram_addr);
         break;
-      } else {
-        dram_addr_array[HEIGHT - 1 - i] = dram_addr;
       }
+      #else
+        light_tag_info_t info = light_tag_check(dram_addr);
+        if (info.hit){
+          load_start_index = HEIGHT - i;
+          dram_addr_array[HEIGHT - 1 - i] = dram_addr;
+          struct Info info = tag_check(dram_addr);
+          spm_offset_array[HEIGHT - 1 - i] = info.spm_offset;
+          index_t set_index = get_cache_set_index(dram_addr);
+          way_index = info.way;
+          temp_idx_array[HEIGHT - 1 - i] = -1;
+          break;
+        }
+      #endif
   }
+  uint64_t tag_end = read_instret();
   dma_id_t tmp_id = id;
   // 上から順にSPMにロード。ミスしているノードのみロード
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
@@ -190,19 +233,17 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     spm_offset_array[i] = pop_temp_buffer();
     temp_idx_array[i] = alloc_temp_entry(dram_addr, spm_offset_array[i]);
     spm_copy_to_local(dram_addr, spm_offset_array[i], 64, tmp_id);
+    acquire_temp_entry_by_index(temp_idx_array[i]);
   }
+  uint64_t load_end = read_instret();
+  printf("Verification tag check cycles: %llu\n", tag_end - verify_start);
+  printf("Verification load cycles: %llu\n", load_end - tag_end);
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
     spm_offset_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     id += 1;
     spm_wait(id);
-    bool verify = verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], id);
-    for (int j=0;j<8;j++){
-      printf("counter data at level %d %02llx\n", spm_offset_array[i], spm_ld64(spm_offset_array[i]+j*8));
-    }
-    if (verify == false){
-      printf("[Core FW] Verification failed at level %llu\n", i);
-      exit(1);
-    }
+    verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], id);
+    mac_wait(id);
   }
   dma_id_t data_id = id+1;
   spm_copy_to_local(request_addr, DATA_SPM_OFFSET, 64,data_id);
@@ -220,9 +261,15 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     tag_id += 1;
     ensureBlockInSpm(datamacblock_addr, tag_info,tag_id);
   }
+  index_t set_index = get_cache_set_index(datamacblock_addr);
+  acquire_cache_block(set_index, tag_info.way);
+
+  uint64_t start_inst = read_instret();
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
     struct Info info = tag_check(dram_addr_array[i]);
-    bool mac_updated = is_mac_updated(dram_addr_array[i], info.way);
+    index_t set_index = get_cache_set_index(dram_addr_array[i]);
+    bool mac_updated = is_mac_updated(set_index, info.way);
+    release_temp_entry_by_index(temp_idx_array[i]);
     if (mac_updated){
       bool dirty = is_dirty_temp_entry_by_index(temp_idx_array[i]);
       swapp_temp_cache(dram_addr_array[i], info, spm_offset_array[i], dirty);
@@ -234,48 +281,33 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
       push_temp_buffer(spm_offset_array[i]);
     }
     invalidate_temp_entry_by_index(temp_idx_array[i]);
-    // bool dirty = is_dirty_temp_entry_by_index(temp_idx_array[i]);
-    // swapp_temp_cache(dram_addr_array[i], info, spm_offset_array[i], dirty);
-    // invalidate_temp_entry_by_index(temp_idx_array[i]);
-    // else {
-    //   // 親が更新されていない場合は、evicted node updateを行う またはpush
-    //   tag_id = evicted_node_update(info, tag_id);
-    //   bool dirty = is_dirty_temp_entry_by_index(temp_idx_array[i]);
-      // if (dirty){
-      //   printf("[Core FW] Warning: Dirty temp entry found for at level : %d, dram addr %016llx during Verification at spm offset %016llx\n", i, dram_addr_array[i], spm_offset_array[i]);
-      // }
-    //   swapp_temp_cache(dram_addr_array[i], info, spm_offset_array[i], dirty);
-    //   // push_temp_buffer(spm_offset_array[i]);
-    // }
   }
   // --- 手順3: SPM DMAを起動し、DRAMから暗号文をSPMにコピー ---
   spm_wait(data_id);
-  mac_init();
+  mac_init(tag_id);
   mac_buffer_set(DATA_SPM_OFFSET);
   mac_update(0, 511);
   // SPMからカウンターブロックをコピーし、update
   mac_buffer_set(spm_offset_array[HEIGHT-1]);
   mac_update(counter_bit_offset, counter_bit_offset + 7); 
-  mac_t mac_result = mac_digest(0);
   if (!tag_info.hit){
     spm_wait(tag_id);
   }
   spm_offset_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
-  mac_t expected_mac = spm_ld64(tag_info.spm_offset + dmac_byte_offset);
-  if (mac_result != expected_mac) {
-    printf("[Core FW] MAC verification failed during Verification: computed=%016llx, expected=%016llx\n", mac_result, expected_mac);
-    exit(1);
-  }
+  mac_result_compare(tag_info.spm_offset + dmac_byte_offset);
+  mac_wait(tag_id);
   // --- 手順7: AXI managerに対し、read bufferにあるデータをリターンするように指示 ---
   while(AES_START_REG); // busy待ち
   // write_xor(DATA_SPM_OFFSET);
   xor_start(false, true,req_id,DATA_SPM_OFFSET);
   axim_read_return(req_id);
+  release_cache_block(set_index, tag_info.way);
   return tag_id;
 }
 
 int main(void){
   // SPMの初期化
+  SPM_SIZE_REG = 64;
   for (uint64_t i=0; i<512; i++){
     spm_sd64(i*8, 0); 
   }
@@ -288,13 +320,14 @@ int main(void){
     for(;;){
       if(AXIM_STATUS_REG & 1) break; // リクエストが来るまで待つ
     }
+    bool is_write = (AXIM_STATUS_REG & 2) != 0;
     dram_addr_t addr = AXIM_REQ_ADDR_REG;
     uint32_t req_id = AXIM_REQ_ID_REG;
     // printf("addr=%016llx\n", addr);
     if (addr == 0xFFFFFFFFFFFFFFFF){
       return 0;
     } else {
-      if(AXIM_STATUS_REG & 2){ // writeリクエスト
+      if(is_write){ // writeリクエスト
         dma_id = Authentication(dma_id, addr,req_id);
       } else {
         dma_id = Verification(dma_id, addr,req_id);
@@ -366,7 +399,7 @@ int main(void){
 //     // 書き戻し
 //     spm_sd64(minor_counter_byte_address, final_word);
 //     // ブロックをdirtyに設定する
-//     setBlockdirty(tag_info.spm_offset);
+//     set_block_dirty(tag_info.spm_offset);
 //     // --- 手順2: AXI ManagerにOTPとともにXORを実行し、暗号化を指示 ---
 //     // SPM DMAを起動し、DRAMから平文をSPMにコピー
 //     axim_copy(DATA_SPM_OFFSET);
@@ -475,7 +508,7 @@ int main(void){
 //   // 書き戻し
 //   spm_sd64(minor_counter_byte_address, final_word);
 //   set_seed(major_counter, new_minor_counter_value, request_addr);
-//   setBlockdirty(tag_info.spm_offset);    
+//   set_block_dirty(tag_info.spm_offset);    
 //   // --- 手順3: AXI ManagerにOTPとともにXORを実行し、暗号化を指示 ---
 //   uint64_t datamacblock_addr = get_datamacblock_addr(request_addr);
 //   struct Info data_tag_info = tag_check(datamacblock_addr);
@@ -507,7 +540,7 @@ int main(void){
 //     uint64_t dmac_byte_offset = (request_addr / 64) % 8 * 8;
 //     spm_sd64(data_tag_info.spm_offset + dmac_byte_offset, computed_mac);
 //     // SPM上のMACブロックをDirtyに設定する
-//     setBlockdirty(data_tag_info.spm_offset);
+//     set_block_dirty(data_tag_info.spm_offset);
 //     return tag_id+1;
 // }
 

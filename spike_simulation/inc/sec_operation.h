@@ -2,6 +2,7 @@
 // static inlinve void activa
 
 static inline void verify_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, uint32_t mac_req_id){
+  
   mac_init(mac_req_id);
   if (parent_spm_offset == 0){
       mac_buffer_set(0);
