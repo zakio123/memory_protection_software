@@ -11,56 +11,65 @@ void tmu_logic_t::internal_reset() {
       tmu_dirty[i]      = false;
       tmu_ref_count[i]  = 0;
       tmu_tag[i]  = 0;
-      tmu_spm_offset[i] = 0;
+      tmu_spm_offset[i] = CACHE_DATA_SPM_BASE + (i * 64);
     }
   }
 
 int tmu_logic_t::check_idx(int slot_idx) const {
     if (slot_idx < 0 || slot_idx >= TOTAL_SLOTS) {
       std::cerr << "check_idx: idx out of range: " << slot_idx << std::endl;
+      exit(1);
       return -1;
     }
     if (!tmu_valid[slot_idx]) {
       std::cerr << "check_idx: idx not valid: " << slot_idx << std::endl;
+      exit(1);
       return -1;
     }
     return 0;
   }
 
   // ---- 各命令の "ロジック部分"（レジスタとは独立した関数） ----
-  reg_t tmu_logic_t::do_check_tag( int slot_idx, dram_addr_t dram_addr){
+  reg_t tmu_logic_t::do_check_tag(long slot_idx, dram_addr_t dram_addr){
+    int search_range = std::min(PHYSICAL_WAYS, int(slot_idx & 0xFFFF));
+    slot_idx = slot_idx >> 32;
     // slot_idxを物理wayに変換して、相当するset内でタグチェックを行う
     int set_idx = slot_idx / PHYSICAL_WAYS;
-    int ahead_set_idx = set_idx * PHYSICAL_WAYS;
-    std::cout << "tmu_check_tag: set_idx=" << set_idx << ", ahead_set_idx=" << ahead_set_idx << std::endl;
+    int ahead_set_idx = slot_idx;
     reg_t hit = false;
     reg_t hit_way = -1;
-    for (int k = 0;k < PHYSICAL_WAYS;k++){
+    for (int k = 0;k < search_range;k++){
       if (tmu_valid[ahead_set_idx + k] && tmu_tag[ahead_set_idx + k] == dram_addr){
         hit = true;
         hit_way = k;
         // タグチェックでヒットした時にLRU更新を行う
         tmu_tree_lru[set_idx] = update_tree_lru(tmu_tree_lru[set_idx], hit_way);
         // hit wayをslot_idxからのオフセットで返す
-        hit_way = hit_way - (slot_idx % PHYSICAL_WAYS);
         reg_t res = (hit_way << 32) | (hit ? 1 : 0);
+        if (hit_way >= CACHE_WAYS){
+          std::cerr << "do_check_tag: invalid way returned: " << hit_way << std::endl;
+          exit(1);
+        }
         return res;
       }
     }
-    for (int k = 0;k < PHYSICAL_WAYS;k++){
+    for (int k = 0;k < search_range;k++){
       if (!tmu_valid[ahead_set_idx + k]){
         hit = false;
         hit_way = k;
-        // hit wayをslot_idxからのオフセットで返す
-        hit_way = hit_way - (slot_idx % PHYSICAL_WAYS);
-        return (hit_way << 32) | (hit ? 1 : 0);
+        if (hit_way >= CACHE_WAYS){
+          std::cerr << "do_check_tag: invalid way returned: " << hit_way << std::endl;
+          exit(1);
+        }
+        return (hit_way << 32) | 0;
       }
     }
-    reg_t res = ((reg_t)(-1) << 32) | (hit ? 1 : 0);
+    
+    reg_t res = ((reg_t)(-1) << 32) | 0;
     return res;
   }
   
-reg_t tmu_logic_t::do_acquire(int slot_idx) {
+  reg_t tmu_logic_t::do_acquire(int slot_idx) {
     if (check_idx(slot_idx) < 0) {
       std::cerr << "temp_acquire: invalid idx " << slot_idx << std::endl;
       return (reg_t)-1;
@@ -112,10 +121,6 @@ reg_t tmu_logic_t::do_acquire(int slot_idx) {
   }
 
   reg_t tmu_logic_t::do_get_tag(int idx) {
-    if (check_idx(idx) < 0) {
-      std::cerr << "temp_get_tag: invalid idx " << idx << std::endl;
-      return (reg_t)-1;
-    }
     return (reg_t)tmu_tag[idx];
   }
 
@@ -128,20 +133,11 @@ reg_t tmu_logic_t::do_acquire(int slot_idx) {
       std::cerr << "temp_set_dirty: idx not valid: " << idx << std::endl;
       return (reg_t)-1;
     }
-    if (tmu_ref_count[idx] > 0) {
-      std::cerr << "temp_set_dirty: ref_count > 0: " << idx << std::endl;
-      return (reg_t)-1;
-    }
     tmu_dirty[idx]  = true;
     return (reg_t)0;
   }
 
   reg_t tmu_logic_t::do_is_dirty(int idx) {
-    if (check_idx(idx) < 0) {
-      std::cerr << "temp_is_dirty: invalid idx " << idx << std::endl;
-      return (reg_t)-1;
-    }
-
     if (tmu_dirty[idx]) {
       return (reg_t)1;
     } else {
@@ -167,10 +163,6 @@ reg_t tmu_logic_t::do_acquire(int slot_idx) {
   }
 
   reg_t tmu_logic_t::do_get_spm(int idx) {
-    if (check_idx(idx) < 0) {
-      std::cerr << "temp_get_spm: invalid idx " << idx << std::endl;
-      return (reg_t)-1;
-    }
     return (reg_t)tmu_spm_offset[idx];
   }
 
@@ -198,6 +190,22 @@ reg_t tmu_logic_t::do_acquire(int slot_idx) {
     }
     res |= ((reg_t)(tmu_tree_lru[set_idx])) << 16;
     return res;
+  }
+
+  reg_t tmu_logic_t::do_set_valid(int idx) {
+    if (idx < 0 || idx >= TOTAL_SLOTS) {
+      std::cerr << "temp_set_valid: idx out of range: " << idx << std::endl;
+      return (reg_t)-1;
+    }
+    tmu_valid[idx]  = true;
+    return (reg_t)0;
+  }
+  reg_t tmu_logic_t::do_is_valid(int idx) {
+    if (tmu_valid[idx]) {
+      return (reg_t)1;
+    } else {
+      return (reg_t)0;
+    }
   }
 
 uint16_t tmu_logic_t::update_tree_lru(uint16_t current_lru, int accessed_way) const {

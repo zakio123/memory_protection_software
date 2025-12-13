@@ -157,18 +157,16 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     ensureBlockInSpm(datamacblock_addr, tag_info, tag_id);
   }
   index_t set_index = get_cache_set_index(datamacblock_addr);
-  // printf("authentication mac cache acquire S:%u W:%u\n", set_index, tag_info.way);
   acquire_cache_block(set_index, tag_info.way);
   while(AES_START_REG);
   // write_xor(DATA_SPM_OFFSET);
   xor_start(true, false,req_id,DATA_SPM_OFFSET);
-  // copy_xor(DATA_SPM_OFFSET);
-  // ハッシュ関数の内部状態を初期化
-  // SPMに当該MACブロックがあればそのままmodify,なければ今あるブロックをDRAMにwrite backしてから適切なブロックをSPMにDRAMコピー
+  // --- 手順3: MAC計算 ---
   mac_init(tag_id);
   mac_buffer_set(DATA_SPM_OFFSET); 
   mac_update(0, 511);
   mac_buffer_set(spm_offset_array[HEIGHT-1]);
+  mac_update(0,63);
   mac_update(counter_bit_offset, counter_bit_offset + 7); // 
   if (!tag_info.hit){
     spm_wait(tag_id);
@@ -202,7 +200,7 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
       dram_addr_array[HEIGHT - 1 - i] = dram_addr;
       #ifdef ENABLE_TMU_HARDWARE
       struct Info info = tag_check(dram_addr);
-      if (info .hit){
+      if (info.hit){
         load_start_index = HEIGHT - i;
         spm_offset_array[HEIGHT - 1 - i] = info.spm_offset;
         way_index = info.way;
@@ -235,9 +233,6 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     spm_copy_to_local(dram_addr, spm_offset_array[i], 64, tmp_id);
     acquire_temp_entry_by_index(temp_idx_array[i]);
   }
-  uint64_t load_end = read_instret();
-  printf("Verification tag check cycles: %llu\n", tag_end - verify_start);
-  printf("Verification load cycles: %llu\n", load_end - tag_end);
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
     spm_offset_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     id += 1;
@@ -289,6 +284,7 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   mac_update(0, 511);
   // SPMからカウンターブロックをコピーし、update
   mac_buffer_set(spm_offset_array[HEIGHT-1]);
+  mac_update(0,63);
   mac_update(counter_bit_offset, counter_bit_offset + 7); 
   if (!tag_info.hit){
     spm_wait(tag_id);
@@ -323,7 +319,6 @@ int main(void){
     bool is_write = (AXIM_STATUS_REG & 2) != 0;
     dram_addr_t addr = AXIM_REQ_ADDR_REG;
     uint32_t req_id = AXIM_REQ_ID_REG;
-    // printf("addr=%016llx\n", addr);
     if (addr == 0xFFFFFFFFFFFFFFFF){
       return 0;
     } else {

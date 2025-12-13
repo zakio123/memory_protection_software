@@ -24,11 +24,18 @@ static inline uint64_t div_ceil_u64(uint64_t a, uint64_t b){
 // 仕様：cipher64B + 1B(counter) をMAC
 // ここではデフォルトFNV-1a: tag = FNV(cipher64)→FNV(minor_byte)
 static inline uint64_t compute_data_tag(uint8_t cipher64[64], uint8_t counter_byte){
-    uint64_t mac = 0;
+    uint64_t mac = FNV_OFFSET_BASIS;
     for (int i=0;i<64;++i) {
         mac ^= cipher64[i];
         mac *= FNV_PRIME;
     }
+    // メジャーカウンターを混ぜる
+    for (int i=0;i<8;i++){
+      uint8_t byte =0;
+      mac ^= byte;
+      mac *= FNV_PRIME;
+    }
+    // マイナーカウンターを混ぜる
     mac ^= counter_byte;
     mac *= FNV_PRIME;
     return mac;
@@ -40,8 +47,15 @@ static inline uint64_t compute_data_tag(uint8_t cipher64[64], uint8_t counter_by
 
 static inline uint64_t compute_node_mac(const uint64_t major_counter, const uint8_t minor_couter, const uint64_t parent_counter,uint32_t size){
     uint8_t buffer[56];
-    uint64_t mac = 0;
+    uint64_t mac = FNV_OFFSET_BASIS;
     // 親ノードカウンターを混ぜる
+    if (size == 8){
+      for (int i=0;i<8;++i) {
+        uint8_t byte = 0;
+        mac ^= byte;
+        mac *= FNV_PRIME;
+      }
+    }
     for (int i=0;i<size/8;++i) {
         mac ^= (uint8_t)((parent_counter >> (8*i)) & 0xFF);
         mac *= FNV_PRIME;
@@ -64,8 +78,8 @@ struct CtrDeriver {
     aes::Block iv{};
     // [0..7]=major(LE), [8]=minor, [9]=sub, [10..15]=addr下位48bit(LE)
     uint64_t addr = block_addr + 16 * sub;
-    uint64_t seed_0 = addr + major;
-    uint64_t seed_1 = addr + (minor);
+    uint64_t seed_0 = major;
+    uint64_t seed_1 = (addr) |  ((uint64_t)(minor) << 56);
     for(int i=0;i<8;++i) iv[i] = (uint8_t)((seed_0 >> (8*i)) & 0xFF);
     for(int i=0;i<8;++i) iv[8+i] = (uint8_t)((seed_1 >> (8*i)) & 0xFF);
     return iv;

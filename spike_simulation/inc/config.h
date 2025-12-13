@@ -36,7 +36,7 @@ typedef uint32_t index_t;
    【設定】ここをコメントアウトすると「ソフトウェア実装」になります
    ========================================================= */
 #define ENABLE_TMX_HARDWARE
-#define ENABLE_TMU_HARDWARE
+// #define ENABLE_TMU_HARDWARE
 #ifdef __cplusplus
 }
 #endif

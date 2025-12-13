@@ -67,6 +67,8 @@ typedef struct {
     uint32_t level;
     index_t tag_way;
     index_t root_way;
+    // int way_array[HEIGHT];
+    struct Info info_array[HEIGHT];
 } AddressContext;
 
 // 各ステップの処理
@@ -84,18 +86,22 @@ while(1){
         dma_id_t start_id = *global_dma_id;
         context->load_start_index = 0;
         dram_addr_t dram_addr_array[HEIGHT] = {0};
+        uint64_t start_time = read_instret();
         for(uint64_t i=0; i<HEIGHT; ++i){
             uint64_t index = (request_addr - PROTECTION_BASE) / (64  * (1ULL << (5 * i)));
             context->path_indecis[HEIGHT - 1 - i] = index;
             dram_addr_t dram_addr = ((index >> 5) << 6) + level_base[HEIGHT - i];
-            light_tag_info_t info = light_tag_check(dram_addr);
             context->path_dram_addrs[HEIGHT - 1 - i] = dram_addr;
+            uint64_t s_time = read_instret();
+            struct Info info = tag_check(dram_addr);
+            uint64_t e_time = read_instret();
+            printf("tag check level %llu instret %llu \n", HEIGHT - 1 - i, e_time - s_time);
+            context->info_array[HEIGHT - 1 - i] = info;
             if (info.hit){
                 context->load_start_index = HEIGHT - i;
                 index_t set_index = get_cache_set_index(dram_addr);
                 spm_offset_t spm_offset = get_cache_block_spm_offset(set_index, info.way);
                 context->root_spm_offset = spm_offset;
-                // context->temp_index[HEIGHT - 1 - i] = -1;
                 context->root_way = info.way;
                 acquire_cache_block(set_index, info.way);
                 context->load_needed[HEIGHT - 1 - i] = false;
@@ -116,14 +122,11 @@ while(1){
                     context->counter_spm_offset = spm_offset;
                 }
                 context->path_spm_offsets[HEIGHT - 1 - i] = spm_offset;
-                // context->temp_index[HEIGHT - 1 - i] = temp_idx;
                 acquire_temp_entry_by_index(temp_idx);
             }
         }
-        uint64_t l_inst = read_instret();
-        // printf("path light tag walk instret %llu\n", l_inst - start_instret);
-        // ---------------------------------------------------------
-        // SPMへのロード
+        uint64_t end_time = read_instret();
+        printf("path tag walk instret %llu\n", end_time - start_time);
         for (uint64_t i = context->load_start_index;i<HEIGHT;i++){
             if (context->load_needed[i]){
                 start_id++;
@@ -222,8 +225,6 @@ while(1){
             uint8_t minor_counter_value = (minor_counter >> ((index % 8) * 8)) & 0xFF;
             uint8_t new_minor_counter = 0;
             if (minor_counter_value == 0xFF){
-                // uint64_t new_major_counter = major_counter + 1;
-                // spm_sd64(spm_offset_array[load_start_index - 1], new_major_counter);
                 new_minor_counter = 0; 
             } else {
                 new_minor_counter = minor_counter_value + 1;
@@ -236,11 +237,10 @@ while(1){
             uint64_t final_word = cleared_minor_counter | shifted_new_value;
             // 書き戻し
             spm_sd64(minor_counter_byte_address, final_word);
-
             dram_addr_t dram_addr = context->path_dram_addrs[context->load_start_index - 1];
             index_t set_index = get_cache_set_index(dram_addr);
             clearParentUpdated(set_index,context->root_way);
-            setBlockdirty(set_index,context->root_way);
+            set_block_dirty(set_index,context->root_way);
         }
         current_state = RS_TREE_UPDATE;
         break;
@@ -249,19 +249,15 @@ while(1){
         // update_one_height で木を更新
         uint32_t mac_req_id = 0;
         for (uint64_t i=context->load_start_index;i<HEIGHT;i++){
-            global_mac_req_id += 1;
+            global_dma_id += 1;
             uint64_t index = context->path_indecis[i];
             int idx = find_temp_entry(context->path_dram_addrs[i]);
-            spm_offset_t parent_spm = (i == 0) ? 0 : (i == context->load_start_index) ? context->root_spm_offset : context->path_spm_offsets[i-1];
+            spm_offset_t parent_spm = (i == 0) ? 0 : context->path_spm_offsets[i-1];
             mac_req_id = (global_mac_req_id);
             update_one_height(context->path_spm_offsets[i], parent_spm, index, true, mac_req_id);
             if (idx >= 0){
                 dirty_temp_entry_by_index(idx);
-            } 
-            // else {
-            //     index_t set_index = get_cache_hash_index(context->path_dram_addrs[i]);
-            //     setBlockdirty(set_index,);
-            // }
+            }
         }
         mac_wait(mac_req_id);
         current_state = RS_SET_SEED;
@@ -276,45 +272,25 @@ while(1){
             release_cache_block(set_index, context->root_way);
         }
         for (uint64_t i = context->load_start_index;i<HEIGHT;i++){
-                // if (context->temp_index[i] == -1){
-                //     index_t set_index = get_cache_set_index(context->path_dram_addrs[i]);
-                //     release_cache_block(set_index, context->root_way);
-                //     continue;
-                // }
-            uint64_t start_instret, end_instret;
-            // start_instret = read_instret();
             int idx = find_temp_entry(context->path_dram_addrs[i]);
             release_temp_entry_by_index(idx);
-            // end_instret = read_instret();
-            // printf("temp release instret %llu\n", end_instret - start_instret);
             index_t set_index = get_cache_set_index(context->path_dram_addrs[i]);
-            if (swappable_temp_entry_by_index(idx) ){
+            if (swappable_temp_entry_by_index(idx)){
                 bool dirty = is_dirty_temp_entry_by_index(idx);
-                // start_instret = read_instret();
-                struct Info info_i = tag_check(context->path_dram_addrs[i]);
-                // end_instret = read_instret();
-                // printf("tag check instret %llu\n", end_instret - start_instret);
                 spm_offset_t temp_spm = context->path_spm_offsets[i];
-
-                if (info_i.way >= 0){
-                    bool mac_updated = is_mac_updated(set_index, info_i.way);
+                if (context->info_array[i].way >= 0){
+                    bool mac_updated = is_mac_updated(set_index, context->info_array[i].way);
                     if (mac_updated){
                         // swappして良い
-                        // start_instret = read_instret();
-                        swapp_temp_cache(context->path_dram_addrs[i], info_i, temp_spm, dirty);
-                        // end_instret = read_instret();
-                        // printf("swapp temp cache instret %llu\n", end_instret - start_instret);
-                        setParentUpdated(set_index, info_i.way);
+                        swapp_temp_cache(context->path_dram_addrs[i], context->info_array[i], temp_spm, dirty);
+                        setParentUpdated(set_index, context->info_array[i].way);
                     } else{
                         // temp_id = evicted_node_update(info_i, temp_id);
                         // swapp_temp_cache(context->path_dram_addrs[i], info_i, context->path_spm_offsets[i], dirty);
                         if (dirty){
                             spm_write_back(temp_spm, context->path_dram_addrs[i], 64, 0);
                         }
-                        // start_instret = read_instret();
                         push_temp_buffer(temp_spm);
-                        // end_instret = read_instret();
-                        // printf("push temp buffer instret %llu\n", end_instret - start_instret);
                     }
                 } else {
                     if (dirty){
@@ -322,14 +298,10 @@ while(1){
                     }
                     push_temp_buffer(temp_spm);
                 }
-                // start_instret = read_instret();
                 invalidate_temp_entry_by_index(idx);
-                // end_instret = read_instret();
-                // printf("invalidate temp entry instret %llu\n", end_instret - start_instret);
             } 
         }
         current_state = RS_DONE;
-        // return current_state;
         break;
     }
     case RS_DATAMAC_UPDATE:{
@@ -354,17 +326,18 @@ while(1){
         mac_update(0, 511);
         mac_buffer_set(context->path_spm_offsets[HEIGHT - 1] );
         uint64_t counter_bit_offset = 64 + (request_addr / 64) % 32 * 8;
+        mac_update(0,63);
         mac_update(counter_bit_offset, counter_bit_offset + 7);
         dram_addr_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
         if (context->is_write){
             mac_digest(context->mac_spm_offset + dmac_byte_offset);
-            setBlockdirty(set_index, context->tag_way);
+            set_block_dirty(set_index, context->tag_way);
         } else {
             mac_result_compare(context->mac_spm_offset + dmac_byte_offset);
         }
         mac_wait(mac_req_id);
         release_cache_block(set_index, context->tag_way);
-        if ( context->is_write){
+        if (context->is_write){
             current_state = RS_SWAP_OR_EVICT;
             spm_write_back(DATA_SPM_OFFSET + 64 * list_i, request_addr, 64, 0);
             axim_write_return(context->req_id);
@@ -382,32 +355,15 @@ while(1){
         // 未使用。何もしない
         return current_state;
     }
-    // case RS_DATAMAC_WAIT: {
-    //     // DMA待ち
-    //     dram_addr_t mac_addr = get_datamacblock_addr(request_addr);
-    //     index_t set_index = get_cache_hash_index(mac_addr);
-    //     if (context->tag_hit == false){
-    //         if (dma_wait(context->wait_tag_dma_id)){
-    //             current_state = RS_DATAMAC_VERIFY_AUTHENTICATE;
-    //             set_loaded(set_index);
-    //         } else {
-    //             return current_state;
-    //         }
-    //     } else if (is_loaded(set_index)){
-    //         current_state = RS_DATAMAC_VERIFY_AUTHENTICATE;
-    //     } else {
-    //         return current_state;
-    //     }
-    //     break;
-    //   } 
-      case RS_DATA_WAIT: {
+    case RS_DATA_WAIT: {
         if (dma_wait(context->internal_wait_id)){
             current_state = RS_DATAMAC_DMA;
         } else {
             return current_state;
         }
         break;
-      } case RS_DATAMAC_DMA:{
+    } 
+    case RS_DATAMAC_DMA:{
             dram_addr_t mac_addr = get_datamacblock_addr(request_addr);
             index_t set_index = get_cache_set_index(mac_addr);
             struct Info mac_info = tag_check(mac_addr);
@@ -458,11 +414,6 @@ while(1){
         set_seed(major_counter, minor_counter_value, request_addr);
         aes_lock = context->req_id;
         current_state = RS_AES_XOR_WAIT;
-        // if (context->is_write){
-        //     current_state = RS_AES_XOR_WAIT;
-        // } else {
-        //     current_state = RS_AES_XOR_WAIT;
-        // }
         break;
     }
     case RS_ERROR:{
@@ -474,8 +425,6 @@ while(1){
         return current_state;
     }        
   }
-//   uint64_t end_instret = read_instret();
-//   printf("Total instret: %llu\n",  end_instret - start_instret);
 }
   return current_state;
 }
@@ -496,7 +445,7 @@ int main(void){
   temp_system_init(CACHE_DATA_SPM_BASE + TOTAL_SLOTS * 64);
   dma_id_t dma_id = 0;
   int active_processes = 0;
-  const int MAX_PROCESSES = 3;
+    const int MAX_PROCESSES = 3;
   AddressContext process_list[3] = {0};
   req_state_t states[3] = {RS_IDLE, RS_IDLE, RS_IDLE};
   dram_addr_t request_addr[3] = {0};
@@ -530,10 +479,6 @@ int main(void){
         break;
       }
     }
-    // if (dma_id % 10000 == 0){
-    //     printf_access();
-
-    // }
     for (int i=0;i<MAX_PROCESSES;i++){
       if (states[i] == RS_DONE){
           // スロットを解放
@@ -541,10 +486,7 @@ int main(void){
           active_processes--;
           states[i] = RS_IDLE;
       } else if (states[i] != RS_IDLE){ 
-        uint64_t prev_state = states[i];
-        uint64_t start_instret = read_instret();
         states[i] = step(&process_list[i], i, &dma_id, states[i],request_addr[i]);
-        uint64_t end_instret = read_instret();
       }
     }
   }

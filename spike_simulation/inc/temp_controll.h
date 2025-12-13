@@ -22,21 +22,21 @@
 
 /* --- 外部変数宣言 (SWモード用) --- */
 #ifndef ENABLE_TMX_HARDWARE
-extern bool temp_valid[TEMP_MAX_ENTRIES];
-extern bool temp_dirty[TEMP_MAX_ENTRIES];
-extern bool temp_loaded[TEMP_MAX_ENTRIES];
-extern int  temp_ref_count[TEMP_MAX_ENTRIES];
-extern dram_addr_t temp_dram_addr[TEMP_MAX_ENTRIES];
-extern spm_offset_t temp_spm_offset[TEMP_MAX_ENTRIES];
+bool temp_valid[TEMP_POOL_SIZE];
+bool temp_dirty[TEMP_POOL_SIZE];
+bool temp_loaded[TEMP_POOL_SIZE];
+int  temp_ref_count[TEMP_POOL_SIZE];
+dram_addr_t temp_dram_addr[TEMP_POOL_SIZE];
+spm_offset_t temp_spm_offset[TEMP_POOL_SIZE];
 
-extern int active_indices[TEMP_MAX_ENTRIES];
-extern int active_count;
-extern int pos_in_active_list[TEMP_MAX_ENTRIES];
-extern int free_indices[TEMP_MAX_ENTRIES];
-extern int free_indices_top;
+int active_indices[TEMP_POOL_SIZE];
+int active_count;
+int pos_in_active_list[TEMP_POOL_SIZE];
+int free_indices[TEMP_POOL_SIZE];
+int free_indices_top;
 
-extern spm_offset_t temp_pool_stack[TEMP_MAX_ENTRIES];
-extern int temp_pool_top;
+spm_offset_t temp_pool_stack[TEMP_POOL_SIZE];
+int temp_pool_top;
 #endif
 
 
@@ -137,15 +137,7 @@ static inline int alloc_temp_entry(dram_addr_t dram_addr, spm_offset_t spm_offse
     return (int)ret;
 #else
     if (free_indices_top < 0) return -1;
-    
-    // SW版: 引数 spm_offset_dummy は使わず、ここでPopする設計にするか、
-    // あるいは呼び出し元で pop した値を渡すか。
-    // ※前回の設計では「呼び出し元でpopして渡す」形だったのでそれに合わせます。
-    // ただし、HW版との整合性を取るなら「呼び出し元でPopしない」方が綺麗です。
-    // ここでは「引数のspm_offsetを使う」形にします。
-    // (HW版有効時は呼び出し元のpopがダミー0を返すので問題なし)
-    
-    spm_offset_t real_spm = spm_offset_dummy;
+    spm_offset_t real_spm = spm_offset;
     // もしSW版でもここだけで完結させたいなら：
     // spm_offset_t real_spm = pop_temp_buffer();
 

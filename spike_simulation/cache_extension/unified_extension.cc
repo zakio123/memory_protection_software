@@ -56,6 +56,10 @@
 #define MASK_TMU_IS_SWAPPABLE  TMU_MASK
 #define MATCH_TMU_RETURN_METADATA TMU_MATCH(F7_TMU_RETURN_METADATA)
 #define MASK_TMU_RETURN_METADATA  TMU_MASK
+#define MATCH_TMU_SET_VALID   TMU_MATCH(F7_TMU_SET_VALID)
+#define MASK_TMU_SET_VALID    TMU_MASK
+#define MATCH_TMU_IS_VALID    TMU_MATCH(F7_TMU_IS_VALID)
+#define MASK_TMU_IS_VALID     TMU_MASK
 
 class unified_extension_t : public extension_t {
 public:
@@ -351,6 +355,28 @@ public:
         &unified_extension_t::exec_tmu_return_metadata,
         &unified_extension_t::exec_tmu_return_metadata
       });
+    v.push_back((insn_desc_t){
+      MATCH_TMU_SET_VALID, MASK_TMU_SET_VALID,
+      &unified_extension_t::exec_tmu_set_valid,
+      &unified_extension_t::exec_tmu_set_valid,
+      &unified_extension_t::exec_tmu_set_valid,
+      &unified_extension_t::exec_tmu_set_valid,
+      &unified_extension_t::exec_tmu_set_valid,
+      &unified_extension_t::exec_tmu_set_valid,
+      &unified_extension_t::exec_tmu_set_valid,
+      &unified_extension_t::exec_tmu_set_valid
+    });
+    v.push_back((insn_desc_t){
+      MATCH_TMU_IS_VALID, MASK_TMU_IS_VALID,
+      &unified_extension_t::exec_tmu_is_valid,
+      &unified_extension_t::exec_tmu_is_valid,
+      &unified_extension_t::exec_tmu_is_valid,
+      &unified_extension_t::exec_tmu_is_valid,
+      &unified_extension_t::exec_tmu_is_valid,
+      &unified_extension_t::exec_tmu_is_valid,
+      &unified_extension_t::exec_tmu_is_valid,
+      &unified_extension_t::exec_tmu_is_valid
+    });
     return v;
   }
 
@@ -509,7 +535,7 @@ private:
 // tmu命令群の実装
   static reg_t exec_tmu_check_tag(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
-    int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
+    long slot_idx = (long)p->get_state()->XPR[insn.rs1()];
     uint64_t addr = (uint64_t)p->get_state()->XPR[insn.rs2()];
     reg_t res = ext->logic_tmu.do_check_tag(slot_idx,addr);
     int rd = insn.rd();
@@ -624,6 +650,26 @@ private:
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
     reg_t res = ext->logic_tmu.do_return_metadata(slot_idx);
+    int rd = insn.rd();
+    if (rd != 0) { // x0への書き込みは無視
+        p->get_state()->XPR.write(rd, res);
+    }
+    return pc + 4;
+  }
+  static reg_t exec_tmu_set_valid(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
+    reg_t res = ext->logic_tmu.do_set_valid(slot_idx);
+    int rd = insn.rd();
+    if (rd != 0) { // x0への書き込みは無視
+        p->get_state()->XPR.write(rd, res);
+    }
+    return pc + 4;
+  }
+  static reg_t exec_tmu_is_valid(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
+    reg_t res = ext->logic_tmu.do_is_valid(slot_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);

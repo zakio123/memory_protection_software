@@ -29,7 +29,7 @@ private:
 public:
   void internal_reset();
 // ---- 各命令の "ロジック部分"（レジスタとは独立した関数） ----
-  reg_t do_check_tag(int slot_idx, dram_addr_t dram_addr);
+  reg_t do_check_tag(long slot_idx, dram_addr_t dram_addr);
   
   reg_t do_acquire(int slot_idx) ;
   reg_t do_release(int slot_idx) ;
@@ -47,4 +47,7 @@ public:
   reg_t do_is_swappable(int idx);
 
   reg_t do_return_metadata(int slot_idx);
+
+  reg_t do_set_valid(int idx);
+  reg_t do_is_valid(int idx);
 };

@@ -30,30 +30,17 @@ static inline index_t get_cache_set_index(dram_addr_t dram_addr) {
         return ((dram_addr) / 64) % TREE_SETS + DATA_TAG_SETS;
     }
 }
-
-
-// struct CacheMetadata{
-//     bool valid;
-//     bool dirty;
-//     bool mac_updated; // trueなら親ノード更新ずみ、falseなら未更新
-//     bool locked;
-//     uint32_t access_count;
-//     dram_addr_t block_addr;
-//     spm_offset_t spm_offset;
-//     uint32_t ref_count;
-// };
 // キャッシュメタデータの配列　SoA形式
 #ifndef ENABLE_TMU_HARDWARE
 bool valid_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 bool dirty_metadata[CACHE_SETS][CACHE_WAYS] = {0};
-uint32_t access_count_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 dram_addr_t block_addr_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 spm_offset_t spm_offset_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 uint32_t ref_count_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 #endif
 bool mac_updated_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 bool loaded_metadata[CACHE_SETS][CACHE_WAYS] = {0};
-
+uint32_t access_count_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 
 
 // --- キャッシュ操作関数群 ---
@@ -162,126 +149,27 @@ spm_offset_t get_cache_block_spm_offset(index_t set_index, index_t way_index){
   #endif
 }
 
-
-// --- 初期化関数 (mainの最初で呼ぶ) ---
-void init_cache_system() {
-    // 1. キャッシュメタデータの初期化 (初期配置をセット)
-    #ifdef ENABLE_TMU_HARDWARE
-
-    #else
-    spm_offset_t current_offset = CACHE_DATA_SPM_BASE;
-    for(int s=0; s<CACHE_SETS; s++){
-        for(int w=0; w<CACHE_WAYS; w++){
-            valid_metadata[s][w] = false;
-            dirty_metadata[s][w] = false;
-            spm_offset_metadata[s][w] = current_offset; // 初期位置
-            access_count_metadata[s][w] = 0;
-            block_addr_metadata[s][w] = 0;
-            mac_updated_metadata[s][w] = true;
-            loaded_metadata[s][w] = false;
-            current_offset += 64;
-        }
-    };
-    #endif
-}
-
-
-// --- タグチェック関数 (ヒット/ミス判定および置換way決定、カウンター更新) ---
-struct Info tag_check(dram_addr_t dram_addr){
-  index_t set_index = get_cache_set_index(dram_addr);
-  struct Info tag_info = {false, false, 0, 0, 0};
+static inline void set_block_valid(index_t set_index, index_t way_index){
   #ifdef ENABLE_TMU_HARDWARE
+    long slot_idx = (set_index * CACHE_WAYS) + way_index;
     long ret;
-    TMU_INSN_R(F7_TMU_CHECK_TAG, ret,  set_index * CACHE_WAYS,dram_addr); 
-    tag_info.hit = (bool)(ret & 0x1);
-    tag_info.way = (int8_t)((ret >> 32) & 0xFF);
-    if (tag_info.way < 0){
-      TMU_INSN_R(F7_TMU_RETURN_METADATA, ret, set_index * CACHE_WAYS, 0);
-      uint16_t lru_bits = (uint16_t)(ret >> 16);
-      int partitions = PHYSICAL_WAYS / CACHE_WAYS;
-      int set_offset = (set_index % partitions); 
-      // 2. 探索を開始するノード番号(サブツリーのRoot)を計算
-      // ヒープ配列において、N分割された階層の先頭インデックスは (N - 1) です。
-      // そこにオフセットを足すと、対象サブツリーのルートになります。
-      int node_idx = (partitions - 1) + set_offset; 
-      int victim_way = 0;
-      // 3. 論理Way数分(CACHE_WAYS)の深さだけ探索
-      // PHYSICAL_WAYS_LOG2 ではなく、CACHE_WAYS_LOG2 回ループします
-      for (int lvl = 0; lvl < CACHE_WAYS_LOG2; ++lvl) { // ※CACHE_WAYS_LOG2は log2(CACHE_WAYS)
-          // 現在のノード(サブツリー内)のビットを確認
-          int direction = (lru_bits >> node_idx) & 1;
-          if (direction == 0) {
-              // Left MRU -> Go Right (Victim)
-              victim_way = (victim_way << 1) | 1;
-              node_idx = 2 * node_idx + 2;
-          } else {
-              // Right MRU -> Go Left (Victim)
-              victim_way = (victim_way << 1) | 0;
-              node_idx = 2 * node_idx + 1;
-          }
-      }
-      // これで victim_way は 0 ～ (CACHE_WAYS-1) の値になります
-      tag_info.way = victim_way;
-    }
-    // dirtyかどうか
-    TMU_INSN_R(F7_TMU_IS_D, ret, set_index * CACHE_WAYS + tag_info.way, 0);
-    tag_info.dirty = (bool)(ret & 0x1);
-    // SPMオフセット取得
-    TMU_INSN_R(F7_TMU_GET_SPM, ret, set_index * CACHE_WAYS + tag_info.way, 0);
-    tag_info.spm_offset = (spm_offset_t)ret;
-    // ブロックアドレス取得
-    TMU_INSN_R(F7_TMU_GET_TAG, ret, set_index * CACHE_WAYS + tag_info.way, 0);
-    tag_info.block_addr = (dram_addr_t)ret;
+    TMU_INSN_R(F7_TMU_SET_VALID, ret, slot_idx, 0); 
   #else
-  int8_t way_index = -1;
-  uint32_t lru_counter_max = 0;
-    // wayを決定
-  for (index_t i = 0; i < CACHE_WAYS; ++i) {
-        if (valid_metadata[set_index][i]) {
-          if (block_addr_metadata[set_index][i] == dram_addr) {
-            way_index = i;
-            tag_info.dirty = dirty_metadata[set_index][i];
-            tag_info.hit = true;
-            tag_info.spm_offset = spm_offset_metadata[set_index][i];
-            tag_info.block_addr = dram_addr;
-            tag_info.way = i;
-            break;
-          } else if (ref_count_metadata[set_index][i] == 0) {
-            uint32_t access_count = (access_count_metadata[set_index][i] + 1) & 0xF; // 4bitのアクセス数
-            if (access_count > lru_counter_max) {
-                lru_counter_max = access_count;
-                way_index = i;
-            }
-          }
-        } else {
-            // 空きwayが見つかった場合、そのwayを使用
-            way_index = i;
-            valid_metadata[set_index][i] = true; // 明示的に有効化
-            // invalid_found = true;
-            break;
-        }
-    }
-  // 各セットはCACHE_WAYS分のラインを持つため、適切なオフセットを計算
-  // カウンターをインクリメント
-  for (uint64_t i = 0; i < CACHE_WAYS; ++i) {
-      if (valid_metadata[set_index][i] &&  i != way_index && ref_count_metadata[set_index][i] == 0) {
-          uint32_t access_count = (access_count_metadata[set_index][i] + 1) & 0xF; // 4bitのアクセス数
-          access_count_metadata[set_index][i] = access_count;
-      }
-      if (i == way_index) {
-          // 選ばれたwayのカウンターをリセット
-          access_count_metadata[set_index][i] = 0;
-      }
-  }
-  if (!tag_info.hit) {
-    tag_info.spm_offset = spm_offset_metadata[set_index][way_index];
-    tag_info.block_addr = block_addr_metadata[set_index][way_index];
-    tag_info.dirty = dirty_metadata[set_index][way_index];
-    tag_info.way = way_index;
-  }
+    valid_metadata[set_index][way_index] = true;
   #endif
-  return tag_info;
 }
+static inline bool is_block_valid(index_t set_index, index_t way_index){
+  #ifdef ENABLE_TMU_HARDWARE
+    long slot_idx = (set_index * CACHE_WAYS) + way_index;
+    long ret;
+    TMU_INSN_R(F7_TMU_IS_VALID, ret, slot_idx, 0); 
+    return (bool)ret;
+  #else
+  return valid_metadata[set_index][way_index];
+  #endif
+}
+
+
 
 // --- 軽量タグチェック (読み取り専用、ヒット/ミスのみ判定) ---
 // 高速化のため、ヒットしたかと、空いているwayの探索のみを行う and 追い出しても良さそうなwayの探索
@@ -367,8 +255,6 @@ static inline dma_id_t ensureBlockInSpm(dram_addr_t required_dram_addr, struct I
   loaded_metadata[set_index][tag_info.way] = false;
   return read_id;
 }
-
-
 static inline void swapp_temp_cache(dram_addr_t dram_addr, struct Info tag_info, spm_offset_t spm_offset,bool dirty){
   if (tag_info.dirty){
     spm_write_back(tag_info.spm_offset, tag_info.block_addr, 64, 0);
@@ -395,8 +281,6 @@ static inline void swapp_temp_cache(dram_addr_t dram_addr, struct Info tag_info,
   #endif
   push_temp_buffer(tag_info.spm_offset);
 }
-
-
 // ------------------------
 // ソフトウェア側で管理するメタデータ操作関数
 // ------------------------
@@ -420,4 +304,153 @@ static inline void clear_loaded(index_t set_index,index_t way_index){
 }
 static inline bool is_loaded(index_t set_index,index_t way_index){
   return loaded_metadata[set_index][way_index];
+}
+
+// --- 初期化関数 (mainの最初で呼ぶ) ---
+void init_cache_system() {
+    // 1. キャッシュメタデータの初期化 (初期配置をセット)
+    #ifdef ENABLE_TMU_HARDWARE
+      for (int s=0; s<CACHE_SETS; s++){
+          for(int w=0; w<CACHE_WAYS; w++){
+            loaded_metadata[s][w] = false;
+            mac_updated_metadata[s][w] = true;
+            access_count_metadata[s][w] = 0;
+          }
+      };
+    #else
+    spm_offset_t current_offset = CACHE_DATA_SPM_BASE;
+    for(int s=0; s<CACHE_SETS; s++){
+        for(int w=0; w<CACHE_WAYS; w++){
+            valid_metadata[s][w] = false;
+            dirty_metadata[s][w] = false;
+            spm_offset_metadata[s][w] = current_offset; // 初期位置
+            access_count_metadata[s][w] = 0;
+            block_addr_metadata[s][w] = 0;
+            mac_updated_metadata[s][w] = true;
+            loaded_metadata[s][w] = false;
+            current_offset += 64;
+        }
+    };
+    #endif
+}
+
+
+// --- タグチェック関数 (ヒット/ミス判定および置換way決定、カウンター更新) ---
+struct Info tag_check(dram_addr_t dram_addr){
+  index_t set_index = get_cache_set_index(dram_addr);
+  struct Info tag_info = {false, false, 0, 0, 0};
+  #ifdef ENABLE_TMU_HARDWARE
+    long ret;
+    long rs1 = ((uint64_t)(set_index * CACHE_WAYS) << 32) | (uint64_t)(CACHE_WAYS);
+    TMU_INSN_R(F7_TMU_CHECK_TAG, ret,  rs1,dram_addr); 
+    tag_info.hit = (bool)(ret & 0x1);
+    tag_info.way = (int8_t)((ret >> 32) & 0xFF);
+    if (tag_info.way >= CACHE_WAYS){
+      printf("Error: Invalid way index %d returned from TMU for addr=%016llx\n", tag_info.way, dram_addr);
+      exit(1);
+    }
+    if (tag_info.hit){
+      TMU_INSN_R(F7_TMU_IS_D, ret, set_index * CACHE_WAYS + tag_info.way, 0);
+      tag_info.dirty = (bool)(ret & 0x1);
+      // SPMオフセット取得
+      tag_info.spm_offset = (spm_offset_t)get_cache_block_spm_offset(set_index, tag_info.way);
+      // ブロックアドレス取得
+      TMU_INSN_R(F7_TMU_GET_TAG, ret, set_index * CACHE_WAYS + tag_info.way, 0);
+      tag_info.block_addr = (dram_addr_t)ret;
+      // ヒット時はaccess_count更新
+      for (int i = 0; i < CACHE_WAYS; ++i) {
+        bool is_valid = is_block_valid(set_index, i);
+        if (i != tag_info.way && is_valid) {
+            uint32_t access_count = (access_count_metadata[set_index][i] + 1) & 0xF; // 4bitのアクセス数
+            access_count_metadata[set_index][i] += 1;
+        } else if (i == tag_info.way) {
+            // 選ばれたwayのカウンターをリセット
+            access_count_metadata[set_index][i] = 0;
+        } 
+      }
+    } else if (tag_info.way >= 0) {
+      // miss but found invalid way
+      tag_info.dirty = false;
+      tag_info.block_addr = 0;
+      tag_info.spm_offset = (spm_offset_t)get_cache_block_spm_offset(set_index, tag_info.way);
+      // validを立てる
+      set_block_valid(set_index, tag_info.way);
+      clear_loaded(set_index, tag_info.way);
+    } else {
+      // miss and need to select victim way
+      // カウンターに基づいて置換wayを決定
+      uint32_t lru_counter_max = 0;
+      int8_t way_index = -1;
+      for (index_t i = 0; i < CACHE_WAYS; ++i) {
+          bool is_valid = is_block_valid(set_index, i);
+          bool swappable = swappable_cache_block(set_index, i);
+          if (is_valid && swappable) {
+            if (lru_counter_max < access_count_metadata[set_index][i]) {
+                lru_counter_max = access_count_metadata[set_index][i];
+                way_index = i;
+            }
+          }
+      }
+      tag_info.way = way_index;
+      if (way_index == -1){
+        tag_info.dirty = false;
+        tag_info.spm_offset = 0;
+        tag_info.block_addr = 0;
+      } else {
+        // 置換wayの情報を取得
+        tag_info.dirty = is_block_dirty(set_index, way_index);
+        tag_info.spm_offset = (spm_offset_t)get_cache_block_spm_offset(set_index, way_index);
+        TMU_INSN_R(F7_TMU_GET_TAG, ret, set_index * CACHE_WAYS + way_index, 0);
+        tag_info.block_addr = (dram_addr_t)ret;
+      }
+    }
+  #else
+  int8_t way_index = -1;
+  uint32_t lru_counter_max = 0;
+    // wayを決定
+  for (index_t i = 0; i < CACHE_WAYS; ++i) {
+        if (valid_metadata[set_index][i]) {
+          if (block_addr_metadata[set_index][i] == dram_addr) {
+            way_index = i;
+            tag_info.dirty = dirty_metadata[set_index][i];
+            tag_info.hit = true;
+            tag_info.spm_offset = spm_offset_metadata[set_index][i];
+            tag_info.block_addr = dram_addr;
+            tag_info.way = i;
+            break;
+          } else if (ref_count_metadata[set_index][i] == 0) {
+            uint32_t access_count = (access_count_metadata[set_index][i] + 1) & 0xF; // 4bitのアクセス数
+            if (access_count > lru_counter_max) {
+                lru_counter_max = access_count;
+                way_index = i;
+            }
+          }
+        } else {
+            // 空きwayが見つかった場合、そのwayを使用
+            way_index = i;
+            valid_metadata[set_index][i] = true; // 明示的に有効化
+            // invalid_found = true;
+            break;
+        }
+    }
+  // 各セットはCACHE_WAYS分のラインを持つため、適切なオフセットを計算
+  // カウンターをインクリメント
+  for (uint64_t i = 0; i < CACHE_WAYS; ++i) {
+      if (valid_metadata[set_index][i] &&  i != way_index && ref_count_metadata[set_index][i] == 0) {
+          uint32_t access_count = (access_count_metadata[set_index][i] + 1) & 0xF; // 4bitのアクセス数
+          access_count_metadata[set_index][i] = access_count;
+      }
+      if (i == way_index) {
+          // 選ばれたwayのカウンターをリセット
+          access_count_metadata[set_index][i] = 0;
+      }
+  }
+  if (!tag_info.hit) {
+    tag_info.spm_offset = spm_offset_metadata[set_index][way_index];
+    tag_info.block_addr = block_addr_metadata[set_index][way_index];
+    tag_info.dirty = dirty_metadata[set_index][way_index];
+    tag_info.way = way_index;
+  }
+  #endif
+  return tag_info;
 }
