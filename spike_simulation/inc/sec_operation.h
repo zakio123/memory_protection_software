@@ -9,6 +9,7 @@ static inline void verify_one_height(spm_offset_t child_spm_offset, spm_offset_t
   } else {
       uint64_t start_bit = 64 + (node_index / 32) % 32 * 8;
       mac_buffer_set(parent_spm_offset);
+      mac_update(0,63);
       mac_update(start_bit, start_bit + 7);
   }
   mac_buffer_set(child_spm_offset);
@@ -24,6 +25,7 @@ static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t
   } else {
       uint64_t start_bit = 64 + (node_index / 32) % 32 * 8;
       mac_buffer_set(parent_spm_offset);
+      mac_update(0,63);
       mac_update(start_bit, start_bit + 7);
   }
   // ブロックの更新

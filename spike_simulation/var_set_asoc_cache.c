@@ -55,11 +55,8 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
     uint32_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     id += 1;
-    bool verify = verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], id);
-    if (verify == false){
-      printf("[Core FW] Verification failed at level %llu\n", i);
-      exit(1);
-    }
+    spm_wait(id);
+    verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], id);
   }
   // 一時的なルートノードのアップデート
   if (load_start_index == 0){
@@ -91,22 +88,24 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     // 書き戻し
     spm_sd64(minor_counter_byte_address, final_word);
     // 一時的なルートなので、parent updatedはfalseにしておく
-    clearParentUpdated(dram_addr_array[start_level], way_index);
-    setBlockdirty(dram_addr_array[start_level], way_index);
+    int set_index = get_cache_set_index(dram_addr_array[start_level]);
+    clearParentUpdated(set_index, way_index);
+    setBlockdirty(set_index, way_index);
   }
   // 木の更新：ルートから葉まで降りていく
   for (uint64_t i=load_start_index;i<HEIGHT;i++){
-    update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true);
+    update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true, i);
   }
   // スワップ
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
     struct Info info_i = tag_check(dram_addr_array[i]);
-    bool mac_updated = is_mac_updated(dram_addr_array[i], info_i.way);
+    int set_index = get_cache_set_index(dram_addr_array[i]);  
+    bool mac_updated = is_mac_updated(set_index, info_i.way);
     if (mac_updated){
       // swappして良い
       // spm_write_back(spm_offset_array[i], dram_addr_array[i], 64, 0);
       swapp_temp_cache(dram_addr_array[i], info_i, spm_offset_array[i],true);
-      setParentUpdated(dram_addr_array[i], info_i.way);
+      setParentUpdated(set_index, info_i.way);
     } else{
       // id = evicted_node_update(info_i, id);
       // swapp_temp_cache(dram_addr_array[i], info_i, spm_offset_array[i], true);
@@ -141,19 +140,20 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   // copy_xor(DATA_SPM_OFFSET);
   // ハッシュ関数の内部状態を初期化
   // SPMに当該MACブロックがあればそのままmodify,なければ今あるブロックをDRAMにwrite backしてから適切なブロックをSPMにDRAMコピー
-  mac_init();
+  mac_init(0);
   mac_buffer_set(DATA_SPM_OFFSET); 
   mac_update(0, 511);
   mac_buffer_set(spm_offset_array[HEIGHT-1]);
+  mac_update(0,63);
   mac_update(counter_bit_offset, counter_bit_offset + 7); // 
   // MAC計算完了
-  uint64_t computed_mac = mac_digest(0);
   if (!tag_info.hit){
     spm_wait(tag_id);
   }
   uint64_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
-  spm_sd64(tag_info.spm_offset + dmac_byte_offset, computed_mac);
-  setBlockdirty(datamacblock_addr, tag_info.way);
+  mac_digest(tag_info.spm_offset + dmac_byte_offset);
+  int set_index = get_cache_set_index(datamacblock_addr);
+  setBlockdirty(set_index, tag_info.way);
   spm_write_back(DATA_SPM_OFFSET, request_addr, 64, 0);
   axim_write_return(req_id);
   return tag_id;
@@ -195,14 +195,7 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     spm_offset_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     id += 1;
     spm_wait(id);
-    bool verify = verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], id);
-    for (int j=0;j<8;j++){
-      printf("counter data at level %d %02llx\n", spm_offset_array[i], spm_ld64(spm_offset_array[i]+j*8));
-    }
-    if (verify == false){
-      printf("[Core FW] Verification failed at level %llu\n", i);
-      exit(1);
-    }
+    verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], id);
   }
   dma_id_t data_id = id+1;
   spm_copy_to_local(request_addr, DATA_SPM_OFFSET, 64,data_id);
@@ -222,7 +215,8 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   }
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
     struct Info info = tag_check(dram_addr_array[i]);
-    bool mac_updated = is_mac_updated(dram_addr_array[i], info.way);
+    int set_index = get_cache_set_index(dram_addr_array[i]);
+    bool mac_updated = is_mac_updated(set_index, info.way);
     if (mac_updated){
       bool dirty = is_dirty_temp_entry_by_index(temp_idx_array[i]);
       swapp_temp_cache(dram_addr_array[i], info, spm_offset_array[i], dirty);
@@ -250,22 +244,18 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   }
   // --- 手順3: SPM DMAを起動し、DRAMから暗号文をSPMにコピー ---
   spm_wait(data_id);
-  mac_init();
+  mac_init(0);
   mac_buffer_set(DATA_SPM_OFFSET);
   mac_update(0, 511);
   // SPMからカウンターブロックをコピーし、update
   mac_buffer_set(spm_offset_array[HEIGHT-1]);
+  mac_update(0,63);
   mac_update(counter_bit_offset, counter_bit_offset + 7); 
-  mac_t mac_result = mac_digest(0);
   if (!tag_info.hit){
     spm_wait(tag_id);
   }
   spm_offset_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
-  mac_t expected_mac = spm_ld64(tag_info.spm_offset + dmac_byte_offset);
-  if (mac_result != expected_mac) {
-    printf("[Core FW] MAC verification failed during Verification: computed=%016llx, expected=%016llx\n", mac_result, expected_mac);
-    exit(1);
-  }
+  mac_result_compare(tag_info.spm_offset + dmac_byte_offset);
   // --- 手順7: AXI managerに対し、read bufferにあるデータをリターンするように指示 ---
   while(AES_START_REG); // busy待ち
   // write_xor(DATA_SPM_OFFSET);
@@ -276,6 +266,7 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
 
 int main(void){
   // SPMの初期化
+  SPM_SIZE_REG = 64;
   for (uint64_t i=0; i<512; i++){
     spm_sd64(i*8, 0); 
   }
@@ -288,13 +279,15 @@ int main(void){
     for(;;){
       if(AXIM_STATUS_REG & 1) break; // リクエストが来るまで待つ
     }
+    bool is_write = (AXIM_STATUS_REG & 2) != 0;
     dram_addr_t addr = AXIM_REQ_ADDR_REG;
     uint32_t req_id = AXIM_REQ_ID_REG;
     // printf("addr=%016llx\n", addr);
     if (addr == 0xFFFFFFFFFFFFFFFF){
       return 0;
     } else {
-      if(AXIM_STATUS_REG & 2){ // writeリクエスト
+      if(is_write){ // writeリクエスト
+        printf("Authentication request for addr=%016llx\n", addr);
         dma_id = Authentication(dma_id, addr,req_id);
       } else {
         dma_id = Verification(dma_id, addr,req_id);

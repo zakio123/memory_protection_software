@@ -21,88 +21,74 @@ main.cにコアによる制御のコードがある。
 - カウンターライン
     - 各カウンターラインは32個のカウンターを格納
     - 1カウンターあたりのサイズ:　(メジャーカウンター 64bit + マイナーカウンター 8bit)
-- スクラッチパッドメモリ (SPM): 4KB (64B/ライン、合計64ライン)
-    - 56ラインをデータラインとして使用
-    - 8ラインを管理領域として使用
-    - 0: ルート (Root)
-    - 1: 暗号文データ
-    - 2: データタグ
-    - 3: カウンター (レベル4)
-    - 4-6: ツリーノード (レベル3-1)
-    - 管理領域: 8ライン (64B)
-        - 各データラインに対応する管理情報 (タグ、dirty/validビット) を格納
-        - | タグ(58bit) | 未使用(4bit) | dirty(1bit) | valid(1bit) |
 
+# Software-Defined AMEソフトウェアの動かした。
+全てのビルドと実行はcad005で行っています。
 
-# セットアップ
-RISC-Vの命令シミュレータであるspikeをサブモジュールとして利用し、パッチを適用する。
+#### 手順
+1. MMIOデバイスを追加したspikeのビルド -> champsimのビルドに必要なライブラリファイルの生成
+2. ChampSimのビルド
+3. AMEソフトウェアのコンパイル
+4. 初期化データの用意
+5. 実行
 
-1. リポジトリのクローン
+## 0. 
+このリポジトリをクローンしたら、まずspikeの差分をアップデートするために以下のコマンドを実行してください。
 ```
-git clone <this_repository_url>
-cd <repository_name>
+bash setup.sh
 ```
-2. サブモジュールの初期化とパッチの適用
-以下のスクリプトを実行すると、サブモジュール（Spike）の取得と、プロジェクト固有の変更（パッチ）の適用が自動的に行われる。
-Bash
+次にChampSimで動かすトレースファイルを(https://dpc3.compas.cs.stonybrook.edu/champsim-traces/speccpu/)からダウンロードしてください。
+riscvツールチェインのコンパイラやriscv-testに含まれているファイルを一部使うので用意してください。
+
+## 1. Spikeのビルド
+spikeをビルドします。最後のところ以外は正式なものと変わりありません。
 ```
-./setup.sh
+$ cd spike
+$ mkdir build
+$ cd build
+$ ../configure
+$ make
+$ make all-spikecore 
+```
+## 2. ChampSimのビルド
+ChampSimのリポジトリに移動してください.必要なライブラリなどは公式に従ってインストールしてください。
+Makefileに先ほどビルドしたSpikeのパスをSPIKE_PREFIXへ追加してください。
+```
+$ ./config.sh champsim_config_pass.json
+$ make
+```
+エラーが出たらごめんなさい。
+
+## 3. AMEソフトウェアのコンパイル
+逐次実行アルゴリズムのファイルはvar_set_asoc_cache.cです。各種設定ファイルはconfig.hにまとめています。
+以下のコマンドでコンパイルします。
+```
+$ cd spike_simulation
+$ riscv64-unknown-elf-gcc \
+-I/riscv-tests/build/../benchmarks/../env \
+-I/riscv-tests/build/../benchmarks/common -DPREALLOCATE=1 -mcmodel=medany -static -std=gnu99 -O3 -ffast-math -fno-common -fno-builtin-printf -fno-tree-loop-distribute-patterns -march=rv64gcv \
+/riscv-tests/build/../benchmarks/common/syscalls.c \
+/riscv-tests/build/../benchmarks//common/crt.S \
+-static -nostdlib -nostartfiles -lm -lgcc \
+-T /riscv-tests/build/../benchmarks/common/test.ld \
+-I/inc/ \
+-o tmp_.elf var_set_asoc_cache.c
 ```
 
-## ビルドと実行
-1. spikeのビルド
+## 4. 初期化データの用意
+16GBとかの暗号化データとそのメタデータを毎回用意するのはとても時間がかかるので、データを暗号化して初期化した体でシミュレーションを始めています。
 ```
-cd spike
-mkdir build
-cd build
-../configure
-make
+$ cd init_data
+$ g++ -o a.out -I/path/to/spike_simulation/inc init_image_main.cc -fopenmp
+$ ./a.out image_6.bin
 ```
+これで生成した初期化イメージデータを次で、ChampSimに渡します。
 
-2. プロジェクトのコンパイルと実行
-riscv64-unknown-elf-gccを使用して、プロジェクトのソースコードをコンパイルする。
+## 5. 実行
+ChampSimのディレクトリへ移動します。
+以下のコマンドでシミュレーションを開始します.実行命令数などはうまく調整してください。
 ```
-cd spike_simulation
-(コンパイル)
-../spike/build/spike <binary_file>
+bin/champsim -i 10000000 -w 4000000 \
+--spike_kernel /path/to/elf_file  --spike_m 65536   --spike_init_image /path/to/init_image_file \
+/path/to/trace_data_file
 ```
-
-
-<!-- 構成
-- 64B単位の暗号化と整合性検証
-- 64B単位のメモリアクセスを受け取り、暗号化と整合性保証を行う 
-- 全部で64MBの保護領域 0x0000_0000-0x03FF_FFFF
-    - 1M個のキャッシュライン
-    - 32K個のカウンターライン
-    - 32分木なら高さ4
-        - root : 8B
-        - height_1 : 32(1line),64B
-        - height_2 : 1024(32line),2KB
-        - height_3 : 32768(1024line),64KB
-        - height_4 : _(),2MB
-        - アドレス的には|height_4|height_3|height_2|height_1
-- タグは8B、総量は8MB
-- SPMは4096B=4KB容量
-    - 64Bごとの保存・格納
-    - 8Bで1ラインの情報管理
-        - |タグ(58bit)|未使用(4bit)|dirty(1bit)|valid(1bit)|
-    - 56line使用可能
-    - 0line:root
-    - 1line:暗号文
-    - 2line:タグ
-    - 3line:暗号用カウンター(height_4)
-    - 4line-6line:height_3-height_1
-    - 56-63line:管理ビット
-- カウンターライン内のカウンターの構成
-    - カウンターが32個入る
-    - major counter:64bit
-    - minor counter:8bit,8*32=256
-    - tagのために64bit空いている
-- ツリーのルートはSPM内に保存
-- Hashアルゴリズム：FNV-1a 64bit
-- 暗号化アルゴリズム：AES-CTR 128bit
-- riscv_core.hppに検証認証アルゴリズムを書いている
-    - どちらのアルゴリズムもrootまで辿っている -->
-
-<!-- システム概要の図を貼りたい -->
-![システム概要の図](./image/image.png)

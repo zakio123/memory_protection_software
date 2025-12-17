@@ -1,5 +1,8 @@
 #include "config.h"
 
+spm_offset_t temp_pool_stack[TEMP_POOL_SIZE];
+int temp_pool_top;
+
 // --- Pool操作関数 ---
 static inline spm_offset_t pop_temp_buffer() {
     // if (temp_pool_top < 0) {
@@ -48,21 +51,13 @@ static int pos_in_active_list[TEMP_POOL_SIZE]; // 逆引き: temp_tableのindex 
 static inline void temp_system_init(spm_offset_t temp_region_base){
     // テーブル初期化
     for (int i = 0; i < TEMP_POOL_SIZE; i++) {
-        // { temp_table[i].valid = false;
-          // temp_table[i].dirty = false;
-          // temp_table[i].dram_addr = 0;
-          // temp_table[i].spm_offset = 0;
-          // temp_table[i].ref_count = 0;
-          // temp_table[i].loaded = false;}
         temp_valid[i] = false;
         temp_dirty[i] = false;
         temp_dram_addr[i] = 0;
         temp_spm_offset[i] = 0;
         temp_ref_count[i] = 0;
         temp_loaded[i] = false;
-        // ★空きスタックに全てのインデックスを積む
         free_indices[i] = i;
-        // 逆引きマップ初期化（念のため-1）
         pos_in_active_list[i] = -1;
     }
     free_indices_top = TEMP_POOL_SIZE - 1; // スタックトップ
