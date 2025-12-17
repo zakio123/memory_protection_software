@@ -18,12 +18,10 @@ void tmu_logic_t::internal_reset() {
 int tmu_logic_t::check_idx(int slot_idx) const {
     if (slot_idx < 0 || slot_idx >= TOTAL_SLOTS) {
       std::cerr << "check_idx: idx out of range: " << slot_idx << std::endl;
-      exit(1);
       return -1;
     }
     if (!tmu_valid[slot_idx]) {
       std::cerr << "check_idx: idx not valid: " << slot_idx << std::endl;
-      exit(1);
       return -1;
     }
     return 0;
@@ -42,8 +40,7 @@ int tmu_logic_t::check_idx(int slot_idx) const {
       if (tmu_valid[ahead_set_idx + k] && tmu_tag[ahead_set_idx + k] == dram_addr){
         hit = true;
         hit_way = k;
-        // タグチェックでヒットした時にLRU更新を行う
-        tmu_tree_lru[set_idx] = update_tree_lru(tmu_tree_lru[set_idx], hit_way);
+        // tmu_tree_lru[set_idx] = update_tree_lru(tmu_tree_lru[set_idx], hit_way);
         // hit wayをslot_idxからのオフセットで返す
         reg_t res = (hit_way << 32) | (hit ? 1 : 0);
         if (hit_way >= CACHE_WAYS){
@@ -65,6 +62,33 @@ int tmu_logic_t::check_idx(int slot_idx) const {
       }
     }
     
+    reg_t res = ((reg_t)(-1) << 32) | 0;
+    return res;
+  }
+  reg_t tmu_logic_t::do_light_tag_check(long slot_idx, dram_addr_t dram_addr) {
+    int search_range = std::min(PHYSICAL_WAYS, int(slot_idx & 0xFFFF));
+    slot_idx = slot_idx >> 32;
+    // slot_idxを物理wayに変換して、相当するset内でタグチェックを行う
+    int ahead_set_idx = slot_idx;
+    reg_t hit = false;
+    reg_t hit_way = -1;
+    for (int k = 0;k < search_range;k++){
+      if (tmu_valid[ahead_set_idx + k]) {
+        if (tmu_tag[ahead_set_idx + k] == dram_addr){
+          hit = true;
+          hit_way = k;
+          reg_t res = (hit_way << 32) | (hit ? 1 : 0);
+          return res;
+        }
+      }
+    }
+    for (int k = 0;k < search_range;k++){
+      if (!tmu_valid[ahead_set_idx + k]){
+        hit = false;
+        hit_way = k;
+        return (hit_way << 32) | 0;
+      }
+    }
     reg_t res = ((reg_t)(-1) << 32) | 0;
     return res;
   }

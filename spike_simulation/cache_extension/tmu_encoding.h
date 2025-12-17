@@ -21,6 +21,7 @@
 #define F7_TMU_RETURN_METADATA 0x0A
 #define F7_TMU_SET_VALID    0x0C
 #define F7_TMU_IS_VALID     0x0D
+#define F7_TMU_LIGHT_TAG_CHECK 0x0E
 /* --- Spike (C++) 用ヘルパマクロ --- */
 /* Match値生成: (funct7 << 25) | (funct3 << 12) | opcode */
 #define TMU_MATCH(f7)  (((f7) << 25) | (TMU_F3 << 12) | TMU_OPCODE)

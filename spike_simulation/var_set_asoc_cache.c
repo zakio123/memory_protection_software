@@ -302,6 +302,9 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
 }
 
 int main(void){
+  // グローバル配列へのアクセスの比較
+  // loadをいじる
+  uint64_t s,e;
   // SPMの初期化
   SPM_SIZE_REG = 64;
   for (uint64_t i=0; i<512; i++){
@@ -319,6 +322,18 @@ int main(void){
     bool is_write = (AXIM_STATUS_REG & 2) != 0;
     dram_addr_t addr = AXIM_REQ_ADDR_REG;
     uint32_t req_id = AXIM_REQ_ID_REG;
+    index_t i = addr % 512;
+    index_t j = req_id;
+    set_block_valid(i,j);
+    // s = read_instret();
+    // set_loaded(i,j);
+    // e = read_instret();
+    // printf("set_loaded: %llu\n", e - s);
+    s = read_instret();
+    set_block_dirty(i,j);
+    e = read_instret();
+    printf("set_block_dirty: %llu\n", e - s);
+    exit(1);
     if (addr == 0xFFFFFFFFFFFFFFFF){
       return 0;
     } else {

@@ -50,4 +50,6 @@ public:
 
   reg_t do_set_valid(int idx);
   reg_t do_is_valid(int idx);
+
+  reg_t do_light_tag_check(long slot_idx, dram_addr_t dram_addr);
 };
