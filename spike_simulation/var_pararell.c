@@ -76,7 +76,6 @@ static inline  req_state_t step(AddressContext *context, index_t list_i, dma_id_
     bool *load_needed = context->load_needed;
     dram_addr_t *path_dram_addrs = context->path_dram_addrs;
 while(1){
-
     uint64_t start_instret = read_instret();
   switch (current_state) {
     case RS_PATH_TAG_WALK:{
@@ -88,7 +87,7 @@ while(1){
             path_indices[HEIGHT - 1 - i] = index;
             dram_addr_t dram_addr = ((index >> 5) << 6) + level_base[HEIGHT - i];
             path_dram_addrs[HEIGHT - 1 - i] = dram_addr;
-            light_tag_info_t info = light_tag_check(dram_addr);
+            struct Info info = tag_check(dram_addr);
             if (info.hit){
                 context->load_start_index = HEIGHT - i;
                 index_t set_index = get_cache_set_index(dram_addr);
@@ -131,15 +130,23 @@ while(1){
         uint64_t e_1 = read_instret();
         uint64_t mac_block_addr = get_datamacblock_addr(request_addr);
         struct Info mac_info = tag_check(mac_block_addr);
+        uint64_t e_2 = read_instret();
         context->mac_spm_offset = mac_info.spm_offset;
         context->tag_hit = mac_info.hit;
         context->tag_way = mac_info.way;
+        uint64_t e_3 = read_instret();
         if (mac_info.hit == false){
             start_id++;
             context->wait_tag_dma_id = ensureBlockInSpm(mac_block_addr, mac_info, start_id);
         }
+        uint64_t e_4 = read_instret();
         acquire_cache_block(get_cache_set_index(mac_block_addr), mac_info.way);
-        uint64_t e_2 = read_instret();
+        uint64_t e_5 = read_instret();
+        printf("aquire_cache_block time %llu\n", e_5 - e_4);
+        printf("ensureBlockInSpm time %llu\n", e_4 - e_3);
+        printf("mac_tag_check time %llu\n", e_3 - e_2);
+        printf("data_spm_copy time %llu\n", e_2 - e_1);
+        exit(1);
         if (context->load_start_index == HEIGHT){
             if (context->is_write){
                 context->level = context->load_start_index;
@@ -153,15 +160,6 @@ while(1){
             context->level = HEIGHT - 1;  
         } 
         *global_dma_id = start_id;
-        uint64_t e_3 = read_instret();
-        // printf("total %d\n", e_3 - start_time);
-        // printf("tag walk %d\n", end_time - start_time);
-        // printf("dma %d\n", e_0 - end_time);
-        // printf("data block %d\n", e_1 - e_0);
-        // printf("mac block %d\n", e_2 - e_1);
-        // printf("state change %d\n", e_3 - e_2);
-        // exit(1);
-        while(!dma_wait(start_id));
         break;
     }
     case RS_PATH_VERIFY:{
@@ -286,8 +284,6 @@ while(1){
                             swapp_temp_cache(dram_addr, info_i, temp_spm, dirty);
                             setParentUpdated(set_index, info_i.way);
                         } else{
-                            // temp_id = evicted_node_update(info_i, temp_id);
-                            // swapp_temp_cache(dram_addr, info_i, temp_spm, dirty);
                             if (dirty){
                                 spm_write_back(temp_spm, dram_addr, 64, 0);
                             }
@@ -452,12 +448,12 @@ int main(void){
   temp_system_init(CACHE_DATA_SPM_BASE + TOTAL_SLOTS * 64);
   dma_id_t dma_id = 0;
   int active_processes = 0;
-  const int MAX_PROCESSES = 1;
-  AddressContext process_list[1] = {0};
-  req_state_t states[1] = {RS_IDLE};
-  dram_addr_t request_addr[1] = {0};
+  const int MAX_PROCESSES = 3;
+  AddressContext process_list[3] = {0};
+  req_state_t states[3] = {RS_IDLE};
+  dram_addr_t request_addr[3] = {0};
   //   空きスロット管理
-  int free_slots[1] = {0};
+  int free_slots[3] = {0};
   for (int i=0;i<MAX_PROCESSES;i++){
     free_slots[i] = MAX_PROCESSES - 1 - i;
   }
@@ -499,11 +495,7 @@ int main(void){
           states[i] = RS_IDLE;
           break;
       } else if (states[i] != RS_IDLE){
-        req_state_t state = states[i]; 
-        // printf("Process %d: Current State %d\n", i, state);
-        start_instrt = read_instret();
         states[i] = step(&process_list[i], i, &dma_id, states[i],request_addr[i]);
-        end_instrt = read_instret();
         // uint64_t elapsed = end_instrt - start_instrt;
         // if (states[i] != state){
         //     printf("Process %d: State changed from %d to %d, elapsed instret: %lu\n", i, state, states[i], elapsed);

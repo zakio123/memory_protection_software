@@ -12,6 +12,9 @@ void tmu_logic_t::internal_reset() {
       tmu_ref_count[i]  = 0;
       tmu_tag[i]  = 0;
       tmu_spm_offset[i] = CACHE_DATA_SPM_BASE + (i * 64);
+      for (int j = 0; j < 32; j++) {
+        tmu_bit_array[i][j] = false;
+      }
     }
   }
 
@@ -230,6 +233,31 @@ int tmu_logic_t::check_idx(int slot_idx) const {
     } else {
       return (reg_t)0;
     }
+  }
+  reg_t tmu_logic_t::do_set_bit(int idx, int bit_pos) {
+    if (bit_pos < 0 || bit_pos >= TMU_BIT_ARRAY_SIZE) {
+      std::cerr << "temp_set_bit: bit_pos out of range: " << bit_pos << std::endl;
+      return (reg_t)-1;
+    }
+    tmu_bit_array[idx][bit_pos] = true;
+    return (reg_t)0;
+  }
+
+  reg_t tmu_logic_t::do_clear_bit(int idx, int bit_pos) {
+    if (bit_pos < 0 || bit_pos >= TMU_BIT_ARRAY_SIZE) {
+      std::cerr << "temp_clear_bit: bit_pos out of range: " << bit_pos << std::endl;
+      return (reg_t)-1;
+    }
+    tmu_bit_array[idx][bit_pos] = false;
+    return (reg_t)0;
+  }
+
+  reg_t tmu_logic_t::do_is_bit_set(int idx, int bit_pos) {
+    if (bit_pos < 0 || bit_pos >= TMU_BIT_ARRAY_SIZE) {
+      std::cerr << "temp_is_bit_set: bit_pos out of range: " << bit_pos << std::endl;
+      return (reg_t)-1;
+    }
+    return tmu_bit_array[idx][bit_pos] ? (reg_t)1 : (reg_t)0;
   }
 
 uint16_t tmu_logic_t::update_tree_lru(uint16_t current_lru, int accessed_way) const {

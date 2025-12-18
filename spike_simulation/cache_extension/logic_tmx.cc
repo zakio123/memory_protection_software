@@ -178,4 +178,3 @@ int tmx_logic_t::check_idx(int idx) const {
     }
     return (reg_t)free_spm_offset_stack[free_spm_offset_top--];
   }
-

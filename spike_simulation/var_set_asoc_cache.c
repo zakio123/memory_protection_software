@@ -21,6 +21,7 @@ static inline uint64_t read_instret() {
     return val;
 }
 
+bool instret_dump = false;
 
 
 dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
@@ -44,8 +45,6 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
         way_index = info.way;
         temp_idx_array[HEIGHT - 1 - i] = -1;
         index_t set_index = get_cache_set_index(dram_addr);
-        // printf("tree verification node cache acquire S:%u W:%u\n", set_index, info.way);
-        // acquire_cache_block(set_index, info.way);
         break;
       }
       #else
@@ -184,6 +183,7 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
 }
 
 dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
+  uint64_t start_time = read_instret();
   // HEIGHT-1がリーフ、0が高さ1
   uint64_t path_indecis[HEIGHT] = {0};
   spm_offset_t spm_offset_array[HEIGHT] = {0};
@@ -198,17 +198,17 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
       path_indecis[HEIGHT - 1 - i ] = index;
       dram_addr_t dram_addr = COUNTER_BASE + index / 32 * 64 + calculate_level_base_addr(HEIGHT - i);
       dram_addr_array[HEIGHT - 1 - i] = dram_addr;
-      #ifdef ENABLE_TMU_HARDWARE
-      struct Info info = tag_check(dram_addr);
-      if (info.hit){
-        load_start_index = HEIGHT - i;
-        spm_offset_array[HEIGHT - 1 - i] = info.spm_offset;
-        way_index = info.way;
-        temp_idx_array[HEIGHT - 1 - i] = -1;
-        index_t set_index = get_cache_set_index(dram_addr);
-        break;
-      }
-      #else
+      // #ifdef ENABLE_TMU_HARDWARE
+      //   light_tag_info_t info = light_tag_check(dram_addr);
+      //   if (info.hit){
+      //     load_start_index = HEIGHT - i;
+      //     spm_offset_array[HEIGHT - 1 - i] = info.spm_offset;
+      //     way_index = info.way;
+      //     temp_idx_array[HEIGHT - 1 - i] = -1;
+      //     index_t set_index = get_cache_set_index(dram_addr);
+      //     break;
+      //   }
+      // #else
         light_tag_info_t info = light_tag_check(dram_addr);
         if (info.hit){
           load_start_index = HEIGHT - i;
@@ -220,7 +220,7 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
           temp_idx_array[HEIGHT - 1 - i] = -1;
           break;
         }
-      #endif
+      // #endif
   }
   uint64_t tag_end = read_instret();
   dma_id_t tmp_id = id;
@@ -233,21 +233,28 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     spm_copy_to_local(dram_addr, spm_offset_array[i], 64, tmp_id);
     acquire_temp_entry_by_index(temp_idx_array[i]);
   }
+  uint64_t load_end = read_instret();
+  uint64_t spm_wait_time = 0;
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
     spm_offset_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     id += 1;
+    uint64_t spm_wait_start = read_instret();
     spm_wait(id);
+    uint64_t spm_wait_end = read_instret();
+    spm_wait_time += (spm_wait_end - spm_wait_start);
     verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], id);
-    mac_wait(id);
   }
+  uint64_t verify_end = read_instret();
   dma_id_t data_id = id+1;
   spm_copy_to_local(request_addr, DATA_SPM_OFFSET, 64,data_id);
+  uint64_t load_data_end = read_instret();
   uint64_t major_counter = spm_ld64(spm_offset_array[HEIGHT-1]);
   // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
   uint64_t counter_bit_offset = 64 + (request_addr / 64) % 32 * 8;
   uint64_t minor_counter = spm_ld64(spm_offset_array[HEIGHT-1] + (counter_bit_offset / 64) * 8);
   uint8_t minor_counter_value = (minor_counter >> ((counter_bit_offset % 64) )) & 0xFF;
   set_seed(major_counter, minor_counter_value, request_addr);
+  uint64_t set_seed_end = read_instret();
   // SPMに当該MACブロックがあるかを確認。なければコピー。
   dram_addr_t datamacblock_addr = get_datamacblock_addr(request_addr);
   struct Info tag_info = tag_check(datamacblock_addr);
@@ -258,7 +265,6 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   }
   index_t set_index = get_cache_set_index(datamacblock_addr);
   acquire_cache_block(set_index, tag_info.way);
-
   uint64_t start_inst = read_instret();
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
     struct Info info = tag_check(dram_addr_array[i]);
@@ -277,7 +283,9 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     }
     invalidate_temp_entry_by_index(temp_idx_array[i]);
   }
+  uint64_t end_inst = read_instret();
   // --- 手順3: SPM DMAを起動し、DRAMから暗号文をSPMにコピー ---
+  uint64_t e = read_instret();
   spm_wait(data_id);
   mac_init(tag_id);
   mac_buffer_set(DATA_SPM_OFFSET);
@@ -285,27 +293,42 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   // SPMからカウンターブロックをコピーし、update
   mac_buffer_set(spm_offset_array[HEIGHT-1]);
   mac_update(0,63);
-  mac_update(counter_bit_offset, counter_bit_offset + 7); 
+  mac_update(counter_bit_offset, counter_bit_offset + 7);
+  uint64_t w_s = read_instret();
   if (!tag_info.hit){
     spm_wait(tag_id);
   }
+  uint64_t w_e = read_instret();
   spm_offset_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
   mac_result_compare(tag_info.spm_offset + dmac_byte_offset);
-  mac_wait(tag_id);
+  uint64_t s = read_instret();
   // --- 手順7: AXI managerに対し、read bufferにあるデータをリターンするように指示 ---
   while(AES_START_REG); // busy待ち
   // write_xor(DATA_SPM_OFFSET);
+  asm volatile ("response_point_tag:");
   xor_start(false, true,req_id,DATA_SPM_OFFSET);
   axim_read_return(req_id);
   release_cache_block(set_index, tag_info.way);
+  asm volatile ("response_point_end:");
+  uint64_t end_time = read_instret();
+  if (instret_dump){
+    printf("Total instret time %d\n", end_time - start_time);
+    printf("tag check time %d\n", tag_end - verify_start);
+    printf("load time %d\n", load_end - tag_end);
+    printf("verify time %d verify level %d\n", verify_end - load_end, load_start_index);
+    printf("spm wait time %d\n", spm_wait_time);
+    printf("swapp time %d\n", end_inst - start_inst);
+    printf("set seed time %d\n", set_seed_end - load_data_end); 
+    printf("load mac time %d\n", start_inst - set_seed_end);
+    printf("mac update time %d\n", s - e);
+    printf("response time %d\n", end_time - s);
+  }
   return tag_id;
 }
 
 int main(void){
   // グローバル配列へのアクセスの比較
   // loadをいじる
-  uint64_t s,e;
-  // SPMの初期化
   SPM_SIZE_REG = 64;
   for (uint64_t i=0; i<512; i++){
     spm_sd64(i*8, 0); 
@@ -315,6 +338,7 @@ int main(void){
   init_cache_system();
   temp_system_init(CACHE_DATA_SPM_BASE + CACHE_SETS * CACHE_WAYS * 64);
   dma_id_t dma_id = 0;
+  int total = 0;
   while(1){
     for(;;){
       if(AXIM_STATUS_REG & 1) break; // リクエストが来るまで待つ
@@ -322,18 +346,13 @@ int main(void){
     bool is_write = (AXIM_STATUS_REG & 2) != 0;
     dram_addr_t addr = AXIM_REQ_ADDR_REG;
     uint32_t req_id = AXIM_REQ_ID_REG;
-    index_t i = addr % 512;
-    index_t j = req_id;
-    set_block_valid(i,j);
-    // s = read_instret();
-    // set_loaded(i,j);
-    // e = read_instret();
-    // printf("set_loaded: %llu\n", e - s);
-    s = read_instret();
-    set_block_dirty(i,j);
-    e = read_instret();
-    printf("set_block_dirty: %llu\n", e - s);
-    exit(1);
+    total += 1;
+    if (total % 1000 == 999){
+      printf("Processed %d requests\n", total);
+      instret_dump = true;
+    } else {
+      instret_dump = false;
+    }
     if (addr == 0xFFFFFFFFFFFFFFFF){
       return 0;
     } else {
@@ -345,214 +364,6 @@ int main(void){
     }
   }
 }
-
-
-// uint64_t decryption_only(uint64_t id, uint64_t request_addr){
-//   uint64_t counterblock_addr = get_counterblock_addr(request_addr);
-//   struct Info tag_info = tag_check(counterblock_addr);
-//     // --- 手順1: アドレスとカウンター値を元にSeed値を計算し、AES_moduleに書き込み起動する ---
-//   // printf("[Core FW] Decryption: spm_offset=%016llx\n", spm_offset);
-//   uint64_t counter_id = id;
-//   if (!tag_info.hit){
-//     counter_id += 1;
-//     counter_id = ensureBlockInSpm(counterblock_addr, tag_info, counter_id);
-//   }
-//   uint64_t data_id = counter_id + 1;
-//   spm_copy_to_local(request_addr, DATA_SPM_OFFSET, 64,data_id);
-//   if (!tag_info.hit){
-//     spm_wait(counter_id);
-//   }
-//   uint64_t counter_bit_offset = 64 + (request_addr / 64) % 32 * 8;
-//   uint64_t major_counter = spm_ld64(tag_info.spm_offset);
-//   uint64_t minor_counter_byte_address = tag_info.spm_offset + (counter_bit_offset / 64) * 8;
-//   uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
-//   uint8_t minor_counter_value = (minor_counter >> ((counter_bit_offset % 64) )) & 0xFF;
-//   set_seed(major_counter, minor_counter_value, request_addr);
-//   // --- 手順2: AXI ManagerにOTPとともにXORを実行し、暗号化を指示 ---
-//   // SPM DMAを起動し、DRAMから暗号文をSPMにコピー
-//   while(AES_START_REG); // busy待ち    
-//   spm_wait(data_id);
-//   write_xor(DATA_SPM_OFFSET);
-//   xor_start();
-//   copy_xor(DATA_SPM_OFFSET);
-//   axim_write(DATA_SPM_OFFSET);
-//   // // --- 手順3: SPM DMAを起動し、SPMからDRAMへ暗号文をwrite back ---
-//   axim_read_return();
-//   return data_id;
-// }
-// uint64_t encryption_only(uint64_t id, uint64_t request_addr){
-//   uint64_t counterblock_addr = get_counterblock_addr(request_addr);
-//     struct Info tag_info = tag_check(counterblock_addr);
-//     uint64_t counter_id = id;
-//     if (!tag_info.hit){
-//       counter_id += 1;
-//       counter_id = ensureBlockInSpm(counterblock_addr, tag_info, counter_id);
-//       spm_wait(counter_id);
-//     }
-//     uint64_t counter_bit_offset = 64 + (request_addr / 64) % 32 * 8;
-//     uint64_t major_counter = spm_ld64(tag_info.spm_offset);
-//     // minor_counterのload
-//     // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
-//     uint64_t minor_counter_byte_address = tag_info.spm_offset + (counter_bit_offset / 64) * 8;
-//     uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
-//     uint8_t minor_counter_value = (minor_counter >> ((counter_bit_offset % 64) )) & 0xFF;
-//     minor_counter_value += 1; // インクリメント
-//     set_seed(major_counter, minor_counter_value, request_addr);
-//     // minor counterの書き戻し
-//     uint64_t shift_amount = (counter_bit_offset % 64);
-//     uint64_t clear_mask = ~(0xFFULL << shift_amount);
-//     uint64_t cleared_minor_counter = minor_counter & clear_mask;
-//     // --- 新しい値を正しい位置へシフトする ---
-//     uint64_t shifted_new_value = (minor_counter_value);
-//     shifted_new_value <<= shift_amount;
-//     uint64_t final_word = cleared_minor_counter | shifted_new_value;
-//     // 書き戻し
-//     spm_sd64(minor_counter_byte_address, final_word);
-//     // ブロックをdirtyに設定する
-//     set_block_dirty(tag_info.spm_offset);
-//     // --- 手順2: AXI ManagerにOTPとともにXORを実行し、暗号化を指示 ---
-//     // SPM DMAを起動し、DRAMから平文をSPMにコピー
-//     axim_copy(DATA_SPM_OFFSET);
-//     while(AES_START_REG); // busy待ち
-//     write_xor(DATA_SPM_OFFSET);
-//     xor_start();
-//     copy_xor(DATA_SPM_OFFSET);
-//     // --- 手順3: SPM DMAを起動し、SPMからDRAMへ暗号文をwrite back ---
-//     spm_write_back(DATA_SPM_OFFSET, request_addr, 64,counter_id + 1);
-//     axim_write_return();
-//     return counter_id + 1;
-// }
-// uint64_t write_only(uint64_t id, uint64_t request_addr){
-//     axim_copy(DATA_SPM_OFFSET);
-//     // --- 手順3: SPM DMAを起動し、SPMからDRAMへ暗号文をwrite back ---
-//     // id += 1;
-//     spm_write_back(DATA_SPM_OFFSET, request_addr, 64,0);
-//     axim_write_return();
-//     return id;
-// }
-// uint64_t read_only(uint64_t id, uint64_t request_addr){
-//     // struct AddressContext ctx = setupAddressContext();
-//     id += 1;
-//     spm_copy_to_local(request_addr, DATA_SPM_OFFSET, 64,id);
-//     spm_wait(id);
-//     axim_write(DATA_SPM_OFFSET);
-//     axim_read_return();
-//     return id;
-// }
-// uint64_t decryption_tag(uint64_t id, uint64_t request_addr){
-//   uint64_t counterblock_addr = get_counterblock_addr(request_addr);
-//   struct Info tag_info = tag_check(counterblock_addr);
-//   uint64_t counter_id = id;
-//   if (!tag_info.hit){
-//     counter_id += 1;
-//     counter_id = ensureBlockInSpm(counterblock_addr, tag_info, counter_id);
-//   }
-//   uint64_t data_id = counter_id + 1;
-//   spm_copy_to_local(request_addr, DATA_SPM_OFFSET, 64,data_id);
-//   if (!tag_info.hit){
-//     spm_wait(counter_id);
-//   }
-//   uint64_t counter_bit_offset = 64 + (request_addr / 64) % 32 * 8;
-//   uint64_t major_counter = spm_ld64(tag_info.spm_offset);
-//   // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
-//   uint64_t minor_counter_byte_address = tag_info.spm_offset + (counter_bit_offset / 64) * 8;
-//   uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
-//   uint8_t minor_counter_value = (minor_counter >> ((counter_bit_offset % 64) )) & 0xFF;
-//   set_seed(major_counter, minor_counter_value, request_addr);
-//   struct Info data_tag_info = tag_check(get_datamacblock_addr(request_addr));
-//     uint64_t tag_id = data_id;
-//     if (!data_tag_info.hit){
-//       tag_id += 1;
-//       tag_id = ensureBlockInSpm(get_datamacblock_addr(request_addr), data_tag_info, tag_id);
-//     }
-//     spm_wait(data_id);
-//     while(AES_START_REG); // busy待ち
-//     mac_init();
-//     mac_buffer_set(DATA_SPM_OFFSET);
-//     mac_update(0, 511);
-//     // SPMからカウンターブロックをコピーし、update
-//     mac_buffer_set(tag_info.spm_offset);
-//     mac_update(counter_bit_offset, counter_bit_offset + 7); 
-//     // --- 手順6: Hashモジュールの計算完了を待ち、結果を取得しSPMから正しい結果をload ---
-//     // SPMに当該MACブロックがあるかを確認。なければコピー。
-//     uint64_t mac_result = mac_digest();
-//     if (!data_tag_info.hit){
-//       spm_wait(tag_id);
-//     }
-//     uint64_t dmac_byte_offset = (request_addr / 64) % 8 * 8;
-//     uint64_t expected_mac = spm_ld64(data_tag_info.spm_offset + dmac_byte_offset);
-//     if (mac_result != expected_mac) {
-//         exit(1);
-//     }
-//     write_xor(DATA_SPM_OFFSET);
-//     xor_start();
-//     copy_xor(DATA_SPM_OFFSET);
-//     axim_write(DATA_SPM_OFFSET);
-//     axim_read_return();
-//     return tag_id;
-// }
-// uint64_t encryption_tag(uint64_t id, uint64_t request_addr){
-//   uint64_t counterblock_addr = get_counterblock_addr(request_addr);
-//   struct Info tag_info = tag_check(counterblock_addr);
-//   uint64_t counter_id = id;
-//   if (!tag_info.hit){
-//     counter_id += 1;
-//     counter_id = ensureBlockInSpm(counterblock_addr, tag_info, counter_id);
-//     spm_wait(counter_id);
-//   }
-//   axim_copy(DATA_SPM_OFFSET);
-//   // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
-//   uint64_t major_counter = spm_ld64(tag_info.spm_offset);
-//   uint64_t counter_bit_offset = 64 + (request_addr / 64) % 32 * 8;
-//   uint64_t minor_counter_byte_address = tag_info.spm_offset + (counter_bit_offset / 64) * 8;
-//   uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
-//   uint8_t minor_counter_value = (minor_counter >> ((counter_bit_offset % 64))) & 0xFF;
-//   uint8_t new_minor_counter_value = minor_counter_value + 1; // インクリメント
-//   // minor counterの書き戻し
-//   uint64_t shift_amount = (counter_bit_offset % 64);
-//   uint64_t clear_mask = ~(0xFFULL << shift_amount);
-//   uint64_t cleared_minor_counter = minor_counter & clear_mask;
-//   // --- 新しい値を正しい位置へシフトする ---
-//   uint64_t shifted_new_value = (new_minor_counter_value) << shift_amount;
-//   uint64_t final_word = cleared_minor_counter | shifted_new_value;
-//   // 書き戻し
-//   spm_sd64(minor_counter_byte_address, final_word);
-//   set_seed(major_counter, new_minor_counter_value, request_addr);
-//   set_block_dirty(tag_info.spm_offset);    
-//   // --- 手順3: AXI ManagerにOTPとともにXORを実行し、暗号化を指示 ---
-//   uint64_t datamacblock_addr = get_datamacblock_addr(request_addr);
-//   struct Info data_tag_info = tag_check(datamacblock_addr);
-//   uint64_t tag_id = counter_id;
-//   if (!data_tag_info.hit){
-//     tag_id += 1;
-//     tag_id = ensureBlockInSpm(datamacblock_addr, data_tag_info, tag_id);
-//   }
-//     while(AES_START_REG); // busy待ち
-//     write_xor(DATA_SPM_OFFSET);
-//     xor_start();
-//     copy_xor(DATA_SPM_OFFSET);
-//     spm_write_back(DATA_SPM_OFFSET, request_addr, 64,tag_id + 1);
-//     axim_write_return();
-//     // --- 手順5: HashモジュールにSPM上の暗号文と書き込んだカウンターを元にMAC計算を指示 ---
-//     // ハッシュ関数の内部状態を初期化
-//     // SPMに当該MACブロックがあればそのままmodify,なければ今あるブロックをDRAMにwrite backしてから適切なブロックをSPMにDRAMコピー
-//     mac_init();
-//     mac_buffer_set(DATA_SPM_OFFSET); 
-//     mac_update(0, 511);
-//     mac_buffer_set(tag_info.spm_offset);
-//     mac_update(counter_bit_offset, counter_bit_offset + 7); // 8bit = 1B
-//     // MAC計算完了
-//     uint64_t computed_mac = mac_digest();
-//     if (!data_tag_info.hit){
-//       spm_wait(tag_id);
-//     }
-//     // --- 手順6: Hashモジュールの計算完了を待ち、結果をSPMに保存 ---
-//     uint64_t dmac_byte_offset = (request_addr / 64) % 8 * 8;
-//     spm_sd64(data_tag_info.spm_offset + dmac_byte_offset, computed_mac);
-//     // SPM上のMACブロックをDirtyに設定する
-//     set_block_dirty(data_tag_info.spm_offset);
-//     return tag_id+1;
-// }
 
 
  

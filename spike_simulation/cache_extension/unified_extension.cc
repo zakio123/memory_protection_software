@@ -62,6 +62,13 @@
 #define MASK_TMU_IS_VALID     TMU_MASK
 #define MATCH_TMU_LIGHT_TAG_CHECK TMU_MATCH(F7_TMU_LIGHT_TAG_CHECK)
 #define MASK_TMU_LIGHT_TAG_CHECK  TMU_MASK
+#define MATCH_TMU_SET_BIT    TMU_MATCH(F7_TMU_SET_BIT)
+#define MASK_TMU_SET_BIT     TMU_MASK
+#define MATCH_TMU_CLEAR_BIT  TMU_MATCH(F7_TMU_CLEAR_BIT)
+#define MASK_TMU_CLEAR_BIT   TMU_MASK
+#define MATCH_TMU_IS_BIT_SET TMU_MATCH(F7_TMU_IS_BIT_SET)
+#define MASK_TMU_IS_BIT_SET  TMU_MASK
+
 
 class unified_extension_t : public extension_t {
 public:
@@ -390,6 +397,39 @@ public:
       &unified_extension_t::exec_tmu_light_tag_check,
       &unified_extension_t::exec_tmu_light_tag_check
     });
+    v.push_back((insn_desc_t){
+      MATCH_TMU_SET_BIT, MASK_TMU_SET_BIT,
+      &unified_extension_t::exec_tmu_set_bit,
+      &unified_extension_t::exec_tmu_set_bit,
+      &unified_extension_t::exec_tmu_set_bit,
+      &unified_extension_t::exec_tmu_set_bit,
+      &unified_extension_t::exec_tmu_set_bit,
+      &unified_extension_t::exec_tmu_set_bit,
+      &unified_extension_t::exec_tmu_set_bit,
+      &unified_extension_t::exec_tmu_set_bit
+    });
+    v.push_back((insn_desc_t){
+      MATCH_TMU_CLEAR_BIT, MASK_TMU_CLEAR_BIT,
+      &unified_extension_t::exec_tmu_clear_bit,
+      &unified_extension_t::exec_tmu_clear_bit,
+      &unified_extension_t::exec_tmu_clear_bit,
+      &unified_extension_t::exec_tmu_clear_bit,
+      &unified_extension_t::exec_tmu_clear_bit,
+      &unified_extension_t::exec_tmu_clear_bit,
+      &unified_extension_t::exec_tmu_clear_bit,
+      &unified_extension_t::exec_tmu_clear_bit
+    });
+    v.push_back((insn_desc_t){
+      MATCH_TMU_IS_BIT_SET, MASK_TMU_IS_BIT_SET,
+      &unified_extension_t::exec_tmu_is_bit_set,
+      &unified_extension_t::exec_tmu_is_bit_set,
+      &unified_extension_t::exec_tmu_is_bit_set,
+      &unified_extension_t::exec_tmu_is_bit_set,
+      &unified_extension_t::exec_tmu_is_bit_set,
+      &unified_extension_t::exec_tmu_is_bit_set,
+      &unified_extension_t::exec_tmu_is_bit_set,
+      &unified_extension_t::exec_tmu_is_bit_set
+    });
     return v;
   }
 
@@ -694,6 +734,39 @@ private:
     long slot_idx = (long)p->get_state()->XPR[insn.rs1()];
     uint64_t addr = (uint64_t)p->get_state()->XPR[insn.rs2()];
     reg_t res = ext->logic_tmu.do_light_tag_check(slot_idx,addr);
+    int rd = insn.rd();
+    if (rd != 0) { // x0への書き込みは無視
+        p->get_state()->XPR.write(rd, res);
+    }
+    return pc + 4;
+  }
+  static reg_t exec_tmu_set_bit(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
+    int bit_idx = (int)p->get_state()->XPR[insn.rs2()];
+    reg_t res = ext->logic_tmu.do_set_bit(slot_idx, bit_idx);
+    int rd = insn.rd();
+    if (rd != 0) { // x0への書き込みは無視
+        p->get_state()->XPR.write(rd, res);
+    }
+    return pc + 4;
+  }
+  static reg_t exec_tmu_clear_bit(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
+    int bit_idx = (int)p->get_state()->XPR[insn.rs2()];
+    reg_t res = ext->logic_tmu.do_clear_bit(slot_idx, bit_idx);
+    int rd = insn.rd();
+    if (rd != 0) { // x0への書き込みは無視
+        p->get_state()->XPR.write(rd, res);
+    }
+    return pc + 4;
+  }
+  static reg_t exec_tmu_is_bit_set(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
+    int bit_idx = (int)p->get_state()->XPR[insn.rs2()];
+    reg_t res = ext->logic_tmu.do_is_bit_set(slot_idx, bit_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);

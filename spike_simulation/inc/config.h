@@ -14,7 +14,7 @@ extern "C" {
 #define TOTAL_SLOTS (512)
 #define DATA_TAG_SLOTS_DM (64)
 #define TREE_SLOTS_DM (TOTAL_SLOTS - DATA_TAG_SLOTS_DM)
-#define CACHE_WAYS_LOG2 (3)
+#define CACHE_WAYS_LOG2 (2)
 #define CACHE_WAYS (1 << CACHE_WAYS_LOG2) // 8way
 #define CACHE_SETS (TOTAL_SLOTS / CACHE_WAYS) // 64line
 #define CACHE_DATA_SPM_BASE (64 * 8) // データ領域のベースアドレス
@@ -24,7 +24,6 @@ extern "C" {
 
 #define PHYSICAL_WAYS_LOG2 (3)
 #define PHYSICAL_WAYS (1 << PHYSICAL_WAYS_LOG2) // 8way
-
 
 #define TEMP_POOL_SIZE (16)
 typedef uint64_t  dram_addr_t;
@@ -37,6 +36,12 @@ typedef uint32_t index_t;
    ========================================================= */
 #define ENABLE_TMX_HARDWARE
 #define ENABLE_TMU_HARDWARE
+
+// #define ENABLE_TMU_BIT_MANIPULATION
+#define LOADED_BIT_POS (0)
+#define MAC_UPDATED_BIT_POS (1)
+
+#define TMU_BIT_ARRAY_SIZE (32)
 #ifdef __cplusplus
 }
 #endif

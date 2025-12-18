@@ -38,9 +38,11 @@ dram_addr_t block_addr_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 spm_offset_t spm_offset_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 uint32_t ref_count_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 #endif
+#ifndef ENABLE_TMU_BIT_MANIPULATION
 bool mac_updated_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 bool loaded_metadata[CACHE_SETS][CACHE_WAYS] = {0};
-// uint32_t access_count_metadata[CACHE_SETS][CACHE_WAYS] = {0};
+#endif
+uint32_t access_count_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 uint8_t tree_lru_metadata[CACHE_SETS] = {0};
 
 // --- TREE LRU更新関数 ---
@@ -204,7 +206,6 @@ static inline bool is_block_valid(index_t set_index, index_t way_index){
 }
 
 
-
 // --- 軽量タグチェック (読み取り専用、ヒット/ミスのみ判定) ---
 // 高速化のため、ヒットしたかと、空いているwayの探索のみを行う and 追い出しても良さそうなwayの探索
 typedef struct {
@@ -222,6 +223,8 @@ static inline light_tag_info_t light_tag_check(dram_addr_t dram_addr){
     info.hit = (bool)(ret & 0x1);
     if (!info.hit && info.way != -1){
       set_block_valid(get_cache_set_index(dram_addr), info.way);
+      long ret2;
+      TMU_INSN_R(F7_TMU_SET_TAG, ret2, slot_idx, dram_addr);
     }
     return info;
   #else 
@@ -277,6 +280,108 @@ void update_counter_on_access(index_t set_index, index_t way_index){
 }
 
 
+
+static inline bool is_mac_updated(index_t set_index, index_t way_index){
+  #ifdef ENABLE_TMU_BIT_MANIPULATION
+    long slot_idx = (set_index * CACHE_WAYS) + way_index;
+    long ret;
+    TMU_INSN_R(F7_TMU_IS_BIT_SET, ret, slot_idx, MAC_UPDATED_BIT_POS); 
+    return (bool)ret;
+  #else
+    return mac_updated_metadata[set_index][way_index];
+  #endif
+}
+static inline void setParentUpdated(index_t set_index,index_t way_index){
+  // 親のタグが更新されている=evictionしても良い
+  #ifdef ENABLE_TMU_BIT_MANIPULATION
+    long slot_idx = (set_index * CACHE_WAYS) + way_index;
+    long ret;
+    TMU_INSN_R(F7_TMU_SET_BIT, ret, slot_idx, MAC_UPDATED_BIT_POS); 
+  #else
+    mac_updated_metadata[set_index][way_index] = true;
+  #endif
+}
+static inline void clearParentUpdated(index_t set_index,index_t way_index){
+  // 更新した最大の高さ
+  #ifdef ENABLE_TMU_BIT_MANIPULATION
+    long slot_idx = (set_index * CACHE_WAYS) + way_index;
+    long ret;
+    TMU_INSN_R(F7_TMU_CLEAR_BIT, ret, slot_idx, MAC_UPDATED_BIT_POS); 
+  #else
+    mac_updated_metadata[set_index][way_index] = false;
+  #endif
+}
+
+static inline void set_loaded(index_t set_index,index_t way_index){
+  #ifdef ENABLE_TMU_BIT_MANIPULATION
+    long slot_idx = (set_index * CACHE_WAYS) + way_index;
+    long ret;
+    TMU_INSN_R(F7_TMU_SET_BIT, ret, slot_idx, LOADED_BIT_POS); 
+  #else
+    loaded_metadata[set_index][way_index] = true;
+  #endif
+}
+static inline void clear_loaded(index_t set_index,index_t way_index){
+  #ifdef ENABLE_TMU_BIT_MANIPULATION
+    long slot_idx = (set_index * CACHE_WAYS) + way_index;
+    long ret;
+    TMU_INSN_R(F7_TMU_CLEAR_BIT, ret, slot_idx, LOADED_BIT_POS); 
+  #else
+    loaded_metadata[set_index][way_index] = false;
+  #endif
+}
+static inline bool is_loaded(index_t set_index,index_t way_index){
+  #ifdef ENABLE_TMU_BIT_MANIPULATION
+    long slot_idx = (set_index * CACHE_WAYS) + way_index;
+    long ret;
+    TMU_INSN_R(F7_TMU_IS_BIT_SET, ret, slot_idx, LOADED_BIT_POS); 
+    return (bool)ret;
+  #else
+  return loaded_metadata[set_index][way_index];
+  #endif
+}
+
+// --- 初期化関数 (mainの最初で呼ぶ) ---
+void init_cache_system() {
+    // 1. キャッシュメタデータの初期化 (初期配置をセット)
+    #ifdef ENABLE_TMU_HARDWARE
+      #ifndef ENABLE_TMU_BIT_MANIPULATION
+      for (int s=0; s<CACHE_SETS; s++){
+          for(int w=0; w<CACHE_WAYS; w++){
+            loaded_metadata[s][w] = false;
+            mac_updated_metadata[s][w] = true;
+            // access_count_metadata[s][w] = 0;
+          }
+          tree_lru_metadata[s] = 0;
+      };
+      #else 
+      for (int s=0; s<CACHE_SETS; s++){
+          for(int w=0; w<CACHE_WAYS; w++){
+            // access_count_metadata[s][w] = 0;
+            clear_loaded(s,w);
+            setParentUpdated(s,w);
+          }
+          tree_lru_metadata[s] = 0;
+      };
+      #endif
+    #else
+    spm_offset_t current_offset = CACHE_DATA_SPM_BASE;
+    for(int s=0; s<CACHE_SETS; s++){
+        for(int w=0; w<CACHE_WAYS; w++){
+            valid_metadata[s][w] = false;
+            dirty_metadata[s][w] = false;
+            spm_offset_metadata[s][w] = current_offset; // 初期位置
+            access_count_metadata[s][w] = 0;
+            block_addr_metadata[s][w] = 0;
+            mac_updated_metadata[s][w] = true;
+            loaded_metadata[s][w] = false;
+            current_offset += 64;
+        }
+    };
+    #endif
+}
+
+
 static inline dma_id_t ensureBlockInSpm(dram_addr_t required_dram_addr, struct Info tag_info,dma_id_t id){
   dma_id_t read_id = id;
   index_t set_index = get_cache_set_index(required_dram_addr);
@@ -297,8 +402,8 @@ static inline dma_id_t ensureBlockInSpm(dram_addr_t required_dram_addr, struct I
     block_addr_metadata[set_index][tag_info.way] = required_dram_addr;
   #endif
   spm_copy_to_local(required_dram_addr, tag_info.spm_offset, 64,read_id);
-  tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
-  loaded_metadata[set_index][tag_info.way] = false;
+  // tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
+  clear_loaded(set_index, tag_info.way);
   return read_id;
 }
 static inline void swapp_temp_cache(dram_addr_t dram_addr, struct Info tag_info, spm_offset_t spm_offset,bool dirty){
@@ -306,7 +411,7 @@ static inline void swapp_temp_cache(dram_addr_t dram_addr, struct Info tag_info,
     spm_write_back(tag_info.spm_offset, tag_info.block_addr, 64, 0);
   }
   index_t set_index = get_cache_set_index(dram_addr);
-  loaded_metadata[set_index][tag_info.way] = true;
+  set_loaded(set_index, tag_info.way);
   tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
   #ifdef ENABLE_TMU_HARDWARE
     long slot_idx = (set_index * CACHE_WAYS) + tag_info.way;
@@ -330,61 +435,6 @@ static inline void swapp_temp_cache(dram_addr_t dram_addr, struct Info tag_info,
   #endif
   push_temp_buffer(tag_info.spm_offset);
 }
-// ------------------------
-// ソフトウェア側で管理するメタデータ操作関数
-// ------------------------
-static inline bool is_mac_updated(index_t set_index, index_t way_index){
-  return mac_updated_metadata[set_index][way_index];
-}
-static inline void setParentUpdated(index_t set_index,index_t way_index){
-  // 親のタグが更新されている=evictionしても良い
-  mac_updated_metadata[set_index][way_index] = true;
-}
-static inline void clearParentUpdated(index_t set_index,index_t way_index){
-  // 更新した最大の高さ
-  mac_updated_metadata[set_index][way_index] = false;
-}
-
-static inline void set_loaded(index_t set_index,index_t way_index){
-  loaded_metadata[set_index][way_index] = true;
-}
-static inline void clear_loaded(index_t set_index,index_t way_index){
-  loaded_metadata[set_index][way_index] = false;
-}
-static inline bool is_loaded(index_t set_index,index_t way_index){
-  return loaded_metadata[set_index][way_index];
-}
-
-// --- 初期化関数 (mainの最初で呼ぶ) ---
-void init_cache_system() {
-    // 1. キャッシュメタデータの初期化 (初期配置をセット)
-    #ifdef ENABLE_TMU_HARDWARE
-      for (int s=0; s<CACHE_SETS; s++){
-          for(int w=0; w<CACHE_WAYS; w++){
-            loaded_metadata[s][w] = false;
-            mac_updated_metadata[s][w] = true;
-            // access_count_metadata[s][w] = 0;
-            tree_lru_metadata[s] = 0;
-          }
-      };
-    #else
-    spm_offset_t current_offset = CACHE_DATA_SPM_BASE;
-    for(int s=0; s<CACHE_SETS; s++){
-        for(int w=0; w<CACHE_WAYS; w++){
-            valid_metadata[s][w] = false;
-            dirty_metadata[s][w] = false;
-            spm_offset_metadata[s][w] = current_offset; // 初期位置
-            access_count_metadata[s][w] = 0;
-            block_addr_metadata[s][w] = 0;
-            mac_updated_metadata[s][w] = true;
-            loaded_metadata[s][w] = false;
-            current_offset += 64;
-        }
-    };
-    #endif
-}
-
-
 // --- タグチェック関数 (ヒット/ミス判定および置換way決定、カウンター更新) ---
 static inline struct Info tag_check(dram_addr_t dram_addr){
   index_t set_index = get_cache_set_index(dram_addr);
