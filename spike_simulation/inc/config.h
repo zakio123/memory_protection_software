@@ -27,17 +27,17 @@ extern "C" {
 
 #define TEMP_POOL_SIZE (16)
 typedef uint64_t  dram_addr_t;
-typedef uint32_t  dma_id_t;
-typedef int  spm_offset_t;
+typedef uint64_t  dma_id_t;
+typedef uint64_t  spm_offset_t;
 typedef uint64_t mac_t;
-typedef uint32_t index_t;
+typedef uint64_t index_t;
 /* =========================================================
    【設定】ここをコメントアウトすると「ソフトウェア実装」になります
    ========================================================= */
 #define ENABLE_TMX_HARDWARE
 #define ENABLE_TMU_HARDWARE
 
-// #define ENABLE_TMU_BIT_MANIPULATION
+#define ENABLE_TMU_BIT_MANIPULATION
 #define LOADED_BIT_POS (0)
 #define MAC_UPDATED_BIT_POS (1)
 

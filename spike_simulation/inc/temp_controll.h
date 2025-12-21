@@ -130,11 +130,11 @@ static inline spm_offset_t get_temp_spm_offset(int idx) {
 #endif
 }
 
-static inline int alloc_temp_entry(dram_addr_t dram_addr, spm_offset_t spm_offset) {
+static inline long alloc_temp_entry(dram_addr_t dram_addr, spm_offset_t spm_offset) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret;
     TMX_INSN_R(F7_TMX_ALLOC, ret, dram_addr, spm_offset);
-    return (int)ret;
+    return ret;
 #else
     if (free_indices_top < 0) return -1;
     spm_offset_t real_spm = spm_offset;
@@ -155,11 +155,11 @@ static inline int alloc_temp_entry(dram_addr_t dram_addr, spm_offset_t spm_offse
 #endif
 }
 
-static inline int invalidate_temp_entry_by_index(int idx) {
+static inline long invalidate_temp_entry_by_index(long idx) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret;
     TMX_INSN_R(F7_TMX_INVALID, ret, idx, 0);
-    return (int)ret;
+    return ret;
 #else
     if (idx < 0 || !temp_valid[idx]) return -1;
     
@@ -168,8 +168,8 @@ static inline int invalidate_temp_entry_by_index(int idx) {
     temp_loaded[idx] = false;
     
     // Swap removal
-    int pos = pos_in_active_list[idx];
-    int last_idx = active_indices[active_count - 1];
+    long pos = pos_in_active_list[idx];
+    long last_idx = active_indices[active_count - 1];
     
     active_indices[pos] = last_idx;
     pos_in_active_list[last_idx] = pos;
@@ -180,11 +180,11 @@ static inline int invalidate_temp_entry_by_index(int idx) {
 #endif
 }
 
-static inline int dirty_temp_entry_by_index(int idx) {
+static inline long dirty_temp_entry_by_index(long idx) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret; 
     TMX_INSN_R(F7_TMX_SET_D, ret, idx, 0);
-    return (int)ret;
+    return ret;
 #else
     if (idx < 0 || !temp_valid[idx]) return -1;
     temp_dirty[idx] = true;
@@ -192,7 +192,7 @@ static inline int dirty_temp_entry_by_index(int idx) {
 #endif
 }
 
-static inline bool is_dirty_temp_entry_by_index(int idx) {
+static inline bool is_dirty_temp_entry_by_index(long idx) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret; TMX_INSN_R(F7_TMX_IS_D, ret, idx, 0); return (bool)ret;
 #else
@@ -200,7 +200,7 @@ static inline bool is_dirty_temp_entry_by_index(int idx) {
 #endif
 }
 
-static inline bool acquire_temp_entry_by_index(int idx) {
+static inline bool acquire_temp_entry_by_index(long idx) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret; 
     TMX_INSN_R(F7_TMX_ACQ, ret, idx, 0); 
@@ -212,7 +212,7 @@ static inline bool acquire_temp_entry_by_index(int idx) {
 #endif
 }
 
-static inline bool release_temp_entry_by_index(int idx) {
+static inline bool release_temp_entry_by_index(long idx) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret; 
     TMX_INSN_R(F7_TMX_REL, ret, idx, 0); 
@@ -224,10 +224,10 @@ static inline bool release_temp_entry_by_index(int idx) {
 #endif
 }
 
-static inline int set_loaded_temp_entry_by_index(int idx) {
+static inline long set_loaded_temp_entry_by_index(long idx) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret; TMX_INSN_R(F7_TMX_SET_L, ret, idx, 0);
-    return (int)ret;
+    return ret;
 #else
     if (idx < 0 || !temp_valid[idx]) return -1;
     temp_loaded[idx] = true;
@@ -235,7 +235,7 @@ static inline int set_loaded_temp_entry_by_index(int idx) {
 #endif
 }
 
-static inline bool is_loaded_temp_entry_by_index(int idx) {
+static inline bool is_loaded_temp_entry_by_index(long idx) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret; TMX_INSN_R(F7_TMX_IS_L, ret, idx, 0); return (bool)ret;
 #else
@@ -252,7 +252,7 @@ static inline bool swappable_temp_entry_by_index(int idx) {
 #endif
 }
 
-static inline void printf_temp_table_status(int idx) {
+static inline void printf_temp_table_status(long idx) {
 #ifdef ENABLE_TMX_HARDWARE
     // HW版: ステータス表示命令はないのでここでは何もしない
 #else

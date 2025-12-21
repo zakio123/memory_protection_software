@@ -1,28 +1,28 @@
-void verify_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, uint32_t mac_req_id){
-  
+void verify_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, uint32_t mac_req_id, dma_id_t dma_id){
   mac_init(mac_req_id);
   if (parent_spm_offset == 0){
-      mac_buffer_set(0);
+      mac_buffer_set(0, dma_id);
       mac_update(0,63);
   } else {
       uint64_t start_bit = 64 + (node_index / 32) % 32 * 8;
-      mac_buffer_set(parent_spm_offset);
+      mac_buffer_set(parent_spm_offset, dma_id);
       mac_update(0,63);
       mac_update(start_bit, start_bit + 7);
   }
-  mac_buffer_set(child_spm_offset);
+  mac_buffer_set(child_spm_offset, dma_id);
   mac_update(0, 447);
-  mac_result_compare(child_spm_offset + 56);
+  mac_result_compare(child_spm_offset + 56, dma_id);
 }
 
-static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, bool update_counter, uint32_t mac_req_id){
+static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, 
+  bool update_counter, uint32_t mac_req_id, dma_id_t dma_id){
   mac_init(mac_req_id);
   if (parent_spm_offset == 0){
-      mac_buffer_set(0);
+      mac_buffer_set(0, dma_id);
       mac_update(0,63);
   } else {
       uint64_t start_bit = 64 + (node_index / 32) % 32 * 8;
-      mac_buffer_set(parent_spm_offset);
+      mac_buffer_set(parent_spm_offset, dma_id);
       mac_update(0,63);
       mac_update(start_bit, start_bit + 7);
   }
@@ -50,9 +50,9 @@ static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t
     // 書き戻し
     spm_sd64(minor_counter_byte_address, final_word);
   }
-  mac_buffer_set(child_spm_offset);
+  mac_buffer_set(child_spm_offset, dma_id);
   mac_update(0, 447);
-  mac_digest(child_spm_offset + 56);
+  mac_digest(child_spm_offset + 56,dma_id);
 }
 
 // ===========================================================================

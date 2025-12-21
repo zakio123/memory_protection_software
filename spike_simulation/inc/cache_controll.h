@@ -13,7 +13,11 @@
         : "i"(TMU_OPCODE), "i"(TMU_F3), "i"(funct7), "r"(rs1), "r"(rs2) \
     )
 #endif
-
+static inline uint64_t read_instret_() {
+    uint64_t val;
+    asm volatile ("csrr %0, minstret" : "=r" (val));
+    return val;
+}
 struct Info {
     bool dirty;
     bool hit;
@@ -29,6 +33,10 @@ static inline index_t get_cache_set_index(dram_addr_t dram_addr) {
         // Counter Tree領域
         return ((dram_addr) / 64) % TREE_SETS + DATA_TAG_SETS;
     }
+}
+static inline index_t get_cache_tree_set_index(dram_addr_t dram_addr) {
+    // Counter Tree領域
+    return (dram_addr / 64) % TREE_SETS + DATA_TAG_SETS;
 }
 // キャッシュメタデータの配列　SoA形式
 #ifndef ENABLE_TMU_HARDWARE
@@ -46,12 +54,11 @@ uint32_t access_count_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 uint8_t tree_lru_metadata[CACHE_SETS] = {0};
 
 // --- TREE LRU更新関数 ---
-uint8_t update_tree_lru(uint8_t lru, int accessed_way){
+static inline uint8_t update_tree_lru(uint8_t lru, long accessed_way){
     // accessed_wayに基づいてcurrent_lruを更新
-    int node_index = 0; // ルートノードから開始
-    for (int level = 0; level < CACHE_WAYS_LOG2; ++level) {
-        int dir = (accessed_way >> (CACHE_WAYS_LOG2 - 1 - level)) & 1;
-
+    long node_index = 0; // ルートノードから開始
+    for (long level = 0; level < CACHE_WAYS_LOG2; ++level) {
+         long dir = (accessed_way >> (CACHE_WAYS_LOG2 - 1 - level)) & 1;
         // dir=0(左をアクセス)なら、右をLRUにしたい => bit=1
         // dir=1(右をアクセス)なら、左をLRUにしたい => bit=0
         if (dir == 0) lru |=  (1u << node_index);
@@ -62,11 +69,11 @@ uint8_t update_tree_lru(uint8_t lru, int accessed_way){
     return lru;
 }
 // --- 置換way決定関数 ---
-int8_t select_victim_way(uint8_t current_lru){
-    int node_index = 0; // ルートノードから開始
-    int8_t victim_way = 0;
-    for (int level = 0; level < CACHE_WAYS_LOG2; ++level) {
-        int bit = (current_lru >> node_index) & 0x1;
+static inline long select_victim_way(uint8_t current_lru){
+    long node_index = 0; // ルートノードから開始
+    long victim_way = 0;
+    for (long level = 0; level < CACHE_WAYS_LOG2; ++level) {
+        long bit = (current_lru >> node_index) & 0x1;
         if (bit == 0) {
             // 左の子ノードへ移動
             node_index = 2 * node_index + 1;
@@ -99,7 +106,7 @@ static inline void clear_block_dirty(index_t set_index,index_t way_index){
     dirty_metadata[set_index][way_index] = false;
   #endif
 }
-bool is_block_dirty(index_t set_index, index_t way_index){
+static inline bool is_block_dirty(index_t set_index, index_t way_index){
   #ifdef ENABLE_TMU_HARDWARE
     long slot_idx = (set_index * CACHE_WAYS) + way_index;
     long ret;
@@ -174,7 +181,7 @@ static inline uint64_t return_metadata(index_t set_index){
   #endif
 }
 
-spm_offset_t get_cache_block_spm_offset(index_t set_index, index_t way_index){
+static inline spm_offset_t get_cache_block_spm_offset(index_t set_index, index_t way_index){
   #ifdef ENABLE_TMU_HARDWARE
     long slot_idx = (set_index * CACHE_WAYS) + way_index;
     long ret;
@@ -341,6 +348,17 @@ static inline bool is_loaded(index_t set_index,index_t way_index){
   #endif
 }
 
+static inline dram_addr_t get_block_addr(index_t set_index, index_t way_index){
+  #ifdef ENABLE_TMU_HARDWARE
+    long slot_idx = (set_index * CACHE_WAYS) + way_index;
+    long ret;
+    TMU_INSN_R(F7_TMU_GET_TAG, ret, slot_idx, 0); 
+    return (dram_addr_t)ret;
+  #else
+  return block_addr_metadata[set_index][way_index];
+  #endif
+}
+
 // --- 初期化関数 (mainの最初で呼ぶ) ---
 void init_cache_system() {
     // 1. キャッシュメタデータの初期化 (初期配置をセット)
@@ -402,7 +420,7 @@ static inline dma_id_t ensureBlockInSpm(dram_addr_t required_dram_addr, struct I
     block_addr_metadata[set_index][tag_info.way] = required_dram_addr;
   #endif
   spm_copy_to_local(required_dram_addr, tag_info.spm_offset, 64,read_id);
-  // tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
+  tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
   clear_loaded(set_index, tag_info.way);
   return read_id;
 }
@@ -424,9 +442,6 @@ static inline void swapp_temp_cache(dram_addr_t dram_addr, struct Info tag_info,
       TMU_INSN_R(F7_TMU_CLEAR_D, ret, slot_idx, 0); 
     }
   #else
-    if (set_index == 105 && tag_info.way == 0){
-      printf("[Cache] Swapp temp cache S:%u W:%u Addr:%016llx Spm:%016llx Dirty:%d\n", set_index, tag_info.way, dram_addr, spm_offset, dirty);
-    }
     valid_metadata[set_index][tag_info.way] = true;
     dirty_metadata[set_index][tag_info.way] = dirty;
     block_addr_metadata[set_index][tag_info.way] = dram_addr;
@@ -455,9 +470,10 @@ static inline struct Info tag_check(dram_addr_t dram_addr){
       tag_info.dirty = (bool)(ret & 0x1);
       // SPMオフセット取得
       tag_info.spm_offset = (spm_offset_t)get_cache_block_spm_offset(set_index, tag_info.way);
-      // ブロックアドレス取得
-      TMU_INSN_R(F7_TMU_GET_TAG, ret, slot_idx, 0);
-      tag_info.block_addr = (dram_addr_t)ret;
+      tag_info.block_addr = get_block_addr(set_index, tag_info.way);
+      // // ブロックアドレス取得
+      // TMU_INSN_R(F7_TMU_GET_TAG, ret, slot_idx, 0);
+      // tag_info.block_addr = (dram_addr_t)ret;
       // ヒット時はaccess_count更新
       tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
       // for (int i = 0; i < CACHE_WAYS; ++i) {
@@ -505,8 +521,9 @@ static inline struct Info tag_check(dram_addr_t dram_addr){
         // 置換wayの情報を取得
         tag_info.dirty = is_block_dirty(set_index, way_index);
         tag_info.spm_offset = (spm_offset_t)get_cache_block_spm_offset(set_index, way_index);
-        TMU_INSN_R(F7_TMU_GET_TAG, ret, set_index * CACHE_WAYS + way_index, 0);
-        tag_info.block_addr = (dram_addr_t)ret;
+        tag_info.block_addr = get_block_addr(set_index, way_index);
+        // TMU_INSN_R(F7_TMU_GET_TAG, ret, set_index * CACHE_WAYS + way_index, 0);
+        // tag_info.block_addr = (dram_addr_t)ret;
       }
     }
   #else
@@ -558,4 +575,111 @@ static inline struct Info tag_check(dram_addr_t dram_addr){
   }
   #endif
   return tag_info;
+}
+#include <stdio.h> // printf用
+
+// 時間計測用のマクロ（環境に合わせて変更してください）
+// もし read_instret() が定義されていない場合は、以下のように定義するか、
+// 既存の計測関数に置き換えてください。
+// example: #define read_instret() __builtin_readcycle() 
+
+// --- タグチェック関数 (プロファイリング機能付き) ---
+// static inline struct Info tag_check_profiled(dram_addr_t dram_addr) {
+//     // 全体の開始時間
+
+//     long t_tmu_ops = 0;   // TMU命令にかかった時間
+//     long t_logic = 0;     // ロジック処理にかかった時間
+//     long t_search = 0;    // (SW版) 探索ループ時間
+//     long t_update = 0;    // (SW版) 更新ループ時間
+//     long t_start = read_instret_();
+//     index_t set_index = get_cache_set_index(dram_addr);
+//     struct Info tag_info = {false, false, 0, 0, 0};
+//     long ret;
+//     long rs1 = ((uint64_t)(set_index * CACHE_WAYS) << 32) | (uint64_t)(CACHE_WAYS);
+
+//     // --- TMU Hardware Access Measurement Start ---
+//     long t1 = read_instret_();
+//     TMU_INSN_R(F7_TMU_CHECK_TAG, ret, rs1, dram_addr);
+//     long t2 = read_instret_();
+//     t_tmu_ops += (t2 - t1);
+//     // --- TMU Hardware Access Measurement End ---
+
+//     tag_info.hit = (bool)(ret & 0x1);
+//     tag_info.way = (int8_t)((ret >> 32) & 0xFF);
+
+//     if (tag_info.way >= CACHE_WAYS) {
+//         printf("Error: Invalid way index %d returned from TMU for addr=%016llx\n", tag_info.way, dram_addr);
+//         exit(1);
+//     }
+//     // --- Logic Processing Measurement Start ---
+//     long t3 = read_instret_();
+    
+//     if (tag_info.hit) {
+//         long slot_idx = (set_index * CACHE_WAYS) + tag_info.way;
+        
+//         // TMU Access inside Hit logic
+//         long t_sub1 = read_instret_();
+//         TMU_INSN_R(F7_TMU_IS_D, ret, slot_idx, 0);
+//         long t_sub2 = read_instret_();
+//         t_tmu_ops += (t_sub2 - t_sub1);
+
+//         tag_info.dirty = (bool)(ret & 0x1);
+//         // SPMオフセット取得
+//         tag_info.spm_offset = (spm_offset_t)get_cache_block_spm_offset(set_index, tag_info.way);
+//         tag_info.block_addr = get_block_addr(set_index, tag_info.way);
+        
+//         // ヒット時はaccess_count更新
+//         tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
+
+//     } else if (tag_info.way >= 0) {
+//         // miss but found invalid way
+//         tag_info.dirty = false;
+//         tag_info.block_addr = 0;
+//         tag_info.spm_offset = (spm_offset_t)get_cache_block_spm_offset(set_index, tag_info.way);
+//         // validを立てる
+//         set_block_valid(set_index, tag_info.way);
+//         clear_loaded(set_index, tag_info.way);
+//         tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
+
+//     } else {
+//         // TREE LRUに基づいて置換wayを決定
+//         int8_t way_index = select_victim_way(tree_lru_metadata[set_index]);
+//         tag_info.way = way_index;
+        
+//         if (way_index == -1) {
+//             printf("Error: No swappable way found in cache set %u for addr=%016llx\n", set_index, dram_addr);
+//             exit(1);
+//             tag_info.dirty = false;
+//             tag_info.spm_offset = 0;
+//             tag_info.block_addr = 0;
+//         } else {
+//             // 置換wayの情報を取得
+//             tag_info.dirty = is_block_dirty(set_index, way_index);
+//             tag_info.spm_offset = (spm_offset_t)get_cache_block_spm_offset(set_index, way_index);
+//             tag_info.block_addr = get_block_addr(set_index, way_index);
+//         }
+//     }
+//     long t4 = read_instret_();
+//     t_logic = (t4 - t3);
+//     // --- Logic Processing Measurement End ---
+//     // 全体の終了時間
+//     long t_end = read_instret_();
+//     long total_time = t_end - t_start;
+
+// #ifdef ENABLE_TMU_HARDWARE
+//     printf("[TAG_CHECK HW] Addr: %016llx, Hit: %d | Total: %ld, TMU_Ops: %ld, Logic: %ld\n", 
+//            dram_addr, tag_info.hit, total_time, t_tmu_ops, t_logic);
+// #else
+//     printf("[TAG_CHECK SW] Addr: %016llx, Hit: %d | Total: %ld, Search: %ld, Update: %ld\n", 
+//            dram_addr, tag_info.hit, total_time, t_search, t_update);
+// #endif
+
+//     return tag_info;
+// }
+
+static inline int get_victim_way(index_t set_index){
+  return select_victim_way(tree_lru_metadata[set_index]);
+}
+static inline void update_lru_on_access(index_t set_index, index_t way_index){
+  tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], way_index);
 }
