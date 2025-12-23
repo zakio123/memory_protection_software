@@ -213,62 +213,7 @@ static inline bool is_block_valid(index_t set_index, index_t way_index){
 }
 
 
-// --- 軽量タグチェック (読み取り専用、ヒット/ミスのみ判定) ---
-// 高速化のため、ヒットしたかと、空いているwayの探索のみを行う and 追い出しても良さそうなwayの探索
-typedef struct {
-    bool hit;
-    int8_t way;
-} light_tag_info_t;
-static inline light_tag_info_t light_tag_check(dram_addr_t dram_addr){
-  #ifdef ENABLE_TMU_HARDWARE
-    long ret;
-    long slot_idx = get_cache_set_index(dram_addr) * CACHE_WAYS;
-    slot_idx = (slot_idx << 32) | CACHE_WAYS; // search_rangeにCACHE_WAYSを指定
-    TMU_INSN_R(F7_TMU_LIGHT_TAG_CHECK, ret, slot_idx, dram_addr);
-    light_tag_info_t info;
-    info.way = (int8_t)(ret >> 32);
-    info.hit = (bool)(ret & 0x1);
-    if (!info.hit && info.way != -1){
-      set_block_valid(get_cache_set_index(dram_addr), info.way);
-      long ret2;
-      TMU_INSN_R(F7_TMU_SET_TAG, ret2, slot_idx, dram_addr);
-    }
-    return info;
-  #else 
-  index_t set_index = get_cache_set_index(dram_addr);
-  uint32_t lru_counter_max = 0;
-  int8_t way_index = -1;
-    // wayを決定
-  for (index_t i = 0; i < CACHE_WAYS; ++i) {
-    if (valid_metadata[set_index][i]) {
-      if (block_addr_metadata[set_index][i] == dram_addr) {
-        light_tag_info_t info = {true, i};
-        return info;
-      } else if (ref_count_metadata[set_index][i] == 0 && !mac_updated_metadata[set_index][i] && !dirty_metadata[set_index][i]) {
-        uint32_t access_count = (access_count_metadata[set_index][i] + 1) & 0xF; // 4bitのアクセス数
-        if (access_count > lru_counter_max && access_count > 10) { // ある程度古いもののみ候補
-            lru_counter_max = access_count;
-            way_index = i;
-        }
-      }
-    } else {
-        // 空きwayが見つかった場合、そのwayを使用
-        light_tag_info_t info = {false, i};
-        valid_metadata[set_index][i] = true; // 明示的に有効化
-        return info;
-    }
-  }
-  if (way_index != -1){
-    printf("[Cache] Light tag check miss for addr=%016llx, selected way=%d\n", dram_addr, way_index);
-    block_addr_metadata[set_index][way_index] = dram_addr;
-    access_count_metadata[set_index][way_index] = 0; // カウンターリセット
-    dirty_metadata[set_index][way_index] = false; // dirtyクリア
-    mac_updated_metadata[set_index][way_index] = true; // mac updatedクリア
-  }
-  light_tag_info_t info = {false, way_index};
-  return info;
-  #endif
-}
+
 
 
 void update_counter_on_access(index_t set_index, index_t way_index){
@@ -359,6 +304,20 @@ static inline dram_addr_t get_block_addr(index_t set_index, index_t way_index){
   #endif
 }
 
+static inline void set_block_addr(index_t set_index, index_t way_index, dram_addr_t dram_addr){
+  if (way_index < 0) {
+    printf("Error: Attempt to set block address with invalid way index S:%u W:%d\n", set_index, way_index);
+    exit(1);
+    return;
+  }
+  #ifdef ENABLE_TMU_HARDWARE
+    long slot_idx = (set_index * CACHE_WAYS) + way_index;
+    long ret;
+    TMU_INSN_R(F7_TMU_SET_TAG, ret, slot_idx, dram_addr); 
+  #else
+    block_addr_metadata[set_index][way_index] = dram_addr;
+  #endif
+}
 // --- 初期化関数 (mainの最初で呼ぶ) ---
 void init_cache_system() {
     // 1. キャッシュメタデータの初期化 (初期配置をセット)
@@ -424,19 +383,22 @@ static inline dma_id_t ensureBlockInSpm(dram_addr_t required_dram_addr, struct I
   clear_loaded(set_index, tag_info.way);
   return read_id;
 }
-static inline void swapp_temp_cache(dram_addr_t dram_addr, struct Info tag_info, spm_offset_t spm_offset,bool dirty){
-  if (tag_info.dirty){
-    spm_write_back(tag_info.spm_offset, tag_info.block_addr, 64, 0);
-  }
+static inline void swapp_temp_cache(dram_addr_t dram_addr,spm_offset_t spm_offset, bool temp_dirty, index_t way){
   index_t set_index = get_cache_set_index(dram_addr);
-  set_loaded(set_index, tag_info.way);
-  tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
+  bool cache_dirty = is_block_dirty(set_index, way);
+  spm_offset_t current_spm_offset = get_cache_block_spm_offset(set_index, way);
+  if (cache_dirty) {
+    dram_addr_t evict_block_addr = get_block_addr(set_index, way);
+    spm_write_back(current_spm_offset, evict_block_addr, 64,0);
+  }
+  tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], way);
   #ifdef ENABLE_TMU_HARDWARE
-    long slot_idx = (set_index * CACHE_WAYS) + tag_info.way;
+    long slot_idx = (set_index * CACHE_WAYS) + way;
     long ret;
-    TMU_INSN_R(F7_TMU_SET_TAG, ret, slot_idx, dram_addr); 
+    set_block_valid(set_index, way);
+    set_block_addr(set_index, way, dram_addr);
     TMU_INSN_R(F7_TMU_SET_SPM, ret, slot_idx, spm_offset); 
-    if (dirty){
+    if (temp_dirty){
       TMU_INSN_R(F7_TMU_SET_D, ret, slot_idx, 0); 
     } else {
       TMU_INSN_R(F7_TMU_CLEAR_D, ret, slot_idx, 0); 
@@ -448,7 +410,7 @@ static inline void swapp_temp_cache(dram_addr_t dram_addr, struct Info tag_info,
     spm_offset_metadata[set_index][tag_info.way] = spm_offset;
     ref_count_metadata[set_index][tag_info.way] = 0;
   #endif
-  push_temp_buffer(tag_info.spm_offset);
+  push_temp_buffer(current_spm_offset);
 }
 // --- タグチェック関数 (ヒット/ミス判定および置換way決定、カウンター更新) ---
 static inline struct Info tag_check(dram_addr_t dram_addr){
@@ -682,4 +644,55 @@ static inline int get_victim_way(index_t set_index){
 }
 static inline void update_lru_on_access(index_t set_index, index_t way_index){
   tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], way_index);
+}
+// --- 軽量タグチェック (読み取り専用、ヒット/ミスのみ判定) ---
+// 高速化のため、ヒットしたかと、空いているwayの探索のみを行う and 追い出しても良さそうなwayの探索
+typedef struct {
+    bool hit;
+    int32_t way;
+} light_tag_info_t;
+static inline light_tag_info_t light_tag_check(dram_addr_t dram_addr){
+  #ifdef ENABLE_TMU_HARDWARE
+    long ret;
+    long slot_idx = get_cache_set_index(dram_addr) * CACHE_WAYS;
+    slot_idx = (slot_idx << 32) | CACHE_WAYS; // search_rangeにCACHE_WAYSを指定
+    TMU_INSN_R(F7_TMU_LIGHT_TAG_CHECK, ret, slot_idx, dram_addr);
+    light_tag_info_t info;
+    info.way = (ret >> 32);
+    info.hit = (bool)(ret & 0x1);
+    return info;
+  #else 
+  index_t set_index = get_cache_set_index(dram_addr);
+  uint32_t lru_counter_max = 0;
+  int8_t way_index = -1;
+    // wayを決定
+  for (index_t i = 0; i < CACHE_WAYS; ++i) {
+    if (valid_metadata[set_index][i]) {
+      if (block_addr_metadata[set_index][i] == dram_addr) {
+        light_tag_info_t info = {true, i};
+        return info;
+      } else if (ref_count_metadata[set_index][i] == 0 && !mac_updated_metadata[set_index][i] && !dirty_metadata[set_index][i]) {
+        uint32_t access_count = (access_count_metadata[set_index][i] + 1) & 0xF; // 4bitのアクセス数
+        if (access_count > lru_counter_max && access_count > 10) { // ある程度古いもののみ候補
+            lru_counter_max = access_count;
+            way_index = i;
+        }
+      }
+    } else {
+        // 空きwayが見つかった場合、そのwayを使用
+        light_tag_info_t info = {false, i};
+        valid_metadata[set_index][i] = true; // 明示的に有効化
+        return info;
+    }
+  }
+  if (way_index != -1){
+    printf("[Cache] Light tag check miss for addr=%016llx, selected way=%d\n", dram_addr, way_index);
+    block_addr_metadata[set_index][way_index] = dram_addr;
+    access_count_metadata[set_index][way_index] = 0; // カウンターリセット
+    dirty_metadata[set_index][way_index] = false; // dirtyクリア
+    mac_updated_metadata[set_index][way_index] = true; // mac updatedクリア
+  }
+  light_tag_info_t info = {false, way_index};
+  return info;
+  #endif
 }

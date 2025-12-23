@@ -699,6 +699,7 @@ private:
     return pc + 4;
   }
   static reg_t exec_tmu_set_tag(processor_t* p, insn_t insn, reg_t pc) {
+
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
     uint64_t tag = (uint64_t)p->get_state()->XPR[insn.rs2()];

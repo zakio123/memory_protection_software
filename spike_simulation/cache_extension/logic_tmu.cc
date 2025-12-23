@@ -98,11 +98,11 @@ int tmu_logic_t::check_idx(int slot_idx) const {
   
   reg_t tmu_logic_t::do_acquire(int slot_idx) {
     if (check_idx(slot_idx) < 0) {
-      std::cerr << "temp_acquire: invalid idx " << slot_idx << std::endl;
+      std::cerr << "cache_acquire: invalid idx " << slot_idx << std::endl;
       return (reg_t)-1;
     }
     if (tmu_valid[slot_idx] == false){
-      std::cerr << "temp_acquire: invalid at idx " << slot_idx << std::endl;
+      std::cerr << "cache_acquire: invalid at idx " << slot_idx << std::endl;
       return (reg_t)-1;
     }
     tmu_ref_count[slot_idx] += 1;
@@ -111,15 +111,15 @@ int tmu_logic_t::check_idx(int slot_idx) const {
 
   reg_t tmu_logic_t::do_release(int slot_idx) {
     if (check_idx(slot_idx) < 0) {
-      std::cerr << "temp_get_spm: invalid idx " << slot_idx << std::endl;
+      std::cerr << "cache_release: invalid idx " << slot_idx << std::endl;
       return (reg_t)-1;
     }
     if (tmu_valid[slot_idx] == false){
-      std::cerr << "temp_acquire: invalid at idx " << slot_idx << std::endl;
+      std::cerr << "cache_release: invalid at idx " << slot_idx << std::endl;
       return (reg_t)-1;
     }
     if (tmu_ref_count[slot_idx] == 0) {
-      std::cerr << "temp_release: ref_count is already 0 at idx " << slot_idx << std::endl;
+      std::cerr << "cache_release: ref_count is already 0 at idx " << slot_idx << std::endl;
       return (reg_t)-1;
     }
     tmu_ref_count[slot_idx] -= 1;
@@ -128,11 +128,11 @@ int tmu_logic_t::check_idx(int slot_idx) const {
 
   reg_t tmu_logic_t::do_set_tag(int slot_idx, dram_addr_t dram_addr) {
     if (slot_idx < 0 || slot_idx >= TOTAL_SLOTS) {
-      std::cerr << "temp_set_tag: idx out of range: " << slot_idx << std::endl;
+      std::cerr << "cache_set_tag: idx out of range: " << slot_idx << std::endl;
       return (reg_t)-1;
     }
     if (tmu_ref_count[slot_idx] > 0) {
-      std::cerr << "temp_set_tag: ref_count > 0: " << slot_idx << std::endl;
+      std::cerr << "cache_set_tag: ref_count > 0: " << slot_idx << std::endl;
       return (reg_t)-1;
     }
     int set_idx = slot_idx / PHYSICAL_WAYS;
@@ -194,11 +194,14 @@ int tmu_logic_t::check_idx(int slot_idx) const {
   }
 
   reg_t tmu_logic_t::do_is_swappable(int idx) {
-    if (check_idx(idx) < 0) {
+    if (tmu_valid[idx] == false) {
+      return (reg_t)1;
+    } else if (check_idx(idx) < 0) {
       std::cerr << "temp_is_swappable: invalid idx " << idx << std::endl;
       return (reg_t)-1;
+    } else {
+      return (tmu_ref_count[idx] == 0) ? (reg_t)1 : (reg_t)0;
     }
-    return (tmu_ref_count[idx] == 0) ? (reg_t)1 : (reg_t)0;
   }
 
   reg_t tmu_logic_t::do_return_metadata(int slot_idx){
