@@ -46,11 +46,10 @@ int temp_pool_top;
 
 // --- Stack Operations ---
 
-static inline int push_temp_buffer(spm_offset_t spm_addr) {
+static inline void push_temp_buffer(spm_offset_t spm_addr) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret;
     TMX_INSN_R(F7_TMX_PUSH, ret, spm_addr, 0);
-    return (int)ret;
 #else
     if (temp_pool_top >= TEMP_POOL_SIZE - 1) {
         printf("temp_push: no free space in temp pool\n");
@@ -77,10 +76,7 @@ static inline void temp_system_init(spm_offset_t temp_region_base) {
     // HW版: 指定領域をすべてHWプールにPush
     for (int i = 0; i < TEMP_POOL_SIZE; i++) {
         spm_offset_t addr = temp_region_base + i * 64;
-        int ret = push_temp_buffer(addr);
-        if (ret < 0) {
-            printf("temp_system_init: failed to push addr %#lx\n", addr);
-        }
+        push_temp_buffer(addr);
     }
 #else
     // SW版: テーブルとスタックの初期化
@@ -104,11 +100,11 @@ static inline void temp_system_init(spm_offset_t temp_region_base) {
 #endif
 }
 
-static inline int find_temp_entry(dram_addr_t dram_addr) {
+static inline long find_temp_entry(dram_addr_t dram_addr) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret;
     TMX_INSN_R(F7_TMX_FIND, ret, dram_addr, 0);
-    return (int)ret;
+    return ret;
 #else
     for (int k = 0; k < active_count; k++) {
         int idx = active_indices[k];
@@ -120,7 +116,7 @@ static inline int find_temp_entry(dram_addr_t dram_addr) {
 #endif
 }
 
-static inline spm_offset_t get_temp_spm_offset(int idx) {
+static inline spm_offset_t get_temp_spm_offset(long idx) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret;
     TMX_INSN_R(F7_TMX_GET_SPM, ret, idx, 0);
@@ -244,7 +240,7 @@ static inline bool is_loaded_temp_entry_by_index(long idx) {
 #endif
 }
 
-static inline bool swappable_temp_entry_by_index(int idx) {
+static inline bool swappable_temp_entry_by_index(long idx) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret; TMX_INSN_R(F7_TMX_SWAP, ret, idx, 0); return (bool)ret;
 #else

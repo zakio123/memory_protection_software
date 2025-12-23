@@ -79,7 +79,6 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     uint32_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     id += 1;
     mac_req_id += 1;
-    // spm_wait(id);
     verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], mac_req_id, id);
   }
   spm_wait(id);
@@ -252,15 +251,6 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint64_t req_id){
       }
   }
   uint64_t tag_end = read_instret();
-  // 上から順にSPMにロード。ミスしているノードのみロード
-  // for (uint64_t i = load_start_index;i<HEIGHT;i++){
-  //   tmp_id += 1;
-  //   dram_addr_t dram_addr = dram_addr_array[i];
-  //   spm_offset_array[i] = pop_temp_buffer();
-  //   long temp_idx = alloc_temp_entry(dram_addr, spm_offset_array[i]);
-  //   spm_copy_to_local(dram_addr, spm_offset_array[i], 64, tmp_id);
-  //   acquire_temp_entry_by_index(temp_idx);
-  // }
   uint64_t load_end = read_instret();
   uint64_t spm_wait_time = 0;
   uint64_t counter_id = data_id;
