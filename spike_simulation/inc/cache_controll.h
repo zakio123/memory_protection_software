@@ -649,7 +649,7 @@ static inline void update_lru_on_access(index_t set_index, index_t way_index){
 // 高速化のため、ヒットしたかと、空いているwayの探索のみを行う and 追い出しても良さそうなwayの探索
 typedef struct {
     bool hit;
-    int32_t way;
+    index_t way;
 } light_tag_info_t;
 static inline light_tag_info_t light_tag_check(dram_addr_t dram_addr){
   #ifdef ENABLE_TMU_HARDWARE
