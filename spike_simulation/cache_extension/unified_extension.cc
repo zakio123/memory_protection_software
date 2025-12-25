@@ -88,14 +88,20 @@
 class unified_extension_t : public extension_t {
 public:
     unified_extension_t() {
-        logic_tmx.internal_reset();
-        logic_tmu.internal_reset();
+      if (shared_tmu == nullptr) {
+        shared_tmu = new tmu_logic_t();
+        shared_tmu->internal_reset();
+      }
+      if (shared_tmx == nullptr) {
+        shared_tmx = new tmx_logic_t();
+        shared_tmx->internal_reset();
+      }
     }
   const char* name() const override { return "unified_extension"; }
 
   void reset(processor_t &p) override {
-    logic_tmx.internal_reset();
-    logic_tmu.internal_reset();
+    // logic_tmx.internal_reset();
+    // logic_tmu.internal_reset();
   }
 
   // 命令の統合登録
@@ -519,15 +525,15 @@ public:
     std::vector<disasm_insn_t*> disasms;    
     return disasms;
   }
-    tmx_logic_t     logic_tmx;
-    tmu_logic_t   logic_tmu;
+  static  tmx_logic_t*  shared_tmx;
+  static  tmu_logic_t*  shared_tmu;
 private:
 
 
   static reg_t exec_tmx_find(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     reg_t rs1 = p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmx.do_find(rs1);
+    reg_t res = shared_tmx->do_find(rs1);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -538,7 +544,7 @@ private:
   static reg_t exec_tmx_get_spm(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmx.do_get_spm(idx);
+    reg_t res = shared_tmx->do_get_spm(idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -550,7 +556,7 @@ private:
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     reg_t addr = (reg_t)p->get_state()->XPR[insn.rs1()];
     reg_t spm  = (reg_t)p->get_state()->XPR[insn.rs2()];
-    reg_t res  = ext->logic_tmx.do_alloc(addr, spm);
+    reg_t res  = shared_tmx->do_alloc(addr, spm);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -561,7 +567,7 @@ private:
   static reg_t exec_tmx_invalidate(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int idx   = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmx.do_invalidate(idx);
+    reg_t res = shared_tmx->do_invalidate(idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -572,7 +578,7 @@ private:
   static reg_t exec_tmx_set_dirty(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int idx   = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmx.do_set_dirty(idx);
+    reg_t res = shared_tmx->do_set_dirty(idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -583,7 +589,7 @@ private:
   static reg_t exec_tmx_is_dirty(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int idx   = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmx.do_is_dirty(idx);
+    reg_t res = shared_tmx->do_is_dirty(idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -594,7 +600,7 @@ private:
   static reg_t exec_tmx_acquire(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int idx   = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmx.do_acquire(idx);
+    reg_t res = shared_tmx->do_acquire(idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -605,7 +611,7 @@ private:
   static reg_t exec_tmx_release(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int idx   = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmx.do_release(idx);
+    reg_t res = shared_tmx->do_release(idx);
       int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -616,7 +622,7 @@ private:
   static reg_t exec_tmx_set_loaded(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int idx   = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmx.do_set_loaded(idx);
+    reg_t res = shared_tmx->do_set_loaded(idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -627,7 +633,7 @@ private:
   static reg_t exec_tmx_is_loaded(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int idx   = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmx.do_is_loaded(idx);
+    reg_t res = shared_tmx->do_is_loaded(idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -638,7 +644,7 @@ private:
   static reg_t exec_tmx_swappable(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int idx   = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmx.do_swappable(idx);
+    reg_t res = shared_tmx->do_swappable(idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -648,7 +654,7 @@ private:
   static reg_t exec_tmx_push(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     uint64_t spm_offset = (uint64_t)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmx.do_push(spm_offset);
+    reg_t res = shared_tmx->do_push(spm_offset);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -658,7 +664,7 @@ private:
 
   static reg_t exec_tmx_pop(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
-    reg_t res = ext->logic_tmx.do_pop();
+    reg_t res = shared_tmx->do_pop();
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -671,7 +677,7 @@ private:
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     long slot_idx = (long)p->get_state()->XPR[insn.rs1()];
     uint64_t addr = (uint64_t)p->get_state()->XPR[insn.rs2()];
-    reg_t res = ext->logic_tmu.do_check_tag(slot_idx,addr);
+    reg_t res = shared_tmu->do_check_tag(slot_idx,addr);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -681,7 +687,7 @@ private:
   static reg_t exec_tmu_acquire(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmu.do_acquire(slot_idx);
+    reg_t res = shared_tmu->do_acquire(slot_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -691,7 +697,7 @@ private:
   static reg_t exec_tmu_release(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmu.do_release(slot_idx);
+    reg_t res = shared_tmu->do_release(slot_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -703,7 +709,7 @@ private:
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
     uint64_t tag = (uint64_t)p->get_state()->XPR[insn.rs2()];
-    reg_t res = ext->logic_tmu.do_set_tag(slot_idx, tag);
+    reg_t res = shared_tmu->do_set_tag(slot_idx, tag);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -713,7 +719,7 @@ private:
   static reg_t exec_tmu_get_tag(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmu.do_get_tag(slot_idx);
+    reg_t res = shared_tmu->do_get_tag(slot_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -723,7 +729,7 @@ private:
   static reg_t exec_tmu_set_dirty(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmu.do_set_dirty(slot_idx);
+    reg_t res = shared_tmu->do_set_dirty(slot_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -733,7 +739,7 @@ private:
   static reg_t exec_tmu_is_dirty(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmu.do_is_dirty(slot_idx);
+    reg_t res = shared_tmu->do_is_dirty(slot_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -743,7 +749,7 @@ private:
   static reg_t exec_tmu_clear_dirty(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmu.do_clear_dirty(slot_idx);
+    reg_t res = shared_tmu->do_clear_dirty(slot_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -754,7 +760,7 @@ private:
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
     reg_t spm = p->get_state()->XPR[insn.rs2()];
-    reg_t res = ext->logic_tmu.do_set_spm(slot_idx, spm);
+    reg_t res = shared_tmu->do_set_spm(slot_idx, spm);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -764,7 +770,7 @@ private:
     static reg_t exec_tmu_get_spm(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmu.do_get_spm(slot_idx);
+    reg_t res = shared_tmu->do_get_spm(slot_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -774,7 +780,7 @@ private:
   static reg_t exec_tmu_is_swappable(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmu.do_is_swappable(slot_idx);
+    reg_t res = shared_tmu->do_is_swappable(slot_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -784,7 +790,7 @@ private:
   static reg_t exec_tmu_return_metadata(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmu.do_return_metadata(slot_idx);
+    reg_t res = shared_tmu->do_return_metadata(slot_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -794,7 +800,7 @@ private:
   static reg_t exec_tmu_set_valid(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmu.do_set_valid(slot_idx);
+    reg_t res = shared_tmu->do_set_valid(slot_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -804,7 +810,7 @@ private:
   static reg_t exec_tmu_is_valid(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = ext->logic_tmu.do_is_valid(slot_idx);
+    reg_t res = shared_tmu->do_is_valid(slot_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -815,7 +821,7 @@ private:
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     long slot_idx = (long)p->get_state()->XPR[insn.rs1()];
     uint64_t addr = (uint64_t)p->get_state()->XPR[insn.rs2()];
-    reg_t res = ext->logic_tmu.do_light_tag_check(slot_idx,addr);
+    reg_t res = shared_tmu->do_light_tag_check(slot_idx,addr);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -826,7 +832,7 @@ private:
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
     int bit_idx = (int)p->get_state()->XPR[insn.rs2()];
-    reg_t res = ext->logic_tmu.do_set_bit(slot_idx, bit_idx);
+    reg_t res = shared_tmu->do_set_bit(slot_idx, bit_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -837,7 +843,7 @@ private:
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
     int bit_idx = (int)p->get_state()->XPR[insn.rs2()];
-    reg_t res = ext->logic_tmu.do_clear_bit(slot_idx, bit_idx);
+    reg_t res = shared_tmu->do_clear_bit(slot_idx, bit_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -848,7 +854,7 @@ private:
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
     int bit_idx = (int)p->get_state()->XPR[insn.rs2()];
-    reg_t res = ext->logic_tmu.do_is_bit_set(slot_idx, bit_idx);
+    reg_t res = shared_tmu->do_is_bit_set(slot_idx, bit_idx);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
@@ -924,6 +930,9 @@ private:
     return pc + 4;
   }
 };
+
+tmx_logic_t* unified_extension_t::shared_tmx = nullptr;
+tmu_logic_t* unified_extension_t::shared_tmu = nullptr;
 
 // ここで1回だけ登録する
 REGISTER_EXTENSION(unified_extension, []() { return new unified_extension_t; })
