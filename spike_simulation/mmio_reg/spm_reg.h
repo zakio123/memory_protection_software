@@ -15,7 +15,9 @@ static inline void spm_wait_idle(void) {
   while (SPM_START) { /* busy==1 の間スピン */ }
 }
 static inline void spm_wait(uint64_t id){
-  while (SPM_COMPLETE_ID < id) { /* 完了IDが要求IDに達するまでスピン */ }
+  while(1){
+    if (SPM_COMPLETE_ID >= id) break;
+  }
 }
 
 /* DRAM -> SPM */

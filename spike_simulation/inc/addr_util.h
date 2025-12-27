@@ -13,3 +13,8 @@ static inline dram_addr_t get_datamacblock_addr(dram_addr_t request_addr){
     dram_addr_t datamacblock_addr = DATA_TAG_BASE + (((request_addr - PROTECTION_BASE) / (64 * 8))) * 64;
     return datamacblock_addr;
 }
+static inline uint64_t read_instret() {
+    uint64_t val;
+    asm volatile ("csrr %0, minstret" : "=r" (val));
+    return val;
+}
