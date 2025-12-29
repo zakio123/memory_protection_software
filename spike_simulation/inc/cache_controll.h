@@ -410,7 +410,6 @@ static inline void swapp_temp_cache(dram_addr_t dram_addr,spm_offset_t spm_offse
     spm_offset_metadata[set_index][tag_info.way] = spm_offset;
     ref_count_metadata[set_index][tag_info.way] = 0;
   #endif
-  push_temp_buffer(current_spm_offset);
 }
 // --- タグチェック関数 (ヒット/ミス判定および置換way決定、カウンター更新) ---
 static inline struct Info tag_check(dram_addr_t dram_addr){

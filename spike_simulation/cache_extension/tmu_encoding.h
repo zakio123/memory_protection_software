@@ -25,6 +25,7 @@
 #define F7_TMU_SET_BIT    0x0F
 #define F7_TMU_CLEAR_BIT  0x10
 #define F7_TMU_IS_BIT_SET 0x11
+#define F7_TMU_SHOW_REF_COUNT 0x12
 /* --- Spike (C++) 用ヘルパマクロ --- */
 /* Match値生成: (funct7 << 25) | (funct3 << 12) | opcode */
 #define TMU_MATCH(f7)  (((f7) << 25) | (TMU_F3 << 12) | TMU_OPCODE)

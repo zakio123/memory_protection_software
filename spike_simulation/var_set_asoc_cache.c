@@ -16,11 +16,11 @@
 #include "sec_operation.h"
 static const uint64_t MAC_UPD_0_511 = ((uint64_t)511 << 48) | 2;
 static const uint64_t MAC_UPD_0_63  = ((uint64_t)63  << 48) | 2;
-static inline uint64_t read_instret() {
-    uint64_t val;
-    asm volatile ("csrr %0, minstret" : "=r" (val));
-    return val;
-}
+// static inline uint64_t read_instret() {
+//     uint64_t val;
+//     asm volatile ("csrr %0, minstret" : "=r" (val));
+//     return val;
+// }
 
 bool instret_dump = false;
 uint64_t global_mac_req_id = 0;

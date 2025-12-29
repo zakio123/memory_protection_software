@@ -41,6 +41,8 @@ typedef long index_t;
 #define LOADED_BIT_POS (0)
 #define MAC_UPDATED_BIT_POS (1)
 
+#define VERIFIED_BIT_POS (2)
+
 #define TMU_BIT_ARRAY_SIZE (32)
 #ifdef __cplusplus
 }

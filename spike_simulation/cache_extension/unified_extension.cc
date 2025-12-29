@@ -70,6 +70,8 @@
 #define MASK_TMU_CLEAR_BIT   TMU_MASK
 #define MATCH_TMU_IS_BIT_SET TMU_MATCH(F7_TMU_IS_BIT_SET)
 #define MASK_TMU_IS_BIT_SET  TMU_MASK
+#define MATCH_TMU_SHOW_REF_COUNT TMU_MATCH(F7_TMU_SHOW_REF_COUNT)
+#define MASK_TMU_SHOW_REF_COUNT  TMU_MASK
 
 // MACの定義
 #define MATCH_MAC_INIT     MAC_MATCH(F7_MAC_INIT)
@@ -517,6 +519,17 @@ public:
       &unified_extension_t::exec_mac_id,
       &unified_extension_t::exec_mac_id
     });
+    v.push_back((insn_desc_t){
+      MATCH_TMU_SHOW_REF_COUNT, MASK_TMU_SHOW_REF_COUNT,
+      &unified_extension_t::exec_tmu_show_ref_count,
+      &unified_extension_t::exec_tmu_show_ref_count,
+      &unified_extension_t::exec_tmu_show_ref_count,
+      &unified_extension_t::exec_tmu_show_ref_count,
+      &unified_extension_t::exec_tmu_show_ref_count,
+      &unified_extension_t::exec_tmu_show_ref_count,
+      &unified_extension_t::exec_tmu_show_ref_count,
+      &unified_extension_t::exec_tmu_show_ref_count
+    });
     return v;
   }
 
@@ -686,24 +699,30 @@ private:
   }
   static reg_t exec_tmu_acquire(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
-    int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = shared_tmu->do_acquire(slot_idx);
+    long slot_idx = (long)p->get_state()->XPR[insn.rs1()];
+    bool is_write = (bool)p->get_state()->XPR[insn.rs2()];
+    reg_t res = shared_tmu->do_acquire(slot_idx, is_write);
+    // std::cout << "exec_tmu_acquire called spm_offset " << std::hex << slot_idx << "is write " << is_write << std::endl;
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
     }
     return pc + 4;
   }
+  
   static reg_t exec_tmu_release(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
-    int slot_idx = (int)p->get_state()->XPR[insn.rs1()];
-    reg_t res = shared_tmu->do_release(slot_idx);
+    long slot_idx = (long)p->get_state()->XPR[insn.rs1()];
+    bool is_write = (bool)p->get_state()->XPR[insn.rs2()];
+    // std::cout << "exec_tmu_release called spm_offset " << std::hex << slot_idx << "is write " << is_write << std::endl;
+    reg_t res = shared_tmu->do_release(slot_idx, is_write);
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
     }
     return pc + 4;
   }
+  
   static reg_t exec_tmu_set_tag(processor_t* p, insn_t insn, reg_t pc) {
 
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
@@ -859,6 +878,12 @@ private:
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);
     }
+    return pc + 4;
+  }
+  static reg_t exec_tmu_show_ref_count(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    uint64_t spm_offset = (uint64_t)p->get_state()->XPR[insn.rs1()];
+    shared_tmu->do_show_ref_count(spm_offset);
     return pc + 4;
   }
 

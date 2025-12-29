@@ -1,9 +1,16 @@
-volatile int mac_lock = 0;
-volatile int dma_lock = 0;
-volatile int axim_lock = 0;
-volatile int xor_lock = 0;
-volatile int spm_lock = 0;
-volatile int print_lock = 0;
+int mac_lock = 0;
+int dma_lock = 0;
+int axim_lock = 0;
+int xor_lock = 0;
+int spm_lock = 0;
+int print_lock = 0;
+void lock_print() {
+    while (__sync_lock_test_and_set(&print_lock, 1)) {
+    }
+}
+void unlock_print() {
+    __sync_lock_release(&print_lock);
+}
 void lock_mac() {
     while (__sync_lock_test_and_set(&mac_lock, 1)) {
     }
@@ -11,13 +18,69 @@ void lock_mac() {
 void unlock_mac() {
     __sync_lock_release(&mac_lock);
 }
+int lock_dma_counter = 0;
+int unlock_dma_counter = 0;
 void lock_dma() {
+    // 失敗したらノップを入れたい
+    int counter = 0;
     while (__sync_lock_test_and_set(&dma_lock, 1)) {
+        counter++;
+        if (counter == 1000){
+            int hart_id;
+            asm volatile(
+                "csrr %0, mhartid"
+                : "=r"(hart_id)
+            );
+            lock_print();
+            int current_lock_count = __atomic_load_n(&lock_dma_counter, __ATOMIC_ACQUIRE);
+            int current_unlock_count = __atomic_load_n(&unlock_dma_counter, __ATOMIC_ACQUIRE);
+            printf("wait for dma_lock by hart %d\n", hart_id);
+            printf("  lock count: %d, unlock count: %d\n", current_lock_count, current_unlock_count);
+            unlock_print();
+        }
     }
+    __sync_fetch_and_add(&lock_dma_counter, 1);
 }
 void unlock_dma() {
+    __sync_fetch_and_add(&unlock_dma_counter, 1);
     __sync_lock_release(&dma_lock);
 }
+// typedef struct {
+//     volatile uint32_t next_ticket; // 次に配る整理券番号
+//     volatile uint32_t now_serving; // 現在呼び出し中の番号
+// } ticket_lock_t;
+
+// // グローバル変数として初期化
+// // (既存の int dma_lock; をこれに置き換えてください)
+// ticket_lock_t dma_lock = {0, 0}; 
+
+// void lock_dma() {
+//     // 1. 整理券を取る (Atomic Fetch and Add)
+//     //    dma_lock.next_ticket を +1 しつつ、足される前の値(自分の番号)を取得
+//     //    RISC-Vでは amoadd.w 命令になります
+
+//     uint32_t my_ticket = __atomic_fetch_add(&dma_lock.next_ticket, 1, __ATOMIC_ACQ_REL);
+//     int counter = 0;
+//     while (__atomic_load_n(&dma_lock.now_serving, __ATOMIC_ACQUIRE) != my_ticket) {
+//         // asm volatile("nop");
+//         counter++;
+//         if (counter == 1000){
+//             int hart_id;
+//             asm volatile(
+//                 "csrr %0, mhartid"
+//                 : "=r"(hart_id)
+//             );
+//             lock_print();
+//             printf("wait for dma_lock by hart %d\n", hart_id);
+//             unlock_print();
+//         }
+
+//     }
+// }
+
+// void unlock_dma() {
+//     __atomic_fetch_add(&dma_lock.now_serving, 1, __ATOMIC_RELEASE);
+// }
 void lock_axim() {
     while (__sync_lock_test_and_set(&axim_lock, 1)) {
     }
@@ -38,13 +101,6 @@ void lock_spm() {
 }
 void unlock_spm() {
     __sync_lock_release(&spm_lock);
-}
-void lock_print() {
-    while (__sync_lock_test_and_set(&print_lock, 1)) {
-    }
-}
-void unlock_print() {
-    __sync_lock_release(&print_lock);
 }
 // Readers-Writer Lock (RWLock) の導入
 // --- 変数定義 ---

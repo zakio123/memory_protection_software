@@ -36,7 +36,7 @@ int tmx_logic_t::check_idx(int idx) const {
     int res = -1;
     for (int k = 0; k < active_count; k++) {
       int idx = active_indices[k];
-      if (temp_dram_addr[idx] == dram_addr) {
+      if (temp_dram_addr[idx] == dram_addr && temp_valid[idx]) {
         res = idx;
         break;
       }
@@ -89,6 +89,8 @@ int tmx_logic_t::check_idx(int idx) const {
     temp_valid[idx]  = false;
     temp_dirty[idx]  = false;
     temp_loaded[idx] = false;
+    temp_dram_addr[idx] = 0;
+    temp_spm_offset[idx] = 0;
 
     int pos      = pos_in_active_list[idx];
     int last_idx = active_indices[active_count - 1];
@@ -98,7 +100,6 @@ int tmx_logic_t::check_idx(int idx) const {
     active_count--;
 
     free_indices[++free_indices_top] = idx;
-
     return (reg_t)0;
   }
 
@@ -167,6 +168,13 @@ int tmx_logic_t::check_idx(int idx) const {
     if (free_spm_offset_top >= TEMP_POOL_SIZE - 1) {
       std::cerr << "temp_push: no free indices available" << std::endl;
       return (reg_t)-1; // 空きなし
+    }
+    // 既に存在するかチェック
+    for (int i = 0; i <= free_spm_offset_top; i++) {
+      if (free_spm_offset_stack[i] == spm_offset) {
+        std::cerr << "temp_push: spm_offset already in stack: " << spm_offset << std::endl;
+        return (reg_t)-1; // 重複
+      }
     }
     free_spm_offset_stack[++free_spm_offset_top] = spm_offset;
     return (reg_t)0;

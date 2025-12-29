@@ -46,10 +46,11 @@ int temp_pool_top;
 
 // --- Stack Operations ---
 
-static inline void push_temp_buffer(spm_offset_t spm_addr) {
+static inline long push_temp_buffer(spm_offset_t spm_addr) {
 #ifdef ENABLE_TMX_HARDWARE
     long ret;
     TMX_INSN_R(F7_TMX_PUSH, ret, spm_addr, 0);
+    return ret;
 #else
     if (temp_pool_top >= TEMP_POOL_SIZE - 1) {
         printf("temp_push: no free space in temp pool\n");
@@ -210,7 +211,7 @@ static inline bool acquire_temp_entry_by_index(long idx) {
 
 static inline bool release_temp_entry_by_index(long idx) {
 #ifdef ENABLE_TMX_HARDWARE
-    long ret; 
+    long ret;
     TMX_INSN_R(F7_TMX_REL, ret, idx, 0); 
     return (bool)ret;
 #else

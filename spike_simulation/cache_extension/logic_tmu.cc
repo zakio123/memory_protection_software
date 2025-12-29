@@ -5,18 +5,26 @@
   
 tmu_logic_t::tmu_logic_t() {}
 
+int get_idx(spm_offset_t spm_offset) {
+  int slot_idx = (spm_offset - CACHE_DATA_SPM_BASE) / 64;
+  return slot_idx;
+}
+
 void tmu_logic_t::internal_reset() {
-    for (int i = 0; i < TOTAL_SLOTS; i++) {
-      tmu_valid[i]      = false;
-      tmu_dirty[i]      = false;
-      tmu_ref_count[i]  = 0;
-      tmu_tag[i]  = 0;
-      tmu_spm_offset[i] = CACHE_DATA_SPM_BASE + (i * 64);
-      for (int j = 0; j < 32; j++) {
-        tmu_bit_array[i][j] = false;
-      }
+  for (int i = 0; i < TOTAL_SLOTS; i++) {
+    tmu_valid[i]      = false;
+    tmu_dirty[i]      = false;
+    tmu_tag[i]  = 0;
+    tmu_spm_offset[i] = CACHE_DATA_SPM_BASE + (i * 64);
+    for (int j = 0; j < 32; j++) {
+      tmu_bit_array[i][j] = false;
     }
   }
+  for (int i = 0; i <(TOTAL_SLOTS + TEMP_POOL_SIZE); i++) {
+    tmu_r_ref_count[i] = 0;
+    tmu_w_ref_count[i] = 0;
+  }
+}
 
 int tmu_logic_t::check_idx(int slot_idx) const {
     if (slot_idx < 0 || slot_idx >= TOTAL_SLOTS) {
@@ -96,43 +104,46 @@ int tmu_logic_t::check_idx(int slot_idx) const {
     return res;
   }
   
-  reg_t tmu_logic_t::do_acquire(int slot_idx) {
-    if (check_idx(slot_idx) < 0) {
-      std::cerr << "cache_acquire: invalid idx " << slot_idx << std::endl;
-      return (reg_t)-1;
+  reg_t tmu_logic_t::do_acquire(spm_offset_t spm_offset, bool is_write) {
+    int p_slot_idx = get_idx(spm_offset);
+    if (is_write) {
+      if (tmu_w_ref_count[p_slot_idx] == 0 && tmu_r_ref_count[p_slot_idx] == 0) {
+        tmu_w_ref_count[p_slot_idx] += 1;
+        return (reg_t)1;
+      } else {
+        return (reg_t)0;
+      }
+    } else {
+      if (tmu_w_ref_count[p_slot_idx] == 0) {
+        tmu_r_ref_count[p_slot_idx] += 1;
+        return (reg_t)1;
+      } else {
+        return (reg_t)0;
+      }
     }
-    if (tmu_valid[slot_idx] == false){
-      std::cerr << "cache_acquire: invalid at idx " << slot_idx << std::endl;
-      return (reg_t)-1;
-    }
-    tmu_ref_count[slot_idx] += 1;
-    return (reg_t)0;
   }
 
-  reg_t tmu_logic_t::do_release(int slot_idx) {
-    if (check_idx(slot_idx) < 0) {
-      std::cerr << "cache_release: invalid idx " << slot_idx << std::endl;
-      return (reg_t)-1;
+  reg_t tmu_logic_t::do_release(spm_offset_t spm_offset, bool is_write) {
+    int p_slot_idx = get_idx(spm_offset);
+    if (is_write) {
+      if (tmu_w_ref_count[p_slot_idx] == 0) {
+        std::cerr << "cache_release: write ref_count already zero: " << p_slot_idx << std::endl;
+        return (reg_t)-1;
+      }
+      tmu_w_ref_count[p_slot_idx] -= 1;
+    } else {
+      if (tmu_r_ref_count[p_slot_idx] == 0) {
+        std::cerr << "cache_release: read ref_count already zero: " << p_slot_idx << std::endl;
+        return (reg_t)-1;
+      }
+      tmu_r_ref_count[p_slot_idx] -= 1;
     }
-    if (tmu_valid[slot_idx] == false){
-      std::cerr << "cache_release: invalid at idx " << slot_idx << std::endl;
-      return (reg_t)-1;
-    }
-    if (tmu_ref_count[slot_idx] == 0) {
-      std::cerr << "cache_release: ref_count is already 0 at idx " << slot_idx << std::endl;
-      return (reg_t)-1;
-    }
-    tmu_ref_count[slot_idx] -= 1;
     return (reg_t)0;
   }
 
   reg_t tmu_logic_t::do_set_tag(int slot_idx, dram_addr_t dram_addr) {
     if (slot_idx < 0 || slot_idx >= TOTAL_SLOTS) {
       std::cerr << "cache_set_tag: idx out of range: " << slot_idx << std::endl;
-      return (reg_t)-1;
-    }
-    if (tmu_ref_count[slot_idx] > 0) {
-      std::cerr << "cache_set_tag: ref_count > 0: " << slot_idx << std::endl;
       return (reg_t)-1;
     }
     int set_idx = slot_idx / PHYSICAL_WAYS;
@@ -143,7 +154,6 @@ int tmu_logic_t::check_idx(int slot_idx) const {
     tmu_valid[slot_idx] = true;
     tmu_tag[slot_idx] = dram_addr;
     tmu_dirty[slot_idx] = false;
-    tmu_ref_count[slot_idx] = 0;
     return (reg_t)0;
   }
 
@@ -193,15 +203,9 @@ int tmu_logic_t::check_idx(int slot_idx) const {
     return (reg_t)tmu_spm_offset[idx];
   }
 
-  reg_t tmu_logic_t::do_is_swappable(int idx) {
-    if (tmu_valid[idx] == false) {
-      return (reg_t)1;
-    } else if (check_idx(idx) < 0) {
-      std::cerr << "temp_is_swappable: invalid idx " << idx << std::endl;
-      return (reg_t)-1;
-    } else {
-      return (tmu_ref_count[idx] == 0) ? (reg_t)1 : (reg_t)0;
-    }
+  reg_t tmu_logic_t::do_is_swappable(spm_offset_t spm_offset) {
+    int p_idx = get_idx(spm_offset);
+    return (tmu_r_ref_count[p_idx] == 0 && tmu_w_ref_count[p_idx] == 0) ? (reg_t)1 : (reg_t)0;
   }
 
   reg_t tmu_logic_t::do_return_metadata(int slot_idx){
@@ -230,6 +234,7 @@ int tmu_logic_t::check_idx(int slot_idx) const {
     tmu_valid[idx]  = true;
     return (reg_t)0;
   }
+  
   reg_t tmu_logic_t::do_is_valid(int idx) {
     if (tmu_valid[idx]) {
       return (reg_t)1;
@@ -237,6 +242,7 @@ int tmu_logic_t::check_idx(int slot_idx) const {
       return (reg_t)0;
     }
   }
+  
   reg_t tmu_logic_t::do_set_bit(int idx, int bit_pos) {
     if (bit_pos < 0 || bit_pos >= TMU_BIT_ARRAY_SIZE) {
       std::cerr << "temp_set_bit: bit_pos out of range: " << bit_pos << std::endl;
@@ -261,6 +267,14 @@ int tmu_logic_t::check_idx(int slot_idx) const {
       return (reg_t)-1;
     }
     return tmu_bit_array[idx][bit_pos] ? (reg_t)1 : (reg_t)0;
+  }
+
+  reg_t tmu_logic_t::do_show_ref_count(spm_offset_t spm_offset) {
+    int p_slot_idx = get_idx(spm_offset);
+    std::cout << "Ref count for SPM offset " << std::hex << spm_offset << std::dec
+              << ": R=" << tmu_r_ref_count[p_slot_idx]
+              << ", W=" << tmu_w_ref_count[p_slot_idx] << std::endl;
+    return (reg_t)0;
   }
 
 uint16_t tmu_logic_t::update_tree_lru(uint16_t current_lru, int accessed_way) const {
