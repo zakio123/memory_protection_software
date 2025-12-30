@@ -385,12 +385,6 @@ static inline dma_id_t ensureBlockInSpm(dram_addr_t required_dram_addr, struct I
 }
 static inline void swapp_temp_cache(dram_addr_t dram_addr,spm_offset_t spm_offset, bool temp_dirty, index_t way){
   index_t set_index = get_cache_set_index(dram_addr);
-  bool cache_dirty = is_block_dirty(set_index, way);
-  spm_offset_t current_spm_offset = get_cache_block_spm_offset(set_index, way);
-  if (cache_dirty) {
-    dram_addr_t evict_block_addr = get_block_addr(set_index, way);
-    spm_write_back(current_spm_offset, evict_block_addr, 64,0);
-  }
   tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], way);
   #ifdef ENABLE_TMU_HARDWARE
     long slot_idx = (set_index * CACHE_WAYS) + way;

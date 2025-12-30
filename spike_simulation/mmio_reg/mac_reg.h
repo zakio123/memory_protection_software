@@ -14,12 +14,12 @@ extern "C" {
         : "=r"(rd) \
         : "i"(MAC_OPCODE), "i"(MAC_F3), "i"(funct7), "r"(rs1), "r"(rs2) \
     )
-void mac_init(uint64_t req_id){
+void mac_init(uint64_t req_id, bool is_dmac){
     // uint64_t cmd = ((uint64_t)req_id << 32) | 1;
     // MAC_COMMAND = cmd; // INIT
     // printf("MAC INIT called with req_id=%llu\n", req_id);
     long unused;
-    MAC_INSN_R(F7_MAC_INIT, unused, req_id, 0);
+    MAC_INSN_R(F7_MAC_INIT, unused, req_id, is_dmac ? 1 : 0);
 }
 void mac_update(uint64_t start_bit, uint64_t end_bit){
     // uint64_t cmd = ((end_bit & 0XFFFF) << 48) | ((start_bit & 0xFFFF) << 32) | 2;

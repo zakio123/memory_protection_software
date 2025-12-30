@@ -891,7 +891,8 @@ private:
   static reg_t exec_mac_init(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     uint64_t init_id = (uint64_t)p->get_state()->XPR[insn.rs1()];
-    uint64_t cmd = ((uint64_t)init_id << 32) | 1;
+    uint64_t is_dmac = (uint64_t)p->get_state()->XPR[insn.rs2()];
+    uint64_t cmd = ((uint64_t)init_id << 32) | ((is_dmac & 1) << 16) | 1;
     uint8_t* bytes = reinterpret_cast<uint8_t*>(&cmd);
     // MMIOで初期化
     auto mmu = p->get_mmu();
