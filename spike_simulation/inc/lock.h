@@ -18,31 +18,12 @@ void lock_mac() {
 void unlock_mac() {
     __sync_lock_release(&mac_lock);
 }
-int lock_dma_counter = 0;
-int unlock_dma_counter = 0;
 void lock_dma() {
     // 失敗したらノップを入れたい
-    int counter = 0;
     while (__sync_lock_test_and_set(&dma_lock, 1)) {
-        counter++;
-        if (counter == 1000){
-            int hart_id;
-            asm volatile(
-                "csrr %0, mhartid"
-                : "=r"(hart_id)
-            );
-            lock_print();
-            int current_lock_count = __atomic_load_n(&lock_dma_counter, __ATOMIC_ACQUIRE);
-            int current_unlock_count = __atomic_load_n(&unlock_dma_counter, __ATOMIC_ACQUIRE);
-            printf("wait for dma_lock by hart %d\n", hart_id);
-            printf("  lock count: %d, unlock count: %d\n", current_lock_count, current_unlock_count);
-            unlock_print();
-        }
     }
-    __sync_fetch_and_add(&lock_dma_counter, 1);
 }
 void unlock_dma() {
-    __sync_fetch_and_add(&unlock_dma_counter, 1);
     __sync_lock_release(&dma_lock);
 }
 // typedef struct {
