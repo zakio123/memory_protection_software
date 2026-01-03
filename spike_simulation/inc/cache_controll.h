@@ -641,18 +641,18 @@ static inline void update_lru_on_access(index_t set_index, index_t way_index){
 // --- 軽量タグチェック (読み取り専用、ヒット/ミスのみ判定) ---
 // 高速化のため、ヒットしたかと、空いているwayの探索のみを行う and 追い出しても良さそうなwayの探索
 typedef struct {
-    bool hit;
-    index_t way;
+    int way;
+    int hit;
 } light_tag_info_t;
 static inline light_tag_info_t light_tag_check(dram_addr_t dram_addr){
   #ifdef ENABLE_TMU_HARDWARE
     long ret;
-    long slot_idx = get_cache_set_index(dram_addr) * CACHE_WAYS;
-    slot_idx = (slot_idx << 32) | CACHE_WAYS; // search_rangeにCACHE_WAYSを指定
+    long slot_idx = get_cache_set_index(dram_addr) * CACHE_WAYS << 32;
+    slot_idx = slot_idx | CACHE_WAYS; // search_rangeにCACHE_WAYSを指定
     TMU_INSN_R(F7_TMU_LIGHT_TAG_CHECK, ret, slot_idx, dram_addr);
     light_tag_info_t info;
     info.way = (ret >> 32);
-    info.hit = (bool)(ret & 0x1);
+    info.hit = (ret & 0x1);
     return info;
   #else 
   index_t set_index = get_cache_set_index(dram_addr);

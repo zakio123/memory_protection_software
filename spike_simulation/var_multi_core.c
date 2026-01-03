@@ -136,8 +136,6 @@ AFTER_PATH_CHECK_EVICTION:
   for (long i = v_level-1;i>=load_start_index;i--){
     spm_offset_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     dma_id_t need_id = (i == 0) ? wait_dma_id[0] : wait_dma_id[i-1];
-    
-    
     lock_mac();
     mac_req_id = global_mac_req_id;
     mac_req_id += 1;
