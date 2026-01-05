@@ -1,3 +1,4 @@
-g++ -std=c++17 -fPIC -shared \
+g++ -std=c++20 -fPIC -shared \
 -o libunified_extension.so unified_extension.cc \
-logic_tmu.cc logic_tmx.cc  -I/home/ozaki/rocket/rocket-chip/riscv-isa-sim/riscv -I/home/ozaki/rocket/rocket-chip/mmio_project/spike_simulation/inc
+logic_tmu.cc logic_tmx.cc  -I/home/ozaki/rocket/rocket-chip/riscv-isa-sim/riscv -I/home/ozaki/rocket/rocket-chip/mmio_project/spike_simulation/inc \
+-I/home/ozaki/rocket/rocket-chip/mmio_project/spike_simulation/mmio_reg

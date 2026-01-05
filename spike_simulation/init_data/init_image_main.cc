@@ -23,7 +23,7 @@ static inline uint64_t div_ceil_u64(uint64_t a, uint64_t b){
 // ===== データタグMAC（要置換） =====
 // 仕様：cipher64B + 1B(counter) をMAC
 // ここではデフォルトFNV-1a: tag = FNV(cipher64)→FNV(minor_byte)
-static inline uint64_t compute_data_tag(uint8_t cipher64[64], uint8_t counter_byte){
+static inline uint64_t compute_data_tag(uint8_t cipher64[64], uint8_t counter_byte, uint64_t dram_addr){
     uint64_t mac = FNV_OFFSET_BASIS;
     for (int i=0;i<64;++i) {
         mac ^= cipher64[i];
@@ -38,6 +38,11 @@ static inline uint64_t compute_data_tag(uint8_t cipher64[64], uint8_t counter_by
     // マイナーカウンターを混ぜる
     mac ^= counter_byte;
     mac *= FNV_PRIME;
+    for (int i=0;i<8;i++){
+      uint8_t byte = (dram_addr >> (8*i)) & 0xFF;
+      mac ^= byte;
+      mac *= FNV_PRIME;
+    }
     return mac;
 }
 
@@ -45,7 +50,7 @@ static inline uint64_t compute_data_tag(uint8_t cipher64[64], uint8_t counter_by
 // ノード先頭56B（major+minors+pad）を基本データとし、
 // 親64B/子インデックスを混ぜる例。rootは親無し/child=-1。
 
-static inline uint64_t compute_node_mac(const uint64_t major_counter, const uint8_t minor_couter, const uint64_t parent_counter,uint32_t size){
+static inline uint64_t compute_node_mac(const uint64_t major_counter, const uint8_t minor_couter, const uint64_t parent_counter,uint32_t size,uint64_t dram_addr){
     uint8_t buffer[56];
     uint64_t mac = FNV_OFFSET_BASIS;
     // 親ノードカウンターを混ぜる
@@ -67,7 +72,12 @@ static inline uint64_t compute_node_mac(const uint64_t major_counter, const uint
         mac ^= buffer[i];
         mac *= FNV_PRIME;
     }
-
+    // dramアドレスを混ぜる
+    for (int i=0;i<8;i++){
+      uint8_t byte = (dram_addr >> (8*i)) & 0xFF;
+      mac ^= byte;
+      mac *= FNV_PRIME;
+    }
   return mac;
 }
 
@@ -149,7 +159,7 @@ int main(int argc, char** argv){
   #pragma omp parallel for schedule(static) 
     for(uint64_t b=0;b<n_blocks;++b){
         uint8_t* ciph = &cipher[b*BLK64];
-        uint64_t tag = compute_data_tag(ciph, /*minor*/init_minor);
+        uint64_t tag = compute_data_tag(ciph, /*minor*/init_minor, PROTECTION_BASE + b * BLK64);
         uint64_t tag_blk_index = b / TAGS_PER_BLOCK;
         uint64_t tag_slot      = b % TAGS_PER_BLOCK;
         uint8_t*  dst = &tags[tag_blk_index*TAG_BLOCK + tag_slot*TAG_BYTES];
@@ -163,45 +173,65 @@ int main(int argc, char** argv){
 //   mac = 8B
 //   一番最初だけ親ノードが64bitde1
   uint64_t parent_counter = 1;
-  uint64_t first_mac = compute_node_mac(init_major, init_minor, parent_counter,64);
-  uint64_t mac = compute_node_mac(init_major, init_minor,parent_counter,8);
+  uint64_t first_node_dram_addr = MAIN_COUNTER_BASE;
   uint64_t total_nodes = ((1ULL << (5ULL * (HEIGHT))) - 1ULL) / (32ULL - 1ULL);
-  uint8_t first_node[64];
-  for (uint32_t i=0;i<64;++i) {
-    if (i < 8) {
-      first_node[i] = 0; // major_counter
-    } else if (i < 40) {
-      first_node[i] = 1; // minor_counters
-    } else if (i < 56) {
-      first_node[i] = 0; // pad
-    } else {
-      // mac will be set later
-      first_node[i] = first_mac >> ((i - 56) * 8) & 0xFF;
-    }
-  }
-  uint8_t node[64];
-  for (uint32_t i=0;i<64;++i) {
-    if (i < 8) {
-      node[i] = 0; // major_counter
-    } else if (i < 40) {
-      node[i] = 1; // minor_counters
-    } else if (i < 56) {
-      node[i] = 0; // pad
-    } else {
-      // mac will be set later
-      node[i] = mac >> ((i - 56) * 8) & 0xFF;
-    }
-  }
-  std::cout << "first mac = " << std::hex << first_mac << ", mac = " << mac << std::dec << std::endl;
   std::vector<uint8_t> tree(total_nodes*NODE, 0);
-    for(uint64_t n=0;n<total_nodes;++n){
-        if (n == 0){
-            std::memcpy(&tree[n*NODE], first_node, NODE);
-            continue;
+  #pragma omp parallel for schedule(static)
+  for(uint64_t n=0;n<total_nodes;++n){
+      uint64_t dram_addr = MAIN_COUNTER_BASE + n * NODE;
+      uint64_t mac = compute_node_mac(init_major, init_minor, parent_counter, (n==0)?64:8, dram_addr);
+      uint8_t node[64];
+      for (uint32_t i=0;i<64;++i) {
+        if (i < 8) {
+          node[i] = 0; // major_counter
+        } else if (i < 40) {
+          node[i] = 1; // minor_counters
+        } else if (i < 56) {
+          node[i] = 0; // pad
         } else {
-            std::memcpy(&tree[n*NODE], node, NODE);
+          node[i] = mac >> ((i - 56) * 8) & 0xFF;
         }
-    }
+      }
+      std::memcpy(&tree[n*NODE], node, NODE);
+  }
+  // uint64_t first_mac = compute_node_mac(init_major, init_minor, parent_counter,64);
+  // uint64_t mac = compute_node_mac(init_major, init_minor,parent_counter,8);
+  // uint8_t first_node[64];
+  // for (uint32_t i=0;i<64;++i) {
+  //   if (i < 8) {
+  //     first_node[i] = 0; // major_counter
+  //   } else if (i < 40) {
+  //     first_node[i] = 1; // minor_counters
+  //   } else if (i < 56) {
+  //     first_node[i] = 0; // pad
+  //   } else {
+  //     // mac will be set later
+  //     first_node[i] = first_mac >> ((i - 56) * 8) & 0xFF;
+  //   }
+  // }
+  // uint8_t node[64];
+  // for (uint32_t i=0;i<64;++i) {
+  //   if (i < 8) {
+  //     node[i] = 0; // major_counter
+  //   } else if (i < 40) {
+  //     node[i] = 1; // minor_counters
+  //   } else if (i < 56) {
+  //     node[i] = 0; // pad
+  //   } else {
+  //     // mac will be set later
+  //     node[i] = mac >> ((i - 56) * 8) & 0xFF;
+  //   }
+  // }
+  // std::cout << "first mac = " << std::hex << first_mac << ", mac = " << mac << std::dec << std::endl;
+  // std::vector<uint8_t> tree(total_nodes*NODE, 0);
+  //   for(uint64_t n=0;n<total_nodes;++n){
+  //       if (n == 0){
+  //           std::memcpy(&tree[n*NODE], first_node, NODE);
+  //           continue;
+  //       } else {
+  //           std::memcpy(&tree[n*NODE], node, NODE);
+  //       }
+  //   }
 
   // セクション配置（64Bアライン）
   auto align64 = [](uint64_t x){ return (x + 63ull) & ~63ull; };

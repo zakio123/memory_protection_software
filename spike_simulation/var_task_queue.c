@@ -34,15 +34,21 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr, bool is_write){
   //       : "=r"(hartid)
   //   );
   long idx = find_temp_entry(dram_addr);
+  lock_print();
+  printf("SPM Swap Manager: Swapping dram_addr=%016llx is_write=%d found idx=%ld\n", dram_addr, is_write, idx);
+  unlock_print();
   if (idx == -1){
-    // lock_print();
-    // printf("Error: temp entry not found for addr=%016llx during swap\n", dram_addr);
-    // unlock_print();
+    lock_print();
+    printf("Error: temp entry not found for addr=%016llx during swap\n", dram_addr);
+    unlock_print();
     return;
   }
   spm_offset_t temp_spm = get_temp_spm_offset(idx);
   bool swappable_temp = swappable_block(temp_spm);
   if (swappable_temp){
+    lock_print();
+    printf("SPM Swap Manager: Swappable temp entry for addr=%016llx spm_offset=%lx\n", dram_addr, temp_spm);
+    unlock_print();
     light_tag_info_t light_info = light_tag_check(dram_addr);
     index_t set_index = get_cache_set_index(dram_addr);
     if (light_info.way == -1){
@@ -83,6 +89,14 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr, bool is_write){
         __sync_fetch_and_add(&push_count, 1);
       }
       long ret = invalidate_temp_entry_by_index(idx);
+      if (ret != 0){
+        lock_print();
+        printf("Error: invalidate failed for swapping: addr=%016llx idx=%ld\n", dram_addr,idx);
+        printf("  mac_updated=%d\n", mac_updated);
+        printf("  push_count=%d, pop_count=%d\n", push_count, pop_count);
+        unlock_print();
+        exit(1);
+      }
       // swapする
       // lock_print();
       // printf("swapping cache block addr=%016llx spm_offset %lx S:%ld W:%ld old spm %lx\n", dram_addr, temp_spm, set_index, light_info.way, old_spm);
@@ -103,8 +117,12 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr, bool is_write){
         exit(1);
       }
     }
+  } else {
+    lock_print();
+    printf("SPM Swap Manager: Non-swappable temp entry for addr=%016llx spm_offset=%lx\n", dram_addr, temp_spm);
+    TMU_INSN_R(F7_TMU_SHOW_REF_COUNT, temp_spm, 0, 0);
+    unlock_print();
   }
-  unlock_dma();
   return;
 }
 
@@ -145,13 +163,17 @@ void spm_manage(){
     for (int i = 0; i< MAX_PENDING_REQUESTS;i++){
       request_state_t state = __atomic_load_n(&request_states[i], __ATOMIC_ACQUIRE);
       if (state == REQ_IDLE){
+        llc_request_t* req = &llc_requests[i]; 
+        if (req->current_index != -1){
+          goto BEFORE_LOOP;
+        }  
         if ((AXIM_STATUS_REG & 1) == 0){
           continue;
         }
-        // lock_print();
-        // printf("SPM Manager: Received new LLC request in slot %d\n", i);
-        // unlock_print();
-        llc_request_t* req = &llc_requests[i]; 
+        lock_print();
+        printf("SPM Manager: Received new LLC request in slot %d\n", i);
+        unlock_print();
+
         bool is_write = (AXIM_STATUS_REG & 2) != 0;
         dram_addr_t addr = AXIM_REQ_ADDR_REG;
         uint64_t req_id = AXIM_REQ_ID_REG;
@@ -159,53 +181,50 @@ void spm_manage(){
         req->is_write = is_write;
         req->request_id = req_id;
         req->current_index = 0;
-        __atomic_store_n(&request_states[i], REQ_SPM_MANAGE, __ATOMIC_RELEASE);
-      } else if (state == REQ_SPM_MANAGE){
-        // lock_print();
-        // printf("SPM Manager: Processing LLC request in slot %d addr=%016llx is_write=%d\n", i, req->dram_addr, req->is_write);
-        // unlock_print();
-        // ツリー上のノードのタグチェックを行う
-        uint64_t start_time = read_instret();
-        llc_request_t* req = &llc_requests[i];
         uint64_t s = read_instret();
+BEFORE_LOOP:
+        lock_print();
+        printf("SPM : req addr %016llx is_write %d current_index %ld\n", req->dram_addr, req->is_write, req->current_index);
+        unlock_print();
         for(long j=req->current_index; j<HEIGHT; ++j){
           uint64_t s1 = read_instret();
           uint64_t index = (req->dram_addr - PROTECTION_BASE) / (64 * (1ULL << (5 * j)));
           dram_addr_t dram_addr = index / 32 * 64 + level_base[HEIGHT - j];
           long set_index = get_cache_tree_set_index(dram_addr);
-          light_tag_info_t info = light_tag_check(dram_addr);
+          uint64_t info = light_tag_check_(dram_addr);
           uint64_t s2 = read_instret();
           // lock_print();
           // printf("SPM Manager: Light tag check at height %ld for LLC request in slot %d addr=%016llx set_index=%lu hit=%d time %llu cycles\n", j, i, dram_addr, set_index, info.hit, s2 - s1);
           // unlock_print();
           uint64_t s3 = read_instret();
-          if (info.hit){
-            uint64_t e6 = read_instret();
-            spm_offset_t spm_offset = get_cache_block_spm_offset(set_index, info.way);
-            bool suc = req->is_write ? acquire_write_block(spm_offset) : acquire_read_block(spm_offset);
+          if (info & 0x1){
+            // uint64_t e6 = read_instret();
+            index_t way = (info >> 32);
+            spm_offset_t spm_offset = get_cache_block_spm_offset(set_index, way);
+            long suc = req->is_write ? acquire_write_block(spm_offset) : acquire_read_block(spm_offset);
             uint64_t e7 = read_instret();
             if (suc){
-              update_lru_on_access(set_index, info.way);
+              update_lru_on_access(set_index, way);
               if (req->is_write){
-                set_block_dirty(set_index, info.way);
-                clearParentUpdated(set_index, info.way);
+                set_block_dirty(set_index, way);
+                clearParentUpdated(set_index, way);
               }
-              req->load_start_index = HEIGHT - j;
-              uint64_t e4 = read_instret();
+              // uint64_t e4 = read_instret();
               // temp_height_infos[i][HEIGHT - j - 1] = (height_info_t){.spm_offset = spm_offset, .dma_id = global_dma_id};
               // // temp_height_infos[i][HEIGHT - j - 1].dma_id = global_dma_id;
+              req->load_start_index = HEIGHT - j;
               spm_height_infos[i][HEIGHT - j - 1] = spm_offset;
               id_infos[i][HEIGHT - j - 1] = global_dma_id;
-              uint64_t e5 = read_instret();
-              lock_print();
-              uint64_t e1 = read_instret();
-              printf("SPM Manager: Hit at height %ld for LLC request in slot %d addr=%016llx SPM offset=%016llx time %llu cycles\n", j, i, dram_addr, spm_offset, e1 - s3);
-              printf(" array time %llu cycles\n", e5 - e4);
-              printf(" acquire time %llu cycles\n", e7 - e6);
-              printf(" rest time %llu cycles\n", e4 - e7);
-              printf(" hit check time %llu cycles\n", e6 - s3);
-              unlock_print();
-              break;
+              // uint64_t e5 = read_instret();
+              // lock_print();
+              // uint64_t e1 = read_instret();
+              // printf("SPM Manager: Hit at height %ld for LLC request in slot %d addr=%016llx SPM offset=%016llx time %llu cycles\n", j, i, dram_addr, spm_offset, e1 - s3);
+              // printf(" array time %llu cycles\n", e5 - e4);
+              // printf(" acquire time %llu cycles\n", e7 - e6);
+              // printf(" rest time %llu cycles\n", e4 - e7);
+              // printf(" hit check time %llu cycles\n", e6 - s3);
+              // unlock_print();
+              goto AFTER_PATH_CHECK;
             } else {
               req->current_index = j;
               goto AFTER_LOOP;
@@ -213,19 +232,44 @@ void spm_manage(){
           } else {
             long idx = find_temp_entry(dram_addr);
             spm_offset_t spm_offset;
+            bool pop = false;
             if (idx == -1){
               spm_offset = pop_temp_buffer();
+              pop = true;
               if (spm_offset == -1){
                 req->current_index = j;
+                lock_print();
+                printf("pop fail during slot %d mangae; push_count=%d pop_count=%d addr=%016llx\n", i, push_count, pop_count,req->dram_addr);
+                unlock_print();
+                for (int k = 0; k < MAX_PENDING_REQUESTS; k++){
+                  llc_request_t* r = &llc_requests[k];
+                  lock_print();
+                  printf("  slot %d req addr=%016llx is_write=%d request_id=%llu current_index=%ld load_start_index=%ld\n", k, r->dram_addr, r->is_write, r->request_id, r->current_index, r->load_start_index);
+                  request_state_t st = __atomic_load_n(&request_states[k], __ATOMIC_ACQUIRE);
+                  printf("    state=%d\n", st);
+                  for (long h = 0; h < HEIGHT; h++){
+                    printf("    height %ld spm_offset=%016llx dma_id=%llu\n", h, spm_height_infos[k][h], id_infos[k][h]);
+                  }
+                  unlock_print();
+                }
+                long res;
+                TMX_INSN_R(F7_TMX_SHOW_ACTIVE, res, 0, 0);
+                // spm_offsetのロック周りを表示させる
+                for (int k = 0;k<16;k++){
+                  spm_offset_t s = get_temp_spm_offset(k);
+                  TMU_INSN_R(F7_TMU_SHOW_REF_COUNT, res, s, 0);
+                }
+                exit(1);
                 goto AFTER_LOOP;
               }
+              __sync_fetch_and_add(&pop_count, 1);
               idx = alloc_temp_entry(dram_addr, spm_offset);
               global_dma_id += 1;
               spm_copy_to_local(dram_addr, spm_offset, 64, global_dma_id);
             } else {
               spm_offset = get_temp_spm_offset(idx);
             }
-            bool suc = req->is_write ? acquire_write_block(spm_offset) : acquire_read_block(spm_offset);
+            long suc = req->is_write ? acquire_write_block(spm_offset) : acquire_read_block(spm_offset);
             if (suc){
               if (req->is_write){
                 dirty_temp_entry_by_index(idx);
@@ -234,20 +278,37 @@ void spm_manage(){
               // temp_height_infos[i][HEIGHT - 1 - j].dma_id = global_dma_id;
               spm_height_infos[i][HEIGHT - j - 1] = spm_offset;
               id_infos[i][HEIGHT - j - 1] = global_dma_id;
-              lock_print();
-              uint64_t e2 = read_instret();
-              printf("SPM Manager: Temp hit at height %ld for LLC request in slot %d addr=%016llx SPM offset=%016llx time %llu cycles\n", j, i, dram_addr, spm_offset, e2 - s3);
-              unlock_print();
+              // lock_print();
+              // uint64_t e2 = read_instret();
+              // printf("SPM Manager: Temp hit at height %ld for LLC request in slot %d addr=%016llx SPM offset=%016llx time %llu cycles\n", j, i, dram_addr, spm_offset, e2 - s3);
+              // unlock_print();
             } else {
+              if (pop == false){
+                lock_print();
+                printf("Error: failed to acquire block for temp entry addr=%016llx during SPM manage in slot %d\n", dram_addr, i);
+                printf("SPM Manager: push_count=%d pop_count=%d\n", push_count, pop_count);
+                printf("spm_offset=%lx\n", spm_offset);
+                printf("current state dump:\n");
+                for (int k = 0; k < MAX_PENDING_REQUESTS; k++){
+                  llc_request_t* r = &llc_requests[k];
+                  lock_print();
+                  printf("  slot %d req addr=%016llx is_write=%d request_id=%llu current_index=%ld load_start_index=%ld\n", k, r->dram_addr, r->is_write, r->request_id, r->current_index, r->load_start_index);
+                  request_state_t st = __atomic_load_n(&request_states[k], __ATOMIC_ACQUIRE);
+                  printf("    state=%d\n", st);
+                  for (long h = 0; h < HEIGHT; h++){
+                    printf("    height %ld spm_offset=%016llx dma_id=%llu\n", h, spm_height_infos[k][h], id_infos[k][h]);
+                  }
+                }
+                unlock_print();
+                exit(1);
+              }
               req->current_index = j;
               goto AFTER_LOOP;
             }
           }
         }
+AFTER_PATH_CHECK:
         uint64_t e = read_instret();
-        lock_print();
-        printf("SPM Manager: Finished temp/cache tag checks for LLC request in slot %d time %llu cycles\n", i, e - s);
-        unlock_print();
         // Dataブロック
         if (!req->is_write){
           global_dma_id += 1;
@@ -255,9 +316,9 @@ void spm_manage(){
         }
         req->data_dma_id = global_dma_id;
         // MACのDMA管理へ移行
-        // lock_print();
-        // printf("SPM Manager: Finished path check for LLC request in slot %d\n", i);
-        // unlock_print();
+        lock_print();
+        printf("SPM Manager: Finished path check for LLC request in slot %d\n", i);
+        unlock_print();
         dram_addr_t datamacblock_addr = DATA_TAG_BASE + (((req->dram_addr - PROTECTION_BASE) / (64 * 8))) * 64;
         index_t set_index = get_cache_set_index(datamacblock_addr);
         spm_offset_t spm_offset;
@@ -295,29 +356,170 @@ void spm_manage(){
         update_lru_on_access(set_index, light_info.way);
         req->mac_spm_offset = spm_offset;
         req->mac_dma_id = global_dma_id;
-        bool suc = req->is_write ? acquire_write_block(spm_offset) : acquire_read_block(spm_offset);
-        if (!suc){
-          continue;
-        } else {
+        long suc = req->is_write ? acquire_write_block(spm_offset) : acquire_read_block(spm_offset);
+        if (suc){
           if (req->is_write){
-            set_block_dirty(set_index, light_info.way);
+              set_block_dirty(set_index, light_info.way);
           }
-        }
-        // lock_print();
-        // printf("SPM Manager: Prepared MAC SPM for LLC request in slot %d\n", i);
-        // unlock_print();
-        uint64_t end_time = read_instret();
-        if (req->request_id % 1000 == 0){
+        } else {
           lock_print();
-          printf("SPM Manager: LLC request %llu load_start_index %llu SPM manage time %llu cycles\n", req->request_id, req->load_start_index, end_time - start_time);
+          printf("SPM Manager: Failed to acquire block for MAC addr=%016llx in slot %d\n", datamacblock_addr, i);
           unlock_print();
+          continue;
         }
+        // uint64_t end_time = read_instret();
+        // if (req->request_id % 1000 == 0){
+        //   lock_print();
+        //   printf("SPM Manager: LLC request %llu load_start_index %llu SPM manage time %llu cycles\n", req->request_id, req->load_start_index, end_time - start_time);
+        //   unlock_print();
+        // }
         __atomic_store_n(&request_states[i], REQ_MAC_AES_MANAGE, __ATOMIC_RELEASE);
+        // __atomic_store_n(&request_states[i], REQ_SPM_MANAGE, __ATOMIC_RELEASE);
+      } else if (state == REQ_SPM_MANAGE){
+        // ツリー上のノードのタグチェックを行う
+        uint64_t start_time = read_instret();
+        llc_request_t* req = &llc_requests[i];
+        // uint64_t s = read_instret();
+        // for(long j=req->current_index; j<HEIGHT; ++j){
+        //   uint64_t s1 = read_instret();
+        //   uint64_t index = (req->dram_addr - PROTECTION_BASE) / (64 * (1ULL << (5 * j)));
+        //   dram_addr_t dram_addr = index / 32 * 64 + level_base[HEIGHT - j];
+        //   long set_index = get_cache_tree_set_index(dram_addr);
+        //   uint64_t info = light_tag_check_(dram_addr);
+        //   uint64_t s2 = read_instret();
+        //   // lock_print();
+        //   // printf("SPM Manager: Light tag check at height %ld for LLC request in slot %d addr=%016llx set_index=%lu hit=%d time %llu cycles\n", j, i, dram_addr, set_index, info.hit, s2 - s1);
+        //   // unlock_print();
+        //   uint64_t s3 = read_instret();
+        //   if (info & 0x1){
+        //     // uint64_t e6 = read_instret();
+        //     index_t way = (info >> 32);
+        //     spm_offset_t spm_offset = get_cache_block_spm_offset(set_index, way);
+        //     long suc = req->is_write ? acquire_write_block(spm_offset) : acquire_read_block(spm_offset);
+        //     uint64_t e7 = read_instret();
+        //     if (suc){
+        //       update_lru_on_access(set_index, way);
+        //       if (req->is_write){
+        //         set_block_dirty(set_index, way);
+        //         clearParentUpdated(set_index, way);
+        //       }
+        //       // uint64_t e4 = read_instret();
+        //       // temp_height_infos[i][HEIGHT - j - 1] = (height_info_t){.spm_offset = spm_offset, .dma_id = global_dma_id};
+        //       // // temp_height_infos[i][HEIGHT - j - 1].dma_id = global_dma_id;
+        //       req->load_start_index = HEIGHT - j;
+        //       spm_height_infos[i][HEIGHT - j - 1] = spm_offset;
+        //       id_infos[i][HEIGHT - j - 1] = global_dma_id;
+        //       // uint64_t e5 = read_instret();
+        //       // lock_print();
+        //       // uint64_t e1 = read_instret();
+        //       // printf("SPM Manager: Hit at height %ld for LLC request in slot %d addr=%016llx SPM offset=%016llx time %llu cycles\n", j, i, dram_addr, spm_offset, e1 - s3);
+        //       // printf(" array time %llu cycles\n", e5 - e4);
+        //       // printf(" acquire time %llu cycles\n", e7 - e6);
+        //       // printf(" rest time %llu cycles\n", e4 - e7);
+        //       // printf(" hit check time %llu cycles\n", e6 - s3);
+        //       // unlock_print();
+        //       break;
+        //     } else {
+        //       req->current_index = j;
+        //       goto AFTER_LOOP;
+        //     }
+        //   } else {
+        //     long idx = find_temp_entry(dram_addr);
+        //     spm_offset_t spm_offset;
+        //     if (idx == -1){
+        //       spm_offset = pop_temp_buffer();
+        //       if (spm_offset == -1){
+        //         req->current_index = j;
+        //         goto AFTER_LOOP;
+        //       }
+        //       idx = alloc_temp_entry(dram_addr, spm_offset);
+        //       global_dma_id += 1;
+        //       spm_copy_to_local(dram_addr, spm_offset, 64, global_dma_id);
+        //     } else {
+        //       spm_offset = get_temp_spm_offset(idx);
+        //     }
+        //     long suc = req->is_write ? acquire_write_block(spm_offset) : acquire_read_block(spm_offset);
+        //     if (suc){
+        //       if (req->is_write){
+        //         dirty_temp_entry_by_index(idx);
+        //       }
+        //       // temp_height_infos[i][HEIGHT - 1 - j].spm_offset = spm_offset;
+        //       // temp_height_infos[i][HEIGHT - 1 - j].dma_id = global_dma_id;
+        //       spm_height_infos[i][HEIGHT - j - 1] = spm_offset;
+        //       id_infos[i][HEIGHT - j - 1] = global_dma_id;
+        //       // lock_print();
+        //       // uint64_t e2 = read_instret();
+        //       // printf("SPM Manager: Temp hit at height %ld for LLC request in slot %d addr=%016llx SPM offset=%016llx time %llu cycles\n", j, i, dram_addr, spm_offset, e2 - s3);
+        //       // unlock_print();
+        //     } else {
+        //       req->current_index = j;
+        //       goto AFTER_LOOP;
+        //     }
+        //   }
+        // }
+        // uint64_t e = read_instret();
+        
+        // // MACのDMA管理へ移行
+        // // lock_print();
+        // // printf("SPM Manager: Finished path check for LLC request in slot %d\n", i);
+        // // unlock_print();
+        // dram_addr_t datamacblock_addr = DATA_TAG_BASE + (((req->dram_addr - PROTECTION_BASE) / (64 * 8))) * 64;
+        // index_t set_index = get_cache_set_index(datamacblock_addr);
+        // spm_offset_t spm_offset;
+        // light_tag_info_t light_info = light_tag_check(datamacblock_addr);
+        // if (light_info.hit){
+        //   spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+        // } else {
+        //   if (light_info.way == -1){
+        //     light_info.way = get_victim_way(set_index);
+        //     bool dirty = is_block_dirty(set_index, light_info.way);
+        //     spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+        //     if (dirty){
+        //       dram_addr_t old_block_addr = get_block_addr(set_index, light_info.way);
+        //       spm_write_back(spm_offset, old_block_addr, 64, 0);
+        //     }
+        //     // タグメタデータ更新
+        //     clear_block_dirty(set_index, light_info.way);
+        //   } else {
+        //     set_block_valid(set_index, light_info.way);
+        //     spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+        //   }
+        //   global_dma_id += 1;
+        //   spm_copy_to_local(datamacblock_addr, spm_offset, 64, global_dma_id);
+        //   set_block_addr(set_index, light_info.way, datamacblock_addr);
+        //   // long slot_idx = (set_index * CACHE_WAYS) + light_info.way;
+        //   // #ifdef ENABLE_TMU_HARDWARE
+        //   //   long ret;
+        //   //   TMU_INSN_R(F7_TMU_SET_TAG, ret, slot_idx, datamacblock_addr); 
+        //   // #else
+        //   //   valid_metadata[set_index][light_info.way] = true;
+        //   //   dirty_metadata[set_index][light_info.way] = false;
+        //   //   block_addr_metadata[set_index][light_info.way] = datamacblock_addr;
+        //   // #endif
+        // }
+        // update_lru_on_access(set_index, light_info.way);
+        // req->mac_spm_offset = spm_offset;
+        // req->mac_dma_id = global_dma_id;
+        // long suc = req->is_write ? acquire_write_block(spm_offset) : acquire_read_block(spm_offset);
+        // if (suc){
+        //   if (req->is_write){
+        //       set_block_dirty(set_index, light_info.way);
+        //   }
+        // } else {
+        //   continue;
+        // }
+        // uint64_t end_time = read_instret();
+        // // if (req->request_id % 1000 == 0){
+        // //   lock_print();
+        // //   printf("SPM Manager: LLC request %llu load_start_index %llu SPM manage time %llu cycles\n", req->request_id, req->load_start_index, end_time - start_time);
+        // //   unlock_print();
+        // // }
+        // __atomic_store_n(&request_states[i], REQ_MAC_AES_MANAGE, __ATOMIC_RELEASE);
       } else if (state == REQ_COMPLETED){
         // キャッシュの解放
-        // lock_print();
-        // printf("SPM Manager: Cleaning up after completed LLC request in slot %d\n", i);
-        // unlock_print();
+        lock_print();
+        printf("SPM Manager: Cleaning up after completed LLC request in slot %d\n", i);
+        unlock_print();
         llc_request_t* req = &llc_requests[i];
         if (req->is_write){
           release_write_block(req->mac_spm_offset);
@@ -345,6 +547,7 @@ void spm_manage(){
           dram_addr_t dram_addr = (index >> (5 * (HEIGHT - 1 - j))) / 32 * 64 + level_base[j + 1];
           swapp_dram_addr(dram_addr, req->is_write);
         }
+        req->current_index = -1;
         __atomic_store_n(&request_states[i], REQ_IDLE, __ATOMIC_RELEASE);
       }
 AFTER_LOOP:
@@ -360,19 +563,19 @@ void mac_aes_manage(){
       uint64_t s1 = read_instret();
       if (state == REQ_MAC_AES_MANAGE){
         llc_request_t* req = &llc_requests[i];
-        // lock_print();
-        // printf("MAC/AES Manager: Processing LLC request in slot %d addr=%016llx is_write=%d\n", i, req->dram_addr, req->is_write);
-        // unlock_print();
+        lock_print();
+        printf("MAC/AES Manager: Processing LLC request in slot %d addr=%016llx is_write=%d\n", i, req->dram_addr, req->is_write);
+        unlock_print();
         // ツリーの検証
         uint64_t index = (req->dram_addr - PROTECTION_BASE) / 64;
         for (long j = HEIGHT - 1;j>=req->load_start_index;j--){
           spm_offset_t parent_spm = (j == 0) ? 0 : spm_height_infos[i][j-1];
           dma_id_t need_id = (j == 0) ? id_infos[i][0] : id_infos[i][j-1];
           uint64_t v_index = index >> (5 * (HEIGHT - 1 - j));
-          // lock_print();
-          // printf("Core %d Verification during authen height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", i, j, temp_height_infos[i][j].spm_offset, parent_spm, v_index, need_id);
-          // // printf("  dram_addr=%016llx mac_req_id %d\n", dram_addr_array[i], mac_req_id);
-          // unlock_print();
+          lock_print();
+          printf("Core %d Verification during authen height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", i, j, spm_height_infos[i][j], parent_spm, v_index, need_id);
+          printf("  dram_addr=%016llx mac_req_id %d\n", req->dram_addr, global_mac_req_id);
+          unlock_print();
           global_mac_req_id += 1;
           verify_one_height(spm_height_infos[i][j], parent_spm, v_index,global_mac_req_id,need_id);
         }
@@ -417,6 +620,10 @@ void mac_aes_manage(){
             spm_offset_t parent_spm = (j == 0) ? 0 : spm_height_infos[i][j-1];
             dma_id_t need_id = (j == 0) ? id_infos[i][0] : id_infos[i][j-1];
             uint64_t v_index = index >> (5 * (HEIGHT - 1 - j));
+            lock_print();
+            printf("Core %d Update during authen height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", i, j, spm_height_infos[i][j], parent_spm, v_index, need_id);
+            printf("  dram_addr=%016llx mac_req_id %d\n", req->dram_addr, global_mac_req_id);
+            unlock_print();
             global_mac_req_id += 1;
             update_one_height(spm_height_infos[i][j], parent_spm, v_index, true,global_mac_req_id, need_id);
           }
@@ -468,11 +675,11 @@ void mac_aes_manage(){
         }
         uint64_t s2 = read_instret();
         __atomic_store_n(&request_states[i], REQ_COMPLETED, __ATOMIC_RELEASE);
-        if (req->request_id % 1000 == 0){
-          lock_print();
-          printf("MAC/AES Manager: Completed LLC request in slot %d addr=%016llx is_write=%d load_start_index=%d instret=%llu\n", i, req->dram_addr, req->is_write, req->load_start_index, s2 - s1);
-          unlock_print();
-        }
+        // if (req->request_id % 1000 == 0){
+        //   lock_print();
+        //   printf("MAC/AES Manager: Completed LLC request in slot %d addr=%016llx is_write=%d load_start_index=%d instret=%llu\n", i, req->dram_addr, req->is_write, req->load_start_index, s2 - s1);
+        //   unlock_print();
+        // }
       }
     }
   }
@@ -498,6 +705,10 @@ int main(void){
     temp_system_init(CACHE_DATA_SPM_BASE + CACHE_SETS * CACHE_WAYS * 64);
     for (int i=0; i<HEIGHT+1; i++){
       level_base[i] = calculate_level_base_addr(i) + COUNTER_BASE;
+    }
+    for (int i=0; i<MAX_PENDING_REQUESTS; i++){
+      llc_requests[i].current_index = -1;
+      __atomic_store_n(&request_states[i], REQ_IDLE, __ATOMIC_RELEASE);
     }
     __atomic_store_n(&init_done, true, __ATOMIC_RELEASE);
   } else {

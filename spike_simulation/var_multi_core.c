@@ -143,7 +143,8 @@ AFTER_PATH_CHECK_EVICTION:
     // printf("Core %d Verification during eviction height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", hartid, i, spm_offset_array[i], parent_spm, path_indecis[i], need_id);
     // printf("  dram_addr=%016llx mac_req_id %d\n", dram_addr_array[i], mac_req_id);
     // unlock_print();
-    verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], mac_req_id,need_id);
+    spm_sd64(DRAM_ADDR_OFFSET_BASE + (i + 1) * 8 + hartid * (1 + HEIGHT) * 8, dram_addr_array[i]);
+    verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], mac_req_id,need_id, dram_addr_array[i], DRAM_ADDR_OFFSET_BASE + (i + 1) * 8 + hartid * (1 + HEIGHT) * 8);
     global_mac_req_id = mac_req_id;
     unlock_mac();
   }
@@ -197,11 +198,12 @@ AFTER_PATH_CHECK_EVICTION:
     // printf("  dram_addr=%016llx mac_req_id %d\n", dram_addr_array[i], mac_req_id);
     // unlock_print();
     global_mac_req_id = mac_req_id;
+    spm_sd64(DRAM_ADDR_OFFSET_BASE + (i + 1) * 8 + hartid * (1 + HEIGHT) * 8, dram_addr_array[i]);
     if (i == v_level){
       // 最後はカウンター更新なし
-      update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], false,mac_req_id, wait_dma_id[i]);
+      update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], false,mac_req_id, wait_dma_id[i], dram_addr_array[i], DRAM_ADDR_OFFSET_BASE + (i + 1) * 8 + hartid * (1 + HEIGHT) * 8);
     } else {
-      update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, wait_dma_id[i]);
+      update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, wait_dma_id[i], dram_addr_array[i], DRAM_ADDR_OFFSET_BASE + (i + 1) * 8 + hartid * (1 + HEIGHT) * 8);
     }
     unlock_mac();
     if (i < v_level){
@@ -467,7 +469,9 @@ AFTER_PATH_CHECK_AUTH:
     // printf("Core %d Verification during authen height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", hartid, j, spm_offset_array[j], parent_spm, path_indecis[j], need_id);
     // printf("  dram_addr=%016llx mac_req_id %d\n", dram_addr_array[j], mac_req_id);
     // unlock_print();
-    verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id);
+    spm_sd64(DRAM_ADDR_OFFSET_BASE + (j + 1) * 8 + hartid * (1 + HEIGHT) * 8, dram_addr_array[j]);
+    // mac_buffer_set(DRAM_ADDR_OFFSET_BASE + (j + 1) * 8 + hartid * (1 + HEIGHT), mac_req_id);
+    verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id, dram_addr_array[j], DRAM_ADDR_OFFSET_BASE + (j + 1) * 8 + hartid * (1 + HEIGHT) * 8);
     global_mac_req_id = mac_req_id;
     unlock_mac();
   }
@@ -514,7 +518,8 @@ AFTER_PATH_CHECK_AUTH:
     // printf("Core %d Update height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", hartid, i, spm_offset_array[i], parent_spm, path_indecis[i], need_id);
     // printf("  dram_addr=%016llx mac_req_id %d\n", dram_addr_array[i], mac_req_id);
     // unlock_print();
-    update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, wait_dma_id[i]);
+    spm_sd64(DRAM_ADDR_OFFSET_BASE + (i + 1) * 8 + hartid * (1 + HEIGHT) * 8, dram_addr_array[i]);
+    update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, wait_dma_id[i], dram_addr_array[i], DRAM_ADDR_OFFSET_BASE + (i + 1) * 8 + hartid * (1 + HEIGHT) * 8);
     global_mac_req_id = mac_req_id;
     unlock_mac();
   }
@@ -537,6 +542,7 @@ AFTER_PATH_CHECK_AUTH:
   // --- 手順3: MAC計算 ---
   lock_mac();
   global_mac_req_id += 1;
+  spm_sd64(DRAM_ADDR_OFFSET_BASE + hartid * (1 + HEIGHT) * 8, request_addr);
   mac_req_id = global_mac_req_id;
   mac_init(mac_req_id,true);
   mac_buffer_set(DATA_SPM_OFFSET + hartid * 64, tag_id); 
@@ -544,6 +550,8 @@ AFTER_PATH_CHECK_AUTH:
   mac_buffer_set(spm_offset_array[HEIGHT-1], tag_id);
   mac_update(0,63);
   mac_update(counter_bit_offset, counter_bit_offset + 7);
+  mac_buffer_set(DRAM_ADDR_OFFSET_BASE + hartid * (1 + HEIGHT) * 8, tag_id);
+  mac_update(0,63);
   mac_digest(spm_offset + ((request_addr - PROTECTION_BASE) / 64) % 8 * 8, tag_id);
   unlock_mac();
   lock_dma();
@@ -695,7 +703,8 @@ AFTER_PATH_CHECK_VERIFY:
     // printf("Core %d Verification height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", hartid, j, spm_offset_array[j], parent_spm, path_indecis[j], need_id);
     // printf("  dram_addr=%016llx mac_req_id %d\n", dram_addr_array[j], mac_req_id);
     // unlock_print();
-    verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id);
+    spm_sd64(DRAM_ADDR_OFFSET_BASE + (j + 1) * 8 + hartid * (1 + HEIGHT) * 8, dram_addr_array[j]);
+    verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id, dram_addr_array[j], DRAM_ADDR_OFFSET_BASE + (j + 1) * 8 + hartid * (1 + HEIGHT) * 8);
     global_mac_req_id = mac_req_id;
     unlock_mac();
   }
@@ -704,12 +713,15 @@ AFTER_PATH_CHECK_VERIFY:
   lock_mac();
   uint64_t mac_req_id = global_mac_req_id + 1;
   global_mac_req_id = mac_req_id;
+  spm_sd64(DRAM_ADDR_OFFSET_BASE + hartid * (1 + HEIGHT) * 8, request_addr);
   mac_init(mac_req_id,true);
   mac_buffer_set(DATA_SPM_OFFSET + hartid * 64,data_id);
   mac_update(0, 511);
   mac_buffer_set(spm_offset_array[HEIGHT-1],wait_dma_id[HEIGHT-1]);
   mac_update(0,63);
   mac_update(counter_bit_offset, counter_bit_offset + 7);
+  mac_buffer_set(DRAM_ADDR_OFFSET_BASE + hartid * (1 + HEIGHT) * 8, tag_id);
+  mac_update(0,63);
   mac_result_compare(spm_offset + dmac_byte_offset, tag_id);
   uint64_t verify_e = read_instret();
   unlock_mac();

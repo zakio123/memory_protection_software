@@ -33,6 +33,8 @@
 #define MASK_TEMP_PUSH      TMX_MASK
 #define MATCH_TEMP_POP      TMX_MATCH(F7_TMX_POP)
 #define MASK_TEMP_POP       TMX_MASK
+#define MATCH_TEMP_SHOW_ACTIVE TMX_MATCH(F7_TMX_SHOW_ACTIVE)
+#define MASK_TEMP_SHOW_ACTIVE  TMX_MASK
 // tmuの定義
 #define MATCH_TMU_CHECK_TAG   TMU_MATCH(F7_TMU_CHECK_TAG)
 #define MASK_TMU_CHECK_TAG    TMU_MASK
@@ -252,6 +254,17 @@ public:
       &unified_extension_t::exec_tmx_push,
       &unified_extension_t::exec_tmx_push,
       &unified_extension_t::exec_tmx_push
+    });
+    v.push_back((insn_desc_t){
+      MATCH_TEMP_SHOW_ACTIVE, MASK_TEMP_SHOW_ACTIVE,
+      &unified_extension_t::exec_tmx_show_active_slot,
+      &unified_extension_t::exec_tmx_show_active_slot,
+      &unified_extension_t::exec_tmx_show_active_slot,
+      &unified_extension_t::exec_tmx_show_active_slot,
+      &unified_extension_t::exec_tmx_show_active_slot,
+      &unified_extension_t::exec_tmx_show_active_slot,
+      &unified_extension_t::exec_tmx_show_active_slot,
+      &unified_extension_t::exec_tmx_show_active_slot
     });
     
     // tmu命令群の登録
@@ -678,6 +691,15 @@ private:
   static reg_t exec_tmx_pop(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     reg_t res = shared_tmx->do_pop();
+    int rd = insn.rd();
+    if (rd != 0) { // x0への書き込みは無視
+        p->get_state()->XPR.write(rd, res);
+    }
+    return pc + 4;
+  }
+  static reg_t exec_tmx_show_active_slot(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    reg_t res = shared_tmx->do_show_active_slot();
     int rd = insn.rd();
     if (rd != 0) { // x0への書き込みは無視
         p->get_state()->XPR.write(rd, res);

@@ -72,7 +72,8 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     spm_offset_t parent_spm = (j == 0) ? 0 : spm_offset_array[j-1];
     mac_req_id += 1;
     dma_id_t need_id = (j == 0) ? wait_dma_id[0] : wait_dma_id[j-1];
-    verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id);
+    spm_sd64(DRAM_ADDR_OFFSET_BASE + (j + 1) * 8, dram_addr_array[j]);
+    verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id, dram_addr_array[j], DRAM_ADDR_OFFSET_BASE + (j + 1) * 8);
   }
   // 一時的なルートノードのアップデート
   for (;;){
@@ -114,7 +115,7 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   // 木の更新：ルートから葉まで降りていく
   for (uint64_t i=load_start_index;i<HEIGHT;i++){
     mac_req_id += 1;
-    update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, wait_dma_id[i]);
+    update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, wait_dma_id[i], dram_addr_array[i], DRAM_ADDR_OFFSET_BASE + (i + 1) * 8);
     long idx = find_temp_entry(dram_addr_array[i]);
     dirty_temp_entry_by_index(idx);
     // if (dram_addr_array[i] == 0x51fb1bdc0){
@@ -130,26 +131,6 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   }
   for (;;){
     if (mac_wait(mac_req_id)) break;
-  }
-  // スワップ
-  for (uint64_t i = load_start_index;i<HEIGHT;i++){
-    dram_addr_t dram_addr = dram_addr_array[i];
-    index_t set_index = get_cache_tree_set_index(dram_addr);
-    uint64_t tmp = read_instret();
-    long way = get_victim_way(set_index);
-    bool mac_updated = is_mac_updated(set_index, way);
-    long idx = find_temp_entry(dram_addr);
-    release_temp_entry_by_index(idx);
-    // release_time = read_instret();
-    if (mac_updated){
-      swapp_temp_cache(dram_addr, spm_offset_array[i], true, way);
-      setParentUpdated(set_index, way);
-      // swapp_time = read_instret();
-    } else {
-      spm_write_back(spm_offset_array[i], dram_addr, 64, 0);
-      push_temp_buffer(spm_offset_array[i]);
-    }
-    invalidate_temp_entry_by_index(idx);
   }
   uint64_t major_counter;
   uint64_t minor_counter_byte_address;
@@ -203,13 +184,16 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   while(AES_START_REG);
   xor_start(true, false,req_id,DATA_SPM_OFFSET);
   // --- 手順3: MAC計算 ---
+  spm_sd64(DRAM_ADDR_OFFSET_BASE, request_addr);
   mac_req_id += 1;
-  mac_init(mac_req_id);
+  mac_init(mac_req_id,true);
   mac_buffer_set(DATA_SPM_OFFSET, tag_id); 
   mac_update(0, 511);
   mac_buffer_set(spm_offset_array[HEIGHT-1], tag_id);
   mac_update(0,63);
   mac_update(counter_bit_offset, counter_bit_offset + 7);
+  mac_buffer_set(DRAM_ADDR_OFFSET_BASE, tag_id);
+  mac_update(0,63);
   mac_digest(spm_offset + ((request_addr - PROTECTION_BASE) / 64) % 8 * 8, tag_id);
   set_block_dirty(set_index, light_info.way);
   spm_write_back(DATA_SPM_OFFSET, request_addr, 64, 0);
@@ -218,14 +202,34 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     if (mac_wait(mac_req_id)) break;
   }
   release_cache_block(set_index, light_info.way);
-  dma_id_t expected_id = id;
-  expected_id += (light_info.hit) ? 0 : 1;
-  expected_id += (load_start_index == HEIGHT) ? 0 : (HEIGHT - load_start_index);
-  if (tag_id != expected_id){
-    printf("Error in Authentication: expected_id=%llu but got tag_id=%llu\n", expected_id, tag_id);
-    exit(1);
-  }
   global_mac_req_id = mac_req_id;
+    // スワップ
+  for (uint64_t i = load_start_index;i<HEIGHT;i++){
+    dram_addr_t dram_addr = dram_addr_array[i];
+    index_t set_index = get_cache_tree_set_index(dram_addr);
+    uint64_t tmp = read_instret();
+    long way = get_victim_way(set_index);
+    bool mac_updated = is_mac_updated(set_index, way);
+    long idx = find_temp_entry(dram_addr);
+    release_temp_entry_by_index(idx);
+    // release_time = read_instret();
+    if (mac_updated){
+      spm_offset_t old_spm_offset = get_cache_block_spm_offset(set_index, way);
+      dram_addr_t old_dram_addr = get_block_addr(set_index, way);
+      bool dirty = is_block_dirty(set_index, way);
+      if (dirty){
+        spm_write_back(old_spm_offset, old_dram_addr, 64, 0);
+      }
+      swapp_temp_cache(dram_addr, spm_offset_array[i], true, way);
+      push_temp_buffer(old_spm_offset);
+      setParentUpdated(set_index, way);
+      // swapp_time = read_instret();
+    } else {
+      spm_write_back(spm_offset_array[i], dram_addr, 64, 0);
+      push_temp_buffer(spm_offset_array[i]);
+    }
+    invalidate_temp_entry_by_index(idx);
+  }
   return tag_id;
 }
 
@@ -280,12 +284,14 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint64_t req_id){
     spm_offset_t parent_spm = (j == 0) ? 0 : spm_offset_array[j-1];
     mac_req_id += 1;
     dma_id_t need_id = (j == 0) ? wait_dma_id[0] : wait_dma_id[j-1];
-    verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id);
+    spm_sd64(DRAM_ADDR_OFFSET_BASE + (j + 1) * 8, dram_addr_array[j]);
+    verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id, dram_addr_array[j], DRAM_ADDR_OFFSET_BASE + (j + 1) * 8);
   }
   uint64_t verify_e = read_instret();
   uint64_t wait_s = read_instret();
   dma_id_t wait_id = wait_dma_id[HEIGHT-1];
-  while(!mac_wait(mac_req_id));
+  // while(!mac_wait(mac_req_id));
+  spm_wait(wait_id);
   uint64_t wait_e = read_instret();
   uint64_t set_seed_s = read_instret();
   uint64_t major_counter = spm_ld64(spm_offset_array[HEIGHT-1]);
@@ -327,14 +333,17 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint64_t req_id){
   acquire_cache_block(set_index, light_info.way);
   uint64_t datamac_dma_e = read_instret();
   uint64_t datamac_s = read_instret();
+  spm_sd64(DRAM_ADDR_OFFSET_BASE, request_addr);
   mac_req_id += 1;
-  mac_init(mac_req_id);
+  mac_init(mac_req_id,true);
   mac_buffer_set(DATA_SPM_OFFSET,data_id);
   mac_update(0, 511);
   mac_buffer_set(spm_offset_array[HEIGHT-1],wait_dma_id[HEIGHT-1]);
   mac_update(0,63);
   mac_update(counter_bit_offset, counter_bit_offset + 7);
   spm_offset_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
+  mac_buffer_set(DRAM_ADDR_OFFSET_BASE, tag_id);
+  mac_update(0,63);
   mac_result_compare(spm_offset + dmac_byte_offset, tag_id);
   uint64_t datamac_e = read_instret();
   uint64_t response_s = read_instret();
@@ -356,9 +365,15 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint64_t req_id){
     long idx = find_temp_entry(dram_addr);
     release_temp_entry_by_index(idx);
     if (mac_updated){
-      bool dirty = is_block_dirty(set_index, way);
       bool temp_dirty = is_dirty_temp_entry_by_index(idx);
+      spm_offset_t old_spm_offset = get_cache_block_spm_offset(set_index, way);
+      dram_addr_t old_dram_addr = get_block_addr(set_index, way);
+      bool dirty = is_block_dirty(set_index, way);
+      if (dirty){
+        spm_write_back(old_spm_offset, old_dram_addr, 64, 0);
+      }
       swapp_temp_cache(dram_addr, spm_offset_array[i], temp_dirty, way);
+      push_temp_buffer(old_spm_offset);
       setParentUpdated(set_index, way);
     } else {
       push_temp_buffer(spm_offset_array[i]);
@@ -401,11 +416,15 @@ int main(void){
     dram_addr_t addr = AXIM_REQ_ADDR_REG;
     uint64_t req_id = AXIM_REQ_ID_REG;
     total += 1;
-    if (total % 1000 == 999){
+    if (total % 10000 == 0){
       printf("Processed %d requests\n", total);
       instret_dump = true;
     } else {
       instret_dump = false;
+    }
+    if ((addr - PROTECTION_BASE) >= (16ULL * 1024 * 1024 * 1024)){ // 16GBを超えないようにしたい
+      printf("Error: Address out of range: %016llx\n", addr);
+      exit(1);
     }
     if (addr == 0xFFFFFFFFFFFFFFFF){
       return 0;

@@ -14,11 +14,11 @@
     )
 #endif
 
-static inline bool acquire_read_block(spm_offset_t spm_offset){
+static inline long acquire_read_block(spm_offset_t spm_offset){
   #ifdef ENABLE_TMU_HARDWARE
     long ret;
     TMU_INSN_R(F7_TMU_ACQUIRE, ret, spm_offset, 0); 
-    return (bool)ret;
+    return ret;
   #else
   if (valid_metadata[set_index][way_index] == false){
     printf("Error: Attempt to acquire invalid cache block S:%u W:%u\n", set_index, way_index);
@@ -48,11 +48,11 @@ static inline void release_read_block(spm_offset_t spm_offset){
   #endif
 }
 
-static inline bool acquire_write_block(spm_offset_t spm_offset){
+static inline long acquire_write_block(spm_offset_t spm_offset){
   #ifdef ENABLE_TMU_HARDWARE
     long ret;
     TMU_INSN_R(F7_TMU_ACQUIRE, ret, spm_offset, 1); 
-    return (bool)ret;
+    return ret;
   #else
   if (valid_metadata[set_index][way_index] == false){
     printf("Error: Attempt to acquire invalid cache block S:%u W:%u\n", set_index, way_index);

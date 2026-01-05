@@ -19,6 +19,7 @@
 #define F7_TMX_SWAP    0x0A
 #define F7_TMX_PUSH    0x0B
 #define F7_TMX_POP     0x0C
+#define F7_TMX_SHOW_ACTIVE 0x0D
 
 /* --- Spike (C++) 用ヘルパマクロ --- */
 /* Match値生成: (funct7 << 25) | (funct3 << 12) | opcode */

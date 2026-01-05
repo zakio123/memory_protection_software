@@ -60,4 +60,5 @@ public:
   reg_t do_swappable(int idx);
   reg_t do_push(uint64_t spm_offset);
   reg_t do_pop() ;
+  reg_t do_show_active_slot();
 };

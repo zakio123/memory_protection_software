@@ -186,3 +186,17 @@ int tmx_logic_t::check_idx(int idx) const {
     }
     return (reg_t)free_spm_offset_stack[free_spm_offset_top--];
   }
+  reg_t tmx_logic_t::do_show_active_slot(){
+    std::cout << "Active temp slots:" << std::endl;
+    for (int k = 0; k < active_count; k++) {
+      int idx = active_indices[k];
+      std::cout << "  Index: " << idx
+                << " Addr: " << std::hex << temp_dram_addr[idx]
+                << " SPM: " << temp_spm_offset[idx]
+                << " Dirty: " << (temp_dirty[idx] ? "Yes" : "No")
+                << " Loaded: " << (temp_loaded[idx] ? "Yes" : "No")
+                << " RefCount: " << std::dec << temp_ref_count[idx]
+                << std::endl;
+    }
+    return (reg_t)0;
+  }
