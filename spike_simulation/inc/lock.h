@@ -18,12 +18,24 @@ void lock_mac() {
 void unlock_mac() {
     __sync_lock_release(&mac_lock);
 }
-void lock_dma() {
+static inline void lock_dma() {
     // 失敗したらノップを入れたい
+    int counter = 0;
     while (__sync_lock_test_and_set(&dma_lock, 1)) {
+        counter++;
+        if (counter % 1000 == 0) {
+            lock_print();
+            int hartid = -1;
+            asm volatile(
+                "csrr %0, mhartid"
+                : "=r"(hartid)
+            );
+            printf("DMA lock waiting... counter=%d hartid=%d\n", counter, hartid);
+            unlock_print();
+        }
     }
 }
-void unlock_dma() {
+static inline void unlock_dma() {
     __sync_lock_release(&dma_lock);
 }
 void lock_axim() {

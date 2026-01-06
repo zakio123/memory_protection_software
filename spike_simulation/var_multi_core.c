@@ -375,6 +375,9 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id, int hartid){
             goto AFTER_PATH_CHECK_AUTH;
           } else {
             unlock_dma();
+            for (int k = 0; k < 20; k++){
+              __asm__ volatile ("nop");
+            }
           }
         } else {
           long idx = find_temp_entry(dram_addr);
@@ -403,6 +406,9 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id, int hartid){
             break;
           } else {
             unlock_dma();
+            for (int k = 0; k < 10; k++){
+              __asm__ volatile ("nop");
+            }
           }
         }
       }
@@ -456,6 +462,7 @@ AFTER_PATH_CHECK_AUTH:
       break;
     } else {
       unlock_dma();
+
     }
   }
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
@@ -518,7 +525,7 @@ AFTER_PATH_CHECK_AUTH:
     // printf("Core %d Update height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", hartid, i, spm_offset_array[i], parent_spm, path_indecis[i], need_id);
     // printf("  dram_addr=%016llx mac_req_id %d\n", dram_addr_array[i], mac_req_id);
     // unlock_print();
-    spm_sd64(DRAM_ADDR_OFFSET_BASE + (i + 1) * 8 + hartid * (1 + HEIGHT) * 8, dram_addr_array[i]);
+    // spm_sd64(DRAM_ADDR_OFFSET_BASE + (i + 1) * 8 + hartid * (1 + HEIGHT) * 8, dram_addr_array[i]);
     update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, wait_dma_id[i], dram_addr_array[i], DRAM_ADDR_OFFSET_BASE + (i + 1) * 8 + hartid * (1 + HEIGHT) * 8);
     global_mac_req_id = mac_req_id;
     unlock_mac();
@@ -588,7 +595,6 @@ void Verification(dram_addr_t request_addr, uint64_t req_id, int hartid){
   dram_addr_t dram_addr_array[HEIGHT];
   uint64_t load_start_index = 0;
   dma_id_t wait_dma_id[HEIGHT];
-  index_t way_index = 0;
   // データのコピー
   lock_dma();
   dma_id_t data_id = global_dma_id + 1;
@@ -607,7 +613,7 @@ void Verification(dram_addr_t request_addr, uint64_t req_id, int hartid){
         uint64_t tmp_id = global_dma_id;
         if (info.hit){
           long set_index = get_cache_tree_set_index(dram_addr);
-          way_index = info.way;
+          index_t way_index = info.way;
           spm_offset_t spm_offset = get_cache_block_spm_offset(set_index, way_index);
           update_lru_on_access(set_index, way_index);
           if (acquire_read_block(spm_offset)){
@@ -618,6 +624,9 @@ void Verification(dram_addr_t request_addr, uint64_t req_id, int hartid){
             goto AFTER_PATH_CHECK_VERIFY;
           } else {
             unlock_dma();
+            for (int k = 0; k < 20; k++){
+              __asm__ volatile ("nop");
+            }
           }
         } else {
           long idx = find_temp_entry(dram_addr);
@@ -643,6 +652,9 @@ void Verification(dram_addr_t request_addr, uint64_t req_id, int hartid){
             break;
           } else {
             unlock_dma();
+            for (int k = 0; k < 20; k++){
+              __asm__ volatile ("nop");
+            }
           }
         }
       }
@@ -720,14 +732,13 @@ AFTER_PATH_CHECK_VERIFY:
   mac_buffer_set(spm_offset_array[HEIGHT-1],wait_dma_id[HEIGHT-1]);
   mac_update(0,63);
   mac_update(counter_bit_offset, counter_bit_offset + 7);
-  mac_buffer_set(DRAM_ADDR_OFFSET_BASE + hartid * (1 + HEIGHT) * 8, tag_id);
+  mac_buffer_set(DRAM_ADDR_OFFSET_BASE + hartid * (1 + HEIGHT) * 8, data_id);
   mac_update(0,63);
   mac_result_compare(spm_offset + dmac_byte_offset, tag_id);
   uint64_t verify_e = read_instret();
   unlock_mac();
   uint64_t wait_s = read_instret();
   dma_id_t wait_id = wait_dma_id[HEIGHT-1];
-  int spm_wait_counter = 0;
   spm_wait(wait_id);
   uint64_t wait_e = read_instret();
   uint64_t set_seed_s = read_instret();
@@ -803,20 +814,22 @@ int main(void){
     spm_sd64(0,1);
     init_cache_system();
     temp_system_init(CACHE_DATA_SPM_BASE + CACHE_SETS * CACHE_WAYS * 64);
+    for (int i=0; i<HEIGHT+1; i++){
+      level_base[i] = calculate_level_base_addr(i) + COUNTER_BASE;
+    }
     // init_done = true;
     __atomic_store_n(&init_done, true, __ATOMIC_RELEASE);
   } else {
     lock_axim();
     printf("Core %d waiting for initialization...\n", hart_id);
     unlock_axim();
+
     while(1){
       bool done = __atomic_load_n(&init_done, __ATOMIC_ACQUIRE);
       if (done) break;
     }
   }
-  for (int i=0; i<HEIGHT+1; i++){
-    level_base[i] = calculate_level_base_addr(i) + COUNTER_BASE;
-  }
+
   int total = 0;
   while(1){
     lock_axim();

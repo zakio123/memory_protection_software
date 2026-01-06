@@ -14,8 +14,6 @@
 #include "cache_controll.h"
 #include "addr_util.h"
 #include "sec_operation.h"
-static const uint64_t MAC_UPD_0_511 = ((uint64_t)511 << 48) | 2;
-static const uint64_t MAC_UPD_0_63  = ((uint64_t)63  << 48) | 2;
 // static inline uint64_t read_instret() {
 //     uint64_t val;
 //     asm volatile ("csrr %0, minstret" : "=r" (val));
@@ -396,7 +394,6 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint64_t req_id){
 }
 
 int main(void){
-  // グローバル配列へのアクセスの比較
   // loadをいじる
   SPM_SIZE_REG = 64;
   for (uint64_t i=0; i<512; i++){
@@ -437,6 +434,3 @@ int main(void){
     }
   }
 }
-
-
- 
