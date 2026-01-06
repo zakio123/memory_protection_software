@@ -2,7 +2,6 @@
 extern "C" {
 #endif
 #pragma once
-// #include <cstdint>
 
 #ifndef MEM_LAYOUT_PARAMS_H
 #define MEM_LAYOUT_PARAMS_H

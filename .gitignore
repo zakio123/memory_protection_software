@@ -13,3 +13,4 @@ rocket_simulation/mmio_module/obj_dir/*
 *.elf
 *.dump
 *.o
+*.img

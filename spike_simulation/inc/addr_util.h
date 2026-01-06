@@ -1,11 +1,11 @@
 #include "config.h"
 static inline dram_addr_t calculate_level_base_addr(uint64_t level) {
-    dram_addr_t offset = 64 * ((1 << (5 * (level-1))) - 1) / (32 - 1);
+    dram_addr_t offset = 64 * ((1 << (ARTY_LOG2 * (level-1))) - 1) / (MINOR_COUNTER_COUNT - 1);
     return offset;
 }
 
 static inline dram_addr_t get_counterblock_addr(dram_addr_t request_addr){
-    dram_addr_t counterblock_addr = COUNTER_BASE + (((request_addr - PROTECTION_BASE) / (64 * 32))) * 64 + calculate_level_base_addr(HEIGHT);
+    dram_addr_t counterblock_addr = COUNTER_BASE + (((request_addr - PROTECTION_BASE) / (64 * MINOR_COUNTER_COUNT))) * 64 + calculate_level_base_addr(HEIGHT);
     return counterblock_addr;
 }
 

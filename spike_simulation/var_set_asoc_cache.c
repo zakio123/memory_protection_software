@@ -14,11 +14,6 @@
 #include "cache_controll.h"
 #include "addr_util.h"
 #include "sec_operation.h"
-// static inline uint64_t read_instret() {
-//     uint64_t val;
-//     asm volatile ("csrr %0, minstret" : "=r" (val));
-//     return val;
-// }
 
 bool instret_dump = false;
 uint64_t global_mac_req_id = 0;
@@ -40,9 +35,9 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   uint64_t verify_start = read_instret();
   dma_id_t tmp_id = id;
   for(uint64_t i=0; i<HEIGHT; ++i){
-      uint64_t index = (request_addr - PROTECTION_BASE) / (64 * (1ULL << (5 * i)));
+      uint64_t index = (request_addr - PROTECTION_BASE) / (64 * (1ULL << (ARTY_LOG2 * i)));
       path_indecis[HEIGHT - 1 - i ] = index;
-      dram_addr_t dram_addr = COUNTER_BASE + index / 32 * 64 + calculate_level_base_addr(HEIGHT - i);
+      dram_addr_t dram_addr = COUNTER_BASE + index / MINOR_COUNTER_COUNT * 64 + calculate_level_base_addr(HEIGHT - i);
       dram_addr_array[HEIGHT - 1 - i] = dram_addr;
       long set_index = get_cache_tree_set_index(dram_addr);
       light_tag_info_t info = light_tag_check(dram_addr);
@@ -84,27 +79,82 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
     spm_sd64(0, root);
   } else {
     uint64_t start_level = load_start_index - 1;
-    uint64_t major_counter = spm_ld64(spm_offset_array[start_level]);
-    uint64_t minor_counter_byte_address = spm_offset_array[start_level] + 8 + (path_indecis[start_level] % 32) / 8 * 8;
-    uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
-    // ここから過去のminor counterを取り出す
-    uint8_t minor_counter_value = (minor_counter >> ((path_indecis[start_level] % 8) * 8)) & 0xFF;
-    uint8_t new_minor_counter = 0;
-    if (minor_counter_value == 0xFF){
-        // uint64_t new_major_counter = major_counter + 1;
-        // spm_sd64(spm_offset_array[load_start_index - 1], new_major_counter);
-        new_minor_counter = 0; 
-    } else {
-        new_minor_counter = minor_counter_value + 1;
+    uint64_t minor_idx = path_indecis[start_level] % MINOR_COUNTER_COUNT; 
+    uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
+    uint64_t base_addr = spm_offset_array[start_level]; // または start_level
+    uint64_t word_offset_bytes = (global_bit_offset / 64) * 8;
+    uint64_t local_bit_offset  = global_bit_offset % 64;
+    // 2. データの読み出し（Read-Modify-Writeのため、周辺ビットも含めて読む）
+    uint64_t word1 = spm_ld64(base_addr + word_offset_bytes);
+    uint64_t word2 = 0;
+    bool is_split = (local_bit_offset + MINOR_COUNTER_WIDTH > 64);
+    // またいでいる場合は次のワードも読む
+    if (is_split) {
+        word2 = spm_ld64(base_addr + word_offset_bytes + 8);
     }
-    uint64_t shift_amount = (path_indecis[load_start_index - 1] % 8) * 8;
-    uint64_t clear_mask = ~(0xFFULL << shift_amount);
-    uint64_t cleared_minor_counter = minor_counter & clear_mask;
-    uint64_t shifted_new_value = (new_minor_counter);
-    shifted_new_value <<= shift_amount;
-    uint64_t final_word = cleared_minor_counter | shifted_new_value;
-    // 書き戻し
-    spm_sd64(minor_counter_byte_address, final_word);
+    // 3. 現在のマイナーカウンター値の抽出
+    uint64_t current_val_raw = word1 >> local_bit_offset;
+    if (is_split) {
+        // 次のワードの下位ビットを、現在の上位ビットとして結合
+        current_val_raw |= (word2 << (64 - local_bit_offset));
+    }
+    uint64_t current_minor_val = current_val_raw & MINOR_COUNTER_MASK;
+    // 4. 値の更新（インクリメントとオーバーフロー判定）
+    uint64_t new_minor_val;
+    if (current_minor_val == MINOR_COUNTER_MASK) {
+        // オーバーフロー時の処理
+        new_minor_val = 0;
+        // --- メジャーカウンターの更新処理 ---
+        // ここにメジャーカウンターのインクリメント処理が入ります
+        // 例:
+        // uint64_t major_counter = spm_ld64(base_addr);
+        // spm_sd64(base_addr, major_counter + 1);
+        // ----------------------------------
+    } else {
+        new_minor_val = current_minor_val + 1;
+    }
+    // 5. 書き戻し用データの作成と保存
+    // 書き戻しデータのビット幅（Word1に含まれる分）
+    uint64_t bits_in_first = is_split ? (64 - local_bit_offset) : MINOR_COUNTER_WIDTH;
+    uint64_t mask_first = MINOR_COUNTER_MASK;
+    // A. 更新対象の場所を0クリア (Clear)
+    word1 &= ~(mask_first << local_bit_offset);
+    // B. 新しい値の下位パートをセット (Set)
+    word1 |= ((new_minor_val & mask_first) << local_bit_offset);
+    // C. 書き込み
+    spm_sd64(base_addr + word_offset_bytes, word1);
+    // --- Word 2 の更新（またいでいる場合のみ） ---
+    if (is_split) {
+        uint64_t bits_in_second = MINOR_COUNTER_WIDTH - bits_in_first;
+        uint64_t mask_second = (1ULL << bits_in_second) - 1;
+        // A. 更新対象の場所(先頭)を0クリア
+        word2 &= ~mask_second;
+        // B. 新しい値の上位パートをシフトしてセット
+        word2 |= (new_minor_val >> bits_in_first) & mask_second;
+        // C. 書き込み
+        spm_sd64(base_addr + word_offset_bytes + 8, word2);
+    }
+    // uint64_t major_counter = spm_ld64(spm_offset_array[start_level]);
+    // uint64_t minor_counter_byte_address = spm_offset_array[start_level] + 8 + (path_indecis[start_level] % 32) / 8 * 8;
+    // uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
+    // // ここから過去のminor counterを取り出す
+    // uint8_t minor_counter_value = (minor_counter >> ((path_indecis[start_level] % 8) * 8)) & 0xFF;
+    // uint8_t new_minor_counter = 0;
+    // if (minor_counter_value == 0xFF){
+    //     // uint64_t new_major_counter = major_counter + 1;
+    //     // spm_sd64(spm_offset_array[load_start_index - 1], new_major_counter);
+    //     new_minor_counter = 0; 
+    // } else {
+    //     new_minor_counter = minor_counter_value + 1;
+    // }
+    // uint64_t shift_amount = (path_indecis[load_start_index - 1] % 8) * 8;
+    // uint64_t clear_mask = ~(0xFFULL << shift_amount);
+    // uint64_t cleared_minor_counter = minor_counter & clear_mask;
+    // uint64_t shifted_new_value = (new_minor_counter);
+    // shifted_new_value <<= shift_amount;
+    // uint64_t final_word = cleared_minor_counter | shifted_new_value;
+    // // 書き戻し
+    // spm_sd64(minor_counter_byte_address, final_word);
     // 一時的なルートなので、parent updatedはfalseにしておく
     index_t set_index = get_cache_set_index(dram_addr_array[start_level]);
     clearParentUpdated(set_index, way_index);
@@ -130,16 +180,30 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   for (;;){
     if (mac_wait(mac_req_id)) break;
   }
-  uint64_t major_counter;
-  uint64_t minor_counter_byte_address;
-  uint64_t minor_counter;
-  uint8_t minor_counter_value;
-  major_counter = spm_ld64(spm_offset_array[HEIGHT-1]);
-  uint64_t counter_bit_offset = 64 + (request_addr / 64) % 32 * 8;
-  minor_counter_byte_address = spm_offset_array[HEIGHT-1] + (counter_bit_offset / 64) * 8;
-  minor_counter = spm_ld64(minor_counter_byte_address);
-  minor_counter_value = (minor_counter >> ((counter_bit_offset % 64))) & 0xFF;
-  // --- 手順2: アドレスとカウンター値を元にSeed値を計算し、AES_moduleに書き込み起動する ---
+  // 1. 対象となるマイナーカウンターのインデックスを計算
+  uint64_t major_counter = spm_ld64(spm_offset_array[HEIGHT-1]);
+  uint64_t minor_idx = (request_addr / 64) % MINOR_COUNTER_COUNT;
+  // 2. データの開始位置（ビット単位）を計算
+  uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
+  // 3. 読み出すべきアドレス（8Bアライン）と、その中でのビットオフセットを計算
+  uint64_t base_addr = spm_offset_array[HEIGHT-1];
+  uint64_t word_offset_bytes = (global_bit_offset / 64) * 8; // 8バイト単位のオフセット
+  uint64_t local_bit_offset  = global_bit_offset % 64;       // 64bitワード内での開始ビット
+  // 4. 最初の64bitをロードしてシフト
+  uint64_t raw_data = spm_ld64(base_addr + word_offset_bytes);
+  uint64_t extracted_val = raw_data >> local_bit_offset;
+  // 5. カウンターが64bit境界をまたぐか判定し、必要なら2回目のロードを行う
+  //    (開始位置 + データ幅 が 64 を超える場合、次のワードにデータがはみ出している)
+  if (local_bit_offset + MINOR_COUNTER_WIDTH > 64) {
+      uint64_t next_data = spm_ld64(base_addr + word_offset_bytes + 8);
+      // はみ出した分（上位ビット）を結合
+      // (64 - local_bit_offset) は、1つ目のワードに残っていたビット数
+      extracted_val |= (next_data << (64 - local_bit_offset));
+  }
+  // 6. ビットマスクを生成して不要な上位ビットを切り落とす;
+  uint16_t minor_counter_value = extracted_val & MINOR_COUNTER_MASK;
+  // 結果の使用
+  // printf("[Core FW] Retrieved Counters: major=%016llx, minor=%02x for request_addr=%016llx\n", major_counter, minor_counter_value, request_addr);
   set_seed(major_counter, minor_counter_value, request_addr);
   dram_addr_t datamacblock_addr = DATA_TAG_BASE + (((request_addr - PROTECTION_BASE) / (64 * 8))) * 64;
   index_t set_index = get_cache_set_index(datamacblock_addr);
@@ -189,7 +253,7 @@ dma_id_t Authentication(dma_id_t id, dram_addr_t request_addr, uint32_t req_id){
   mac_update(0, 511);
   mac_buffer_set(spm_offset_array[HEIGHT-1], tag_id);
   mac_update(0,63);
-  mac_update(counter_bit_offset, counter_bit_offset + 7);
+  mac_update(global_bit_offset, global_bit_offset + (MINOR_COUNTER_WIDTH - 1));
   mac_buffer_set(DRAM_ADDR_OFFSET_BASE, tag_id);
   mac_update(0,63);
   mac_digest(spm_offset + ((request_addr - PROTECTION_BASE) / 64) % 8 * 8, tag_id);
@@ -247,9 +311,9 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint64_t req_id){
   dma_id_t tmp_id = data_id;
   uint64_t tag_path_check_s = read_instret();
   for(uint64_t i=0; i<HEIGHT; ++i){
-      uint64_t index = (request_addr - PROTECTION_BASE) / (64 * (1ULL << (5 * i)));
+      uint64_t index = (request_addr - PROTECTION_BASE) / (64 * (1ULL << (ARTY_LOG2 * i)));
       path_indecis[HEIGHT - 1 - i ] = index;
-      dram_addr_t dram_addr = COUNTER_BASE + index / 32 * 64 + calculate_level_base_addr(HEIGHT - i);
+      dram_addr_t dram_addr = COUNTER_BASE + index / MINOR_COUNTER_COUNT * 64 + calculate_level_base_addr(HEIGHT - i);
       dram_addr_array[HEIGHT - 1 - i] = dram_addr;
       light_tag_info_t info = light_tag_check(dram_addr);
       long temp_idx = -1;
@@ -292,12 +356,37 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint64_t req_id){
   spm_wait(wait_id);
   uint64_t wait_e = read_instret();
   uint64_t set_seed_s = read_instret();
-  uint64_t major_counter = spm_ld64(spm_offset_array[HEIGHT-1]);
   // bitオフセットを元にアドレスを8Bにアライメントして、minor counterを含む64ビットを読み出す.
-  uint64_t counter_bit_offset = 64 + (request_addr / 64) % 32 * 8;
-  uint64_t minor_counter = spm_ld64(spm_offset_array[HEIGHT-1] + (counter_bit_offset / 64) * 8);
-  uint8_t minor_counter_value = (minor_counter >> ((counter_bit_offset % 64) )) & 0xFF;
+  uint64_t major_counter = spm_ld64(spm_offset_array[HEIGHT-1]);
+
+  // 1. 対象となるマイナーカウンターのインデックスを計算
+  uint64_t minor_idx = (request_addr / 64) % MINOR_COUNTER_COUNT;
+  // 2. データの開始位置（ビット単位）を計算
+  uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
+  // 3. 読み出すべきアドレス（8Bアライン）と、その中でのビットオフセットを計算
+  uint64_t base_addr = spm_offset_array[HEIGHT-1];
+  uint64_t word_offset_bytes = (global_bit_offset / 64) * 8; // 8バイト単位のオフセット
+  uint64_t local_bit_offset  = global_bit_offset % 64;       // 64bitワード内での開始ビット
+  // 4. 最初の64bitをロードしてシフト
+  uint64_t raw_data = spm_ld64(base_addr + word_offset_bytes);
+  uint64_t extracted_val = raw_data >> local_bit_offset;
+  // 5. カウンターが64bit境界をまたぐか判定し、必要なら2回目のロードを行う
+  //    (開始位置 + データ幅 が 64 を超える場合、次のワードにデータがはみ出している)
+  if (local_bit_offset + MINOR_COUNTER_WIDTH > 64) {
+      uint64_t next_data = spm_ld64(base_addr + word_offset_bytes + 8);
+      // はみ出した分（上位ビット）を結合
+      // (64 - local_bit_offset) は、1つ目のワードに残っていたビット数
+      extracted_val |= (next_data << (64 - local_bit_offset));
+  }
+  // 6. ビットマスクを生成して不要な上位ビットを切り落とす;
+  uint16_t minor_counter_value = extracted_val & MINOR_COUNTER_MASK;
+  // 結果の使用
+  // printf("[Core FW] Retrieved Counters: major=%016llx, minor=%02x for request_addr=%016llx\n", major_counter, minor_counter_value, request_addr);
   set_seed(major_counter, minor_counter_value, request_addr);
+  // uint64_t counter_bit_offset = 64 + (request_addr / 64) % 32 * 8;
+  // uint64_t minor_counter = spm_ld64(spm_offset_array[HEIGHT-1] + (counter_bit_offset / 64) * 8);
+  // uint8_t minor_counter_value = (minor_counter >> ((counter_bit_offset % 64) )) & 0xFF;
+  // set_seed(major_counter, minor_counter_value, request_addr);
   uint64_t set_seed_e = read_instret();
   // SPMに当該MACブロックがあるかを確認。なければコピー。
   uint64_t datamac_dma_s = read_instret();
@@ -338,7 +427,7 @@ dma_id_t Verification(dma_id_t id, dram_addr_t request_addr, uint64_t req_id){
   mac_update(0, 511);
   mac_buffer_set(spm_offset_array[HEIGHT-1],wait_dma_id[HEIGHT-1]);
   mac_update(0,63);
-  mac_update(counter_bit_offset, counter_bit_offset + 7);
+  mac_update(global_bit_offset, global_bit_offset + (MINOR_COUNTER_WIDTH - 1));
   spm_offset_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
   mac_buffer_set(DRAM_ADDR_OFFSET_BASE, tag_id);
   mac_update(0,63);
