@@ -7,7 +7,7 @@ def main():
     # コマンドライン引数があればそれを、なければ json/default.json を使用するロジックに変更
     # (Bashからパス付きで渡されることを想定)
     config_file_path = sys.argv[1] if len(sys.argv) > 1 else "json/default.json"
-    
+    print(f"[Python] Loading configuration from: {config_file_path}")
     with open(config_file_path, "r") as f:
         cfg = json.load(f)
 
@@ -31,8 +31,10 @@ def main():
     height = 0
     mc_width = cfg["MINOR_COUNTER_WIDTH"]
     mc_count = cfg["MINOR_COUNTER_COUNT"]
+    split_ = cfg["SPLIT_COUNTER"]
     arty_log2 = math.log2(mc_count)
     print(f"arty_log2: {arty_log2}")
+    # exit(0)
     while(1):
         height += 1
         if (mc_count ** (height)) * 64 >= protection_size:
@@ -42,11 +44,15 @@ def main():
     
     # incディレクトリがない場合は作成する（念のため）
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-
     with open(output_path, "w") as f:
+        print(f"[Python] Writing configuration to: {output_path}")
         f.write("#ifndef CONFIG_H\n#define CONFIG_H\n\n")
         # f.write("#include <cstdint>\n\n")
         # カウンター関連
+        if (split_):
+            f.write(f"#define SETTING_SPLIT_COUNTER 1\n")
+        else:
+            f.write(f"#define SETTING_SPLIT_COUNTER 0\n")
         f.write(f"#define SETTING_MINOR_COUNTER_WIDTH {mc_width}\n")
         f.write(f"#define SETTING_MINOR_COUNTER_COUNT {mc_count}\n")
         f.write(f"#define SETTING_ARTY_LOG2 {int(arty_log2)}\n")

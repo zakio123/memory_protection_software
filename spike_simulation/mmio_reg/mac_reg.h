@@ -53,6 +53,11 @@ bool mac_wait(uint64_t req_id){
     uint64_t complete_id = MAC_ID;
     return (req_id <= complete_id);
 }
+void mac_input_core(uint64_t input){
+    // 56bitまで入力として扱えるようにする
+    input = (input << 8) | 32;
+    MAC_COMMAND = input;
+}
 #ifdef __cplusplus
 }
 #endif
