@@ -6,7 +6,7 @@
     //     "csrr %0, mhartid"
     //     : "=r"(hart_id)
     // );
-  mac_init(mac_req_id,hart_id);
+  mac_init(mac_req_id,hart_id,0);
   if (parent_spm_offset == 0){
       mac_buffer_set(0, dma_id,hart_id);
       mac_update(0,63,hart_id);
@@ -30,7 +30,7 @@ static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t
     //     "csrr %0, mhartid"
     //     : "=r"(hart_id)
     // );
-  mac_init(mac_req_id,hart_id);
+  mac_init(mac_req_id,hart_id, 0);
   if (parent_spm_offset == 0){
       mac_buffer_set(0, dma_id,hart_id);
       mac_update(0,63,hart_id);
