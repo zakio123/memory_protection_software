@@ -715,13 +715,44 @@ void Verification(dram_addr_t request_addr, uint64_t req_id, int hartid){
   }
 AFTER_PATH_CHECK_VERIFY:
   uint64_t tag_path_check_e = read_instret();
+  uint64_t mac_req_id = 0;
+  for (uint64_t i = load_start_index;i<HEIGHT;i++){
+    long j = (HEIGHT + load_start_index) - 1 - i;
+    spm_offset_t parent_spm = (j == 0) ? 0 : spm_offset_array[j-1];
+    dma_id_t need_id = (j == 0) ? wait_dma_id[0] : wait_dma_id[j-1];
+    lock_mac();
+    // mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
+      global_mac_req_id += 1;
+      mac_req_id = global_mac_req_id;
+    // global_mac_req_id += 1;
+    #ifdef DUMP
+    lock_print();
+    printf("Core %d Verification height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", hartid, j, spm_offset_array[j], parent_spm, path_indecis[j], need_id);
+    printf("  dram_addr=%016llx mac_req_id %d\n", dram_addr_array[j], mac_req_id);
+    #endif
+    // if (mac_req_id == 48371){
+    //   // 親の子のデータを表示
+    //   spm_wait(need_id);
+    //   for (int i = 0;i<8;i++){
+    //     uint64_t word = spm_ld64(parent_spm + i * 8);
+    //     printf("    parent data[%d]=%016llx\n", i, word);
+    //   }
+    //   for (int i = 0;i<8;i++){
+    //     uint64_t word = spm_ld64(spm_offset_array[j] + i * 8);
+    //     printf("    current data[%d]=%016llx\n", i, word);
+    //   }
+    // }
+    unlock_print();
+    verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id, dram_addr_array[j]);
+    // mac_wait(mac_req_id, 0);
+    unlock_mac();
+  }
   uint64_t datamac_dma_s = read_instret();
   dram_addr_t datamacblock_addr = get_datamacblock_addr(request_addr);
   index_t set_index = get_cache_set_index(datamacblock_addr);
   spm_offset_t spm_offset;
   dma_id_t tag_id;
   light_tag_info_t light_info;
-  uint64_t mac_req_id = 0;
   while(1){
     lock_dma();
     tag_id = global_dma_id;
@@ -760,37 +791,6 @@ AFTER_PATH_CHECK_VERIFY:
   }
   uint64_t datamac_dma_e = read_instret();
   uint64_t verify_s = read_instret();
-  for (uint64_t i = load_start_index;i<HEIGHT;i++){
-    long j = (HEIGHT + load_start_index) - 1 - i;
-    spm_offset_t parent_spm = (j == 0) ? 0 : spm_offset_array[j-1];
-    dma_id_t need_id = (j == 0) ? wait_dma_id[0] : wait_dma_id[j-1];
-    lock_mac();
-    // mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
-      global_mac_req_id += 1;
-  mac_req_id = global_mac_req_id;
-    // global_mac_req_id += 1;
-    #ifdef DUMP
-    lock_print();
-    printf("Core %d Verification height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", hartid, j, spm_offset_array[j], parent_spm, path_indecis[j], need_id);
-    printf("  dram_addr=%016llx mac_req_id %d\n", dram_addr_array[j], mac_req_id);
-    #endif
-    // if (mac_req_id == 48371){
-    //   // 親の子のデータを表示
-    //   spm_wait(need_id);
-    //   for (int i = 0;i<8;i++){
-    //     uint64_t word = spm_ld64(parent_spm + i * 8);
-    //     printf("    parent data[%d]=%016llx\n", i, word);
-    //   }
-    //   for (int i = 0;i<8;i++){
-    //     uint64_t word = spm_ld64(spm_offset_array[j] + i * 8);
-    //     printf("    current data[%d]=%016llx\n", i, word);
-    //   }
-    // }
-    unlock_print();
-    verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id, dram_addr_array[j]);
-    // mac_wait(mac_req_id, 0);
-    unlock_mac();
-  }
 
   uint64_t counter_bit_offset = 64 + (request_addr / 64) % 32 * 8;
   spm_offset_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
