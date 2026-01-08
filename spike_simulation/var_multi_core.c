@@ -99,7 +99,7 @@ static inline void evicted_node_update(dram_addr_t old_addr, spm_offset_t old_sp
               printf("Warning: evict non-swappable temp block used hartid=%d\n", hartid);
               exit(1);
             }
-            __sync_fetch_and_add(&pop_count, 1);
+            // __sync_fetch_and_add(&pop_count, 1);
             idx = alloc_temp_entry(dram_addr, spm_offset);
             global_dma_id += 1;
             tmp_id = global_dma_id;
@@ -134,11 +134,11 @@ AFTER_PATH_CHECK_EVICTION:
   for (long i = v_level-1;i>=load_start_index;i--){
     spm_offset_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     dma_id_t need_id = (i == 0) ? wait_dma_id[0] : wait_dma_id[i-1];
-    lock_mac();
+    // lock_mac();
+  //     global_mac_req_id += 1;
+  // mac_req_id = global_mac_req_id;
     // global_mac_req_id += ;
-    // mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
-      global_mac_req_id += 1;
-  mac_req_id = global_mac_req_id;
+    mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
   #ifdef DUMP
     lock_print();
     printf("Core %d Verification during eviction height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", hartid, i, spm_offset_array[i], parent_spm, path_indecis[i], need_id);
@@ -147,10 +147,10 @@ AFTER_PATH_CHECK_EVICTION:
     unlock_print();
   #endif
     verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], mac_req_id,need_id, dram_addr_array[i]);
-    unlock_mac();
+    // unlock_mac();
   }
   if (mac_req_id > 0){
-    mac_wait(mac_req_id, 0);
+    mac_wait(mac_req_id, hartid);
   }
   // printf("[Evict] Verification done.\n");
   // 一時的なルートノードのアップデート
@@ -188,11 +188,11 @@ AFTER_PATH_CHECK_EVICTION:
   for (uint64_t i=load_start_index;i<=v_level;i++){
     spm_offset_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     dma_id_t need_id = (i == 0) ? wait_dma_id[0] : wait_dma_id[i-1];
-    lock_mac();
+    // lock_mac();
     // global_mac_req_id += 1;
-    // mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
-    global_mac_req_id += 1;
-    mac_req_id = global_mac_req_id;
+    mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
+    // global_mac_req_id += 1;
+    // mac_req_id = global_mac_req_id;
     #ifdef DUMP
     lock_print();
     printf("Core %d Update during eviction height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", hartid, i, spm_offset_array[i], parent_spm, path_indecis[i], need_id);
@@ -207,7 +207,7 @@ AFTER_PATH_CHECK_EVICTION:
       update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, wait_dma_id[i], dram_addr_array[i]);
     }
     // mac_wait(mac_req_id, 0);
-    unlock_mac();
+    // unlock_mac();
     // if (i < v_level){
     //   lock_dma();
     //   long idx = find_temp_entry(dram_addr_array[i]);
@@ -220,7 +220,7 @@ AFTER_PATH_CHECK_EVICTION:
     // }
   }
   if (mac_req_id > 0){
-    mac_wait(mac_req_id, 0);
+    mac_wait(mac_req_id, hartid);
   }
   lock_dma();
   // temp領域の解放
@@ -283,6 +283,7 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr, bool is_write){
       bool mac_updated = is_mac_updated(set_index, light_info.way);
       bool temp_dirty = is_dirty_temp_entry_by_index(idx);
       dram_addr_t old_dram_addr = get_block_addr(set_index, light_info.way);
+      bool cache_dirty = is_block_dirty(set_index, light_info.way);
       // if (mac_updated){
       //   bool dirty = is_block_dirty(set_index, light_info.way);
       //   if (dirty){
@@ -327,20 +328,22 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr, bool is_write){
           spm_write_back(old_spm, old_dram_addr, 64, 0);
           invalidate_temp_entry_by_index(idx);
           ret = push_temp_buffer(old_spm);
-          __sync_fetch_and_add(&push_count, 1);
+          // __sync_fetch_and_add(&push_count, 1);
         }
       } else {
-        spm_write_back(old_spm, old_dram_addr, 64, 0);
+        if (cache_dirty){
+          spm_write_back(old_spm, old_dram_addr, 64, 0);
+        }
         ret = push_temp_buffer(old_spm);
-        __sync_fetch_and_add(&push_count, 1);
+        // __sync_fetch_and_add(&push_count, 1);
       }
       // swapする
       if (ret != 0){
         int pop_counter = __atomic_load_n(&pop_count, __ATOMIC_ACQUIRE);
         int push_counter = __atomic_load_n(&push_count, __ATOMIC_ACQUIRE);
         printf("Error: push failed for swapping: addr=%016llx idx=%ld\n", dram_addr,idx);
-        printf("  mac_updated=%d\n", mac_updated);
-        printf("  push_count=%d, pop_count=%d\n", push_counter, pop_counter);
+        // printf("  mac_updated=%d\n", mac_updated);
+        // printf("  push_count=%d, pop_count=%d\n", push_counter, pop_counter);
         exit(1);
       }
       #ifdef DUMP
@@ -505,11 +508,11 @@ AFTER_PATH_CHECK_AUTH:
     long j = (HEIGHT + load_start_index) - 1 - i;
     spm_offset_t parent_spm = (j == 0) ? 0 : spm_offset_array[j-1];
     dma_id_t need_id = (j == 0) ? wait_dma_id[0] : wait_dma_id[j-1];
-    lock_mac();
+    // lock_mac();
     // global_mac_req_id += 1;
-    // mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
-      global_mac_req_id += 1;
-    mac_req_id = global_mac_req_id;
+    mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
+    //   global_mac_req_id += 1;
+    // mac_req_id = global_mac_req_id;
     #ifdef DUMP
     lock_print();
     printf("Core %d Verification during authen height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", hartid, j, spm_offset_array[j], parent_spm, path_indecis[j], need_id);
@@ -519,11 +522,11 @@ AFTER_PATH_CHECK_AUTH:
     #endif
     verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id, dram_addr_array[j]);
     // mac_wait(mac_req_id, 0);
-    unlock_mac();
+    // unlock_mac();
   }
   // 一時的なルートノードのアップデート
   if (mac_req_id > 0){
-    mac_wait(mac_req_id, 0);
+    mac_wait(mac_req_id, hartid);
   }
   if (load_start_index == 0){
     // rootノードの更新
@@ -559,11 +562,11 @@ AFTER_PATH_CHECK_AUTH:
   for (uint64_t i=load_start_index;i<HEIGHT;i++){
     spm_offset_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     dma_id_t need_id = (i == 0) ? wait_dma_id[0] : wait_dma_id[i-1];
-    lock_mac();
+    // lock_mac();
     // global_mac_req_id += 1;
-    // mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
-      global_mac_req_id += 1;
-  mac_req_id = global_mac_req_id;
+    mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
+      // global_mac_req_id += 1;
+  // mac_req_id = global_mac_req_id;
     // mac_req_id += 1;
     #ifdef DUMP
     lock_print();
@@ -573,12 +576,10 @@ AFTER_PATH_CHECK_AUTH:
     unlock_print();
     #endif
     update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, wait_dma_id[i], dram_addr_array[i]);
-    // global_mac_req_id = mac_req_id;
-    // mac_wait(mac_req_id, 0);
-    unlock_mac();
+    // unlock_mac();
   }
   if (mac_req_id > 0){
-    mac_wait(mac_req_id, 0);
+    mac_wait(mac_req_id, hartid);
   }
   uint64_t major_counter;
   uint64_t minor_counter_byte_address;
@@ -596,25 +597,25 @@ AFTER_PATH_CHECK_AUTH:
   xor_start(true, false,req_id,DATA_SPM_OFFSET + hartid * 64);
   unlock_xor();
   // --- 手順3: MAC計算 ---
-  lock_mac();
+  // lock_mac();
   // global_mac_req_id += 1;
-  // mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
-    global_mac_req_id += 1;
-  mac_req_id = global_mac_req_id;
-  mac_init(mac_req_id, 0, 1);
-  mac_buffer_set(DATA_SPM_OFFSET + hartid * 64, tag_id, 0); 
-  mac_update(0, 511, 0);
-  mac_buffer_set(spm_offset_array[HEIGHT-1], tag_id, 0);
-  mac_update(0,63, 0);
-  mac_update(counter_bit_offset, counter_bit_offset + 7, 0);
-  mac_input_core(request_addr, 0);
-  mac_digest(spm_offset + ((request_addr - PROTECTION_BASE) / 64) % 8 * 8, tag_id, 0);
-  // mac_wait(mac_req_id, 0);
-  unlock_mac();
+  mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
+  //   global_mac_req_id += 1;
+  // mac_req_id = global_mac_req_id;
+  mac_init(mac_req_id, hartid, 1);
+  mac_buffer_set(DATA_SPM_OFFSET + hartid * 64, tag_id, hartid); 
+  mac_update(0, 511, hartid);
+  mac_buffer_set(spm_offset_array[HEIGHT-1], tag_id, hartid);
+  mac_update(0,63, hartid);
+  mac_update(counter_bit_offset, counter_bit_offset + 7, hartid);
+  mac_input_core(request_addr, hartid);
+  mac_digest(spm_offset + ((request_addr - PROTECTION_BASE) / 64) % 8 * 8, tag_id, hartid);
+  // mac_wait(mac_req_id, hartid);
+  // unlock_mac();
   lock_dma();
   spm_write_back(DATA_SPM_OFFSET + hartid * 64, request_addr, 64, 0);
   unlock_dma();
-  mac_wait(mac_req_id, 0);
+  mac_wait(mac_req_id, hartid);
   axim_write_return(req_id);
     // キャッシュ領域の解放
   lock_dma();
@@ -690,7 +691,7 @@ void Verification(dram_addr_t request_addr, uint64_t req_id, int hartid){
               printf("Warning: verify non-swappable temp block used hartid=%d\n", hartid);
               exit(1);
             }
-            __sync_fetch_and_add(&pop_count, 1);
+            // __sync_fetch_and_add(&pop_count, 1);
             idx = alloc_temp_entry(dram_addr, spm_offset);
             tmp_id += 1;
             spm_copy_to_local(dram_addr, spm_offset, 64, tmp_id);
@@ -720,10 +721,10 @@ AFTER_PATH_CHECK_VERIFY:
     long j = (HEIGHT + load_start_index) - 1 - i;
     spm_offset_t parent_spm = (j == 0) ? 0 : spm_offset_array[j-1];
     dma_id_t need_id = (j == 0) ? wait_dma_id[0] : wait_dma_id[j-1];
-    lock_mac();
-    // mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
-      global_mac_req_id += 1;
-      mac_req_id = global_mac_req_id;
+    // lock_mac();
+    mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
+      // global_mac_req_id += 1;
+      // mac_req_id = global_mac_req_id;
     // global_mac_req_id += 1;
     #ifdef DUMP
     lock_print();
@@ -745,7 +746,7 @@ AFTER_PATH_CHECK_VERIFY:
     unlock_print();
     verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id, dram_addr_array[j]);
     // mac_wait(mac_req_id, 0);
-    unlock_mac();
+    // unlock_mac();
   }
   uint64_t datamac_dma_s = read_instret();
   dram_addr_t datamacblock_addr = get_datamacblock_addr(request_addr);
@@ -797,21 +798,21 @@ AFTER_PATH_CHECK_VERIFY:
   // lock_print();
   // printf("Core %d Verification MAC %d\n", hartid,tag_id);
   // unlock_print();
-  lock_mac();
-  global_mac_req_id += 1;
-  mac_req_id = global_mac_req_id;
-  // mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
-  mac_init(mac_req_id,0, 1);
-  mac_buffer_set(DATA_SPM_OFFSET + hartid * 64,data_id,0);
-  mac_update(0, 511,0);
-  mac_buffer_set(spm_offset_array[HEIGHT-1],wait_dma_id[HEIGHT-1],0);
-  mac_update(0,63,0);
-  mac_update(counter_bit_offset, counter_bit_offset + 7,0);
-  mac_input_core(request_addr,0);
-  mac_result_compare(spm_offset + dmac_byte_offset, tag_id,0);
+  // lock_mac();
+  // global_mac_req_id += 1;
+  // mac_req_id = global_mac_req_id;
+  mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
+  mac_init(mac_req_id,hartid, 1);
+  mac_buffer_set(DATA_SPM_OFFSET + hartid * 64,data_id,hartid);
+  mac_update(0, 511,hartid);
+  mac_buffer_set(spm_offset_array[HEIGHT-1],wait_dma_id[HEIGHT-1],hartid);
+  mac_update(0,63,hartid);
+  mac_update(counter_bit_offset, counter_bit_offset + 7,hartid);
+  mac_input_core(request_addr,hartid);
+  mac_result_compare(spm_offset + dmac_byte_offset, tag_id,hartid);
   uint64_t verify_e = read_instret();
   // mac_wait(mac_req_id,0);
-  unlock_mac();
+  // unlock_mac();
   uint64_t wait_s = read_instret();
   dma_id_t wait_id = wait_dma_id[HEIGHT-1];
   spm_wait(wait_id);
@@ -828,7 +829,7 @@ AFTER_PATH_CHECK_VERIFY:
   spm_wait(data_id);
   xor_start(false, true,req_id,DATA_SPM_OFFSET + hartid * 64);
   unlock_xor();
-  mac_wait(mac_req_id,0);
+  mac_wait(mac_req_id, hartid);
   axim_read_return(req_id);
   uint64_t response_e = read_instret();
   // unlock_tree_read();
