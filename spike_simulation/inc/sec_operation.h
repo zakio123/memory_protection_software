@@ -1,11 +1,11 @@
 
   static inline void verify_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, 
     uint32_t mac_req_id, dma_id_t dma_id,dram_addr_t dram_addr){
-    int hart_id = -1;
-    asm volatile(
-        "csrr %0, mhartid"
-        : "=r"(hart_id)
-    );
+    int hart_id = 0;
+    // asm volatile(
+    //     "csrr %0, mhartid"
+    //     : "=r"(hart_id)
+    // );
   mac_init(mac_req_id,hart_id);
   if (parent_spm_offset == 0){
       mac_buffer_set(0, dma_id,hart_id);
@@ -25,11 +25,11 @@
 static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, 
   bool update_counter, uint32_t mac_req_id, dma_id_t dma_id,
   dram_addr_t dram_addr){
-    int hart_id = -1;
-    asm volatile(
-        "csrr %0, mhartid"
-        : "=r"(hart_id)
-    );
+    int hart_id = 0;
+    // asm volatile(
+    //     "csrr %0, mhartid"
+    //     : "=r"(hart_id)
+    // );
   mac_init(mac_req_id,hart_id);
   if (parent_spm_offset == 0){
       mac_buffer_set(0, dma_id,hart_id);

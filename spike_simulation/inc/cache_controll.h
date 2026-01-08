@@ -648,7 +648,7 @@ typedef struct {
 static inline uint64_t light_tag_check_(dram_addr_t dram_addr){
   #ifdef ENABLE_TMU_HARDWARE
     long ret;
-    long slot_idx = get_cache_set_index(dram_addr) * CACHE_WAYS << 32;
+    long slot_idx = ((long)get_cache_set_index(dram_addr) * CACHE_WAYS) << 32;
     slot_idx = slot_idx | CACHE_WAYS; // search_rangeにCACHE_WAYSを指定
     TMU_INSN_R(F7_TMU_LIGHT_TAG_CHECK, ret, slot_idx, dram_addr);
     return (uint64_t)ret;

@@ -20,8 +20,13 @@ void mac_init(uint64_t req_id, int hart_id){
     // uint64_t cmd = ((uint64_t)req_id << 32) | 1;
     // MAC_COMMAND = cmd; // INIT
     // printf("MAC INIT called with req_id=%llu\n", req_id);
+    // int hid = -1;
+    // asm volatile(
+    //     "csrr %0, mhartid"
+    //     : "=r"(hid)
+    // );
     // lock_print();
-    // printf("MAC INIT called with req_id=%llu hart_id=%d\n", req_id, hart_id);
+    // printf("MAC INIT called with req_id=%llu hart_id=%d\n", req_id, hid);
     // unlock_print();
     long unused;
     if (hart_id == 0){
@@ -79,17 +84,17 @@ void mac_result_compare(spm_offset_t spm_offset, dma_id_t dma_id,int hart_id){
 }
 void mac_wait(uint64_t req_id, long hart_id){
     if (hart_id == 0){
-        // int counter = 0;
+        int counter = 0;
         while (1){
-            // counter += 1;
+            counter += 1;
             uint64_t complete_id = MAC_ID;
             if (req_id <= complete_id) break;
-            // if (counter % 1000 == 0){
-            //     lock_print();
-            //     printf("MAC WAIT: hart_id=0 waiting for req_id=%llu current_complete_id=%llu\n", req_id, complete_id);
-            //     unlock_print();
-            //     exit(1);
-            // }
+            if (counter % 100000 == 0){
+                lock_print();
+                printf("MAC WAIT: hart_id=0 waiting for req_id=%llu current_complete_id=%llu\n", req_id, complete_id);
+                unlock_print();
+                exit(1);
+            }
         }
     } else {
         // int counter = 0;
