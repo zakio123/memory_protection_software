@@ -88,6 +88,18 @@
 #define MASK_MAC_COMPARE   MAC_MASK
 #define MATCH_MAC_ID      MAC_MATCH(F7_MAC_ID)
 #define MASK_MAC_ID       MAC_MASK
+#define MATCH_MAC_INIT_2     MAC_MATCH(F7_MAC_INIT_2)
+#define MASK_MAC_INIT_2      MAC_MASK
+#define MATCH_MAC_COPY_2    MAC_MATCH(F7_MAC_COPY_2)
+#define MASK_MAC_COPY_2     MAC_MASK
+#define MATCH_MAC_UPDATE_2   MAC_MATCH(F7_MAC_UPDATE_2)
+#define MASK_MAC_UPDATE_2    MAC_MASK
+#define MATCH_MAC_DIGEST_2   MAC_MATCH(F7_MAC_DIGEST_2)
+#define MASK_MAC_DIGEST_2    MAC_MASK
+#define MATCH_MAC_COMPARE_2  MAC_MATCH(F7_MAC_COMPARE_2)
+#define MASK_MAC_COMPARE_2   MAC_MASK
+#define MATCH_MAC_ID_2      MAC_MATCH(F7_MAC_ID_2)
+#define MASK_MAC_ID_2       MAC_MASK
 
 class unified_extension_t : public extension_t {
 public:
@@ -543,6 +555,63 @@ public:
       &unified_extension_t::exec_tmu_show_ref_count,
       &unified_extension_t::exec_tmu_show_ref_count
     });
+    v.push_back((insn_desc_t){
+      MATCH_MAC_INIT_2, MASK_MAC_INIT_2,
+      &unified_extension_t::exec_mac_init_2,
+      &unified_extension_t::exec_mac_init_2,
+      &unified_extension_t::exec_mac_init_2,
+      &unified_extension_t::exec_mac_init_2,
+      &unified_extension_t::exec_mac_init_2,
+      &unified_extension_t::exec_mac_init_2,
+      &unified_extension_t::exec_mac_init_2,
+      &unified_extension_t::exec_mac_init_2
+    });
+    v.push_back((insn_desc_t){
+      MATCH_MAC_COPY_2, MASK_MAC_COPY_2,
+      &unified_extension_t::exec_mac_copy_2,
+      &unified_extension_t::exec_mac_copy_2,
+      &unified_extension_t::exec_mac_copy_2,
+      &unified_extension_t::exec_mac_copy_2,
+      &unified_extension_t::exec_mac_copy_2,
+      &unified_extension_t::exec_mac_copy_2,
+      &unified_extension_t::exec_mac_copy_2,
+      &unified_extension_t::exec_mac_copy_2
+    });
+    v.push_back((insn_desc_t){
+      MATCH_MAC_UPDATE_2, MASK_MAC_UPDATE_2,
+      &unified_extension_t::exec_mac_update_2,
+      &unified_extension_t::exec_mac_update_2,
+      &unified_extension_t::exec_mac_update_2,
+      &unified_extension_t::exec_mac_update_2,
+      &unified_extension_t::exec_mac_update_2,
+      &unified_extension_t::exec_mac_update_2,
+      &unified_extension_t::exec_mac_update_2,
+      &unified_extension_t::exec_mac_update_2
+    });
+    v.push_back((insn_desc_t){
+      MATCH_MAC_DIGEST_2, MASK_MAC_DIGEST_2,
+      &unified_extension_t::exec_mac_digest_2,
+      &unified_extension_t::exec_mac_digest_2,
+      &unified_extension_t::exec_mac_digest_2,
+      &unified_extension_t::exec_mac_digest_2,
+      &unified_extension_t::exec_mac_digest_2,
+      &unified_extension_t::exec_mac_digest_2,
+      &unified_extension_t::exec_mac_digest_2,
+      &unified_extension_t::exec_mac_digest_2
+    });
+    v.push_back((insn_desc_t){
+      MATCH_MAC_COMPARE_2, MASK_MAC_COMPARE_2,
+      &unified_extension_t::exec_mac_compare_2,
+      &unified_extension_t::exec_mac_compare_2,
+      &unified_extension_t::exec_mac_compare_2,
+      &unified_extension_t::exec_mac_compare_2,
+      &unified_extension_t::exec_mac_compare_2,
+      &unified_extension_t::exec_mac_compare_2,
+      &unified_extension_t::exec_mac_compare_2,
+      &unified_extension_t::exec_mac_compare_2
+    });
+    // v.push_back((insn_desc_t){
+    //   MATCH_MAC_ID_2, MASK_MAC_ID_2,
     return v;
   }
 
@@ -921,6 +990,18 @@ private:
     mmu->store<uint64_t>(MAC_BASE + MAC_REG_COMMAND,cmd);
     return pc + 4;
   }
+  static reg_t exec_mac_init_2(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    uint64_t init_id = (uint64_t)p->get_state()->XPR[insn.rs1()];
+    uint64_t is_dmac = (uint64_t)p->get_state()->XPR[insn.rs2()];
+    uint64_t cmd = ((uint64_t)init_id << 32) | ((is_dmac & 1) << 16) | 1;
+    uint8_t* bytes = reinterpret_cast<uint8_t*>(&cmd);
+    // MMIOで初期化
+    auto mmu = p->get_mmu();
+    mmu->store<uint64_t>(MAC_BASE + MAC_REG_COMMAND_2,cmd);
+    return pc + 4;
+  }
+
   static reg_t exec_mac_copy(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     uint64_t spm_offset = (uint64_t)p->get_state()->XPR[insn.rs1()];
@@ -932,6 +1013,17 @@ private:
     mmu->store<uint64_t>(MAC_BASE + MAC_REG_COMMAND, cmd); 
     return pc + 4;
   }
+  static reg_t exec_mac_copy_2(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    uint64_t spm_offset = (uint64_t)p->get_state()->XPR[insn.rs1()];
+    uint64_t dma_id = (uint64_t)p->get_state()->XPR[insn.rs2()];
+    uint64_t id = (dma_id & 0xFFFF);
+    uint64_t cmd = (spm_offset << 32) | (id << 16) | 8; // SPM_RD
+    // MMIOでコピー命令発行
+    auto mmu = p->get_mmu();
+    mmu->store<uint64_t>(MAC_BASE + MAC_REG_COMMAND_2, cmd); 
+    return pc + 4;
+  }
   static reg_t exec_mac_update(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     uint64_t start_bit = (uint64_t)p->get_state()->XPR[insn.rs1()];
@@ -940,6 +1032,16 @@ private:
     // MMIOで更新命令発行
     auto mmu = p->get_mmu();
     mmu->store<uint64_t>(MAC_BASE + MAC_REG_COMMAND, cmd); 
+    return pc + 4;
+  }
+  static reg_t exec_mac_update_2(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    uint64_t start_bit = (uint64_t)p->get_state()->XPR[insn.rs1()];
+    uint64_t end_bit    = (uint64_t)p->get_state()->XPR[insn.rs2()];
+    uint64_t cmd = ((end_bit & 0XFFFF) << 48) | ((start_bit & 0xFFFF) << 32) | 2;
+    // MMIOで更新命令発行
+    auto mmu = p->get_mmu();
+    mmu->store<uint64_t>(MAC_BASE + MAC_REG_COMMAND_2, cmd); 
     return pc + 4;
   }
   static reg_t exec_mac_digest(processor_t* p, insn_t insn, reg_t pc) {
@@ -953,6 +1055,17 @@ private:
     mmu->store<uint64_t>(MAC_BASE + MAC_REG_COMMAND, cmd); 
     return pc + 4;
   }
+  static reg_t exec_mac_digest_2(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    uint64_t offset = (uint64_t)p->get_state()->XPR[insn.rs1()];
+    uint64_t dma_id = (uint64_t)p->get_state()->XPR[insn.rs2()];
+    uint64_t id = (dma_id & 0xFFFF);
+    uint64_t cmd= (offset << 32) | (id << 16) | 4; // OUTPUT
+    // MMIOでダイジェスト命令発行
+    auto mmu = p->get_mmu();
+    mmu->store<uint64_t>(MAC_BASE + MAC_REG_COMMAND_2, cmd); 
+    return pc + 4;
+  }
   static reg_t exec_mac_compare(processor_t* p, insn_t insn, reg_t pc) {
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     uint64_t offset = (uint64_t)p->get_state()->XPR[insn.rs1()];
@@ -962,6 +1075,17 @@ private:
     // MMIOで比較命令発行
     auto mmu = p->get_mmu();
     mmu->store<uint64_t>(MAC_BASE + MAC_REG_COMMAND, cmd); 
+    return pc + 4;
+  }
+  static reg_t exec_mac_compare_2(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    uint64_t offset = (uint64_t)p->get_state()->XPR[insn.rs1()];
+    uint64_t dma_id = (uint64_t)p->get_state()->XPR[insn.rs2()];
+    uint64_t id = (dma_id & 0xFFFF);
+    uint64_t cmd = (offset << 32) | (id << 16) | 16; // COMPARE
+    // MMIOで比較命令発行
+    auto mmu = p->get_mmu();
+    mmu->store<uint64_t>(MAC_BASE + MAC_REG_COMMAND_2, cmd); 
     return pc + 4;
   }
   static reg_t exec_mac_id(processor_t* p, insn_t insn, reg_t pc) {
@@ -977,6 +1101,7 @@ private:
     }
     return pc + 4;
   }
+
 };
 
 tmx_logic_t* unified_extension_t::shared_tmx = nullptr;

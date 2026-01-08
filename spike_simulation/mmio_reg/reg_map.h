@@ -62,6 +62,8 @@ extern "C" {
 #define MAC_REG_END_BIT     0x28
 #define MAC_REG_MAC_RESULT  0x30
 #define MAC_REG_MAC_ID      0x38
+#define MAC_REG_COMMAND_2   0x40
+#define MAC_REG_MAC_ID_2    0x48
 
 
 // 実際のレジスタアクセス
@@ -73,6 +75,8 @@ extern "C" {
 #define MAC_END_BIT      REG64(MAC_BASE, MAC_REG_END_BIT)
 #define MAC_RESULT       REG64(MAC_BASE, MAC_REG_MAC_RESULT)
 #define MAC_ID           REG64(MAC_BASE, MAC_REG_MAC_ID)
+#define MAC_COMMAND_2    REG64(MAC_BASE, MAC_REG_COMMAND_2)
+#define MAC_ID_2     REG64(MAC_BASE, MAC_REG_MAC_ID_2)
 #endif // MAC_ADDRMAP_H
 
 #ifndef AES_ADDRMAP_H

@@ -1,3 +1,4 @@
+#pragma once
 int mac_lock = 0;
 int dma_lock = 0;
 int axim_lock = 0;
@@ -20,19 +21,25 @@ void unlock_mac() {
 }
 static inline void lock_dma() {
     // 失敗したらノップを入れたい
-    int counter = 0;
+    // int counter = 0;
     while (__sync_lock_test_and_set(&dma_lock, 1)) {
-        counter++;
-        if (counter % 1000 == 0) {
-            lock_print();
-            int hartid = -1;
-            asm volatile(
-                "csrr %0, mhartid"
-                : "=r"(hartid)
-            );
-            printf("DMA lock waiting... counter=%d hartid=%d\n", counter, hartid);
-            unlock_print();
-        }
+        // for (int i = 0; i < 4; i++) {
+        //     asm volatile("nop");
+        // }
+        asm volatile("nop");
+        asm volatile("nop");
+        asm volatile("nop");
+        // counter++;
+        // if (counter % 1000 == 0) {
+        //     lock_print();
+        //     int hartid = -1;
+        //     asm volatile(
+        //         "csrr %0, mhartid"
+        //         : "=r"(hartid)
+        //     );
+        //     printf("DMA lock waiting... counter=%d hartid=%d\n", counter, hartid);
+        //     unlock_print();
+        // }
     }
 }
 static inline void unlock_dma() {

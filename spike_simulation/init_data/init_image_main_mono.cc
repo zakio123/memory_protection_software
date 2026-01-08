@@ -186,7 +186,7 @@ int main(int argc, char** argv){
   }
   std::cout << "[Info] Counter tree count_log: " << count_log << std::endl;
   uint64_t total_nodes = ((1ULL << (count_log * HEIGHT)) - 1ULL) / (MINOR_COUNTER_COUNT - 1ULL);
-  if (MINOR_COUNTER_COUNT * MINOR_COUNTER_WIDTH > 384){
+  if (MINOR_COUNTER_COUNT * MINOR_COUNTER_WIDTH > 448){
       die("Too large minor counter configuration.");
   }
   std::cout << "[Info] Total tree nodes: " << total_nodes << std::endl;

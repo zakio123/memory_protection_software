@@ -1,34 +1,44 @@
 
   static inline void verify_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, 
     uint32_t mac_req_id, dma_id_t dma_id,dram_addr_t dram_addr){
-  mac_init(mac_req_id,false);
+    int hart_id = -1;
+    asm volatile(
+        "csrr %0, mhartid"
+        : "=r"(hart_id)
+    );
+  mac_init(mac_req_id,hart_id);
   if (parent_spm_offset == 0){
-      mac_buffer_set(0, dma_id);
-      mac_update(0,63);
+      mac_buffer_set(0, dma_id,hart_id);
+      mac_update(0,63,hart_id);
   } else {
       uint64_t start_bit = 64 + (node_index / MINOR_COUNTER_COUNT) % MINOR_COUNTER_COUNT * MINOR_COUNTER_WIDTH;
-      mac_buffer_set(parent_spm_offset, dma_id);
-      mac_update(0,63);
-      mac_update(start_bit, start_bit + (MINOR_COUNTER_WIDTH - 1));
+      mac_buffer_set(parent_spm_offset, dma_id,hart_id);
+      mac_update(0,63,hart_id);
+      mac_update(start_bit, start_bit + (MINOR_COUNTER_WIDTH - 1),hart_id);
   }
-  mac_buffer_set(child_spm_offset, dma_id);
-  mac_update(0, 447);
-  mac_input_core(dram_addr);
-  mac_result_compare(child_spm_offset + 56, dma_id);
+  mac_buffer_set(child_spm_offset, dma_id,hart_id);
+  mac_update(0, 447,hart_id);
+  mac_input_core(dram_addr,hart_id);
+  mac_result_compare(child_spm_offset + 56, dma_id,hart_id);
 }
 
 static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, 
   bool update_counter, uint32_t mac_req_id, dma_id_t dma_id,
   dram_addr_t dram_addr){
-  mac_init(mac_req_id,false);
+    int hart_id = -1;
+    asm volatile(
+        "csrr %0, mhartid"
+        : "=r"(hart_id)
+    );
+  mac_init(mac_req_id,hart_id);
   if (parent_spm_offset == 0){
-      mac_buffer_set(0, dma_id);
-      mac_update(0,63);
+      mac_buffer_set(0, dma_id,hart_id);
+      mac_update(0,63,hart_id);
   } else {
       uint64_t start_bit = 64 + (node_index / MINOR_COUNTER_COUNT) % MINOR_COUNTER_COUNT * MINOR_COUNTER_WIDTH;
-      mac_buffer_set(parent_spm_offset, dma_id);
-      mac_update(0,63);
-      mac_update(start_bit, start_bit + (MINOR_COUNTER_WIDTH - 1));
+      mac_buffer_set(parent_spm_offset, dma_id,hart_id);
+      mac_update(0,63,hart_id);
+      mac_update(start_bit, start_bit + (MINOR_COUNTER_WIDTH - 1),hart_id);
   }
   // ブロックの更新
   if (update_counter){
@@ -109,12 +119,12 @@ static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t
     // 書き戻し
     // spm_sd64(minor_counter_byte_address, final_word);
   }
-  mac_buffer_set(child_spm_offset, dma_id);
-  mac_update(0, 447);
-  mac_input_core(dram_addr);
+  mac_buffer_set(child_spm_offset, dma_id,hart_id);
+  mac_update(0, 447,hart_id);
+  mac_input_core(dram_addr,hart_id);
   // mac_buffer_set(dram_addr_offset, dma_id);
   // mac_update(0,63);
-  mac_digest(child_spm_offset + 56,dma_id);
+  mac_digest(child_spm_offset + 56,dma_id,hart_id);
 }
 
 // ===========================================================================
