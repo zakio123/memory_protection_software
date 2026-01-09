@@ -277,6 +277,54 @@ int tmu_logic_t::check_idx(int slot_idx) const {
     return (reg_t)0;
   }
 
+  reg_t tmu_logic_t::do_hit(long slot_idx, dram_addr_t dram_addr) {
+    int search_range = std::min(PHYSICAL_WAYS, int(slot_idx & 0xFFFF));
+    slot_idx = slot_idx >> 32;
+    // slot_idxを物理wayに変換して、相当するset内でタグチェックを行う
+    int ahead_set_idx = slot_idx;
+    reg_t res = 0;
+    for (int k = 0;k < search_range;k++){
+      if (tmu_valid[ahead_set_idx + k] && tmu_tag[ahead_set_idx + k] == dram_addr){
+        res = 1;
+        if (k >= CACHE_WAYS){
+          std::cerr << "do_check_tag: invalid way returned: " << k << std::endl;
+          exit(1);
+        }
+        return res;
+      }
+    }
+    return res;
+  }
+
+  reg_t tmu_logic_t::do_get_way(long slot_idx, dram_addr_t dram_addr) {
+    int search_range = std::min(PHYSICAL_WAYS, int(slot_idx & 0xFFFF));
+    slot_idx = slot_idx >> 32;
+    // slot_idxを物理wayに変換して、相当するset内でタグチェックを行う
+    int ahead_set_idx = slot_idx;
+    reg_t hit_way = -1;
+    for (int k = 0;k < search_range;k++){
+      if (tmu_valid[ahead_set_idx + k] && tmu_tag[ahead_set_idx + k] == dram_addr){
+        hit_way = k;
+        if (hit_way >= CACHE_WAYS){
+          std::cerr << "do_check_tag: invalid way returned: " << hit_way << std::endl;
+          exit(1);
+        }
+        return hit_way;
+      }
+    }
+    for (int k = 0;k < search_range;k++){
+      if (!tmu_valid[ahead_set_idx + k]){
+        hit_way = k;
+        if (hit_way >= CACHE_WAYS){
+          std::cerr << "do_check_tag: invalid way returned: " << hit_way << std::endl;
+          exit(1);
+        }
+        return hit_way;
+      }
+    }
+    return (reg_t)(-1);
+  }
+
 uint16_t tmu_logic_t::update_tree_lru(uint16_t current_lru, int accessed_way) const {
     // ツリー型LRUの更新ロジックを実装
     int node = 0;      // 今いる内部ノードの index (bit 位置)

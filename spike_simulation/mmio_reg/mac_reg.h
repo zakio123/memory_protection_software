@@ -26,7 +26,7 @@ void mac_init(uint64_t req_id, int hart_id, int is_write){
     //     : "=r"(hid)
     // );
     // lock_print();
-    // printf("MAC INIT called with req_id=%llu hart_id=%d\n", req_id, hid);
+    // printf("MAC INIT called with req_id=%llu hart_id=%d\n", req_id, hart_id);
     // unlock_print();
     long unused;
     if (hart_id == 0){
@@ -89,12 +89,12 @@ void mac_wait(uint64_t req_id, long hart_id){
             counter += 1;
             uint64_t complete_id = MAC_ID;
             if (req_id <= complete_id) break;
-            // if (counter % 100000000 == 0){
-            //     lock_print();
-            //     printf("MAC WAIT: hart_id=0 waiting for req_id=%llu current_complete_id=%llu\n", req_id, complete_id);
-            //     unlock_print();
-            //     exit(1);
-            // }
+            if (counter % 100000000 == 0){
+                lock_print();
+                printf("MAC WAIT: hart_id=0 waiting for req_id=%llu current_complete_id=%llu\n", req_id, complete_id);
+                unlock_print();
+                exit(1);
+            }
         }
     } else {
         // int counter = 0;

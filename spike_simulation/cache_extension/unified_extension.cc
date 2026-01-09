@@ -74,6 +74,10 @@
 #define MASK_TMU_IS_BIT_SET  TMU_MASK
 #define MATCH_TMU_SHOW_REF_COUNT TMU_MATCH(F7_TMU_SHOW_REF_COUNT)
 #define MASK_TMU_SHOW_REF_COUNT  TMU_MASK
+#define MATCH_TMU_GET_WAY    TMU_MATCH(F7_TMU_GET_WAY)
+#define MASK_TMU_GET_WAY     TMU_MASK
+#define MATCH_TMU_HIT        TMU_MATCH(F7_TMU_HIT)
+#define MASK_TMU_HIT         TMU_MASK
 
 // MACの定義
 #define MATCH_MAC_INIT     MAC_MATCH(F7_MAC_INIT)
@@ -478,6 +482,30 @@ public:
       &unified_extension_t::exec_tmu_is_bit_set,
       &unified_extension_t::exec_tmu_is_bit_set
     });
+    v.push_back((insn_desc_t){
+      // MAC命令群の登録
+      MATCH_TMU_HIT, MASK_TMU_HIT,
+      &unified_extension_t::exec_tmu_hit,
+      &unified_extension_t::exec_tmu_hit,
+      &unified_extension_t::exec_tmu_hit,
+      &unified_extension_t::exec_tmu_hit,
+      &unified_extension_t::exec_tmu_hit,
+      &unified_extension_t::exec_tmu_hit,
+      &unified_extension_t::exec_tmu_hit,
+      &unified_extension_t::exec_tmu_hit
+    });
+    v.push_back((insn_desc_t){
+      MATCH_TMU_GET_WAY, MASK_TMU_GET_WAY,
+      &unified_extension_t::exec_tmu_get_way,
+      &unified_extension_t::exec_tmu_get_way,
+      &unified_extension_t::exec_tmu_get_way,
+      &unified_extension_t::exec_tmu_get_way,
+      &unified_extension_t::exec_tmu_get_way,
+      &unified_extension_t::exec_tmu_get_way,
+      &unified_extension_t::exec_tmu_get_way,
+      &unified_extension_t::exec_tmu_get_way
+    });
+
     v.push_back((insn_desc_t){
       MATCH_MAC_INIT, MASK_MAC_INIT,
       &unified_extension_t::exec_mac_init,
@@ -975,6 +1003,28 @@ private:
     auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
     uint64_t spm_offset = (uint64_t)p->get_state()->XPR[insn.rs1()];
     shared_tmu->do_show_ref_count(spm_offset);
+    return pc + 4;
+  }
+  static reg_t exec_tmu_get_way(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    long slot_idx = p->get_state()->XPR[insn.rs1()];
+    dram_addr_t addr = (dram_addr_t)p->get_state()->XPR[insn.rs2()];
+    reg_t res = shared_tmu->do_get_way(slot_idx, addr);
+    int rd = insn.rd();
+    if (rd != 0) { // x0への書き込みは無視
+        p->get_state()->XPR.write(rd, res);
+    }
+    return pc + 4;
+  }
+  static reg_t exec_tmu_hit(processor_t* p, insn_t insn, reg_t pc) {
+    auto* ext = static_cast<unified_extension_t*>(p->get_extension("unified_extension"));
+    long slot_idx = p->get_state()->XPR[insn.rs1()];
+    dram_addr_t addr = p->get_state()->XPR[insn.rs2()];
+    reg_t res = shared_tmu->do_hit(slot_idx, addr);
+    int rd = insn.rd();
+    if (rd != 0) { // x0への書き込みは無視
+        p->get_state()->XPR.write(rd, res);
+    }
     return pc + 4;
   }
 

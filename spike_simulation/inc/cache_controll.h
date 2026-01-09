@@ -4,6 +4,7 @@
 #include "tmu_encoding.h"
 #include <stdio.h>
 #include "../mmio_reg/spm_reg.h"
+#pragma once
 /* --- インラインアセンブラマクロ (HWモード用) --- */
 #ifdef ENABLE_TMU_HARDWARE
 #define TMU_INSN_R(funct7, rd, rs1, rs2) \
@@ -117,41 +118,41 @@ static inline bool is_block_dirty(index_t set_index, index_t way_index){
   #endif
 }
 
-static inline bool acquire_cache_block(index_t set_index, index_t way_index){
-  #ifdef ENABLE_TMU_HARDWARE
-    long slot_idx = (set_index * CACHE_WAYS) + way_index;
-    long ret;
-    TMU_INSN_R(F7_TMU_ACQUIRE, ret, slot_idx, 0); 
-    return (bool)ret;
-  #else
-  if (valid_metadata[set_index][way_index] == false){
-    printf("Error: Attempt to acquire invalid cache block S:%u W:%u\n", set_index, way_index);
-      return false;
-  } else {
-    ref_count_metadata[set_index][way_index] += 1;
-      return true;
-    }
-  #endif
-}
-static inline void release_cache_block(index_t set_index, index_t way_index){
-  #ifdef ENABLE_TMU_HARDWARE
-    long slot_idx = (set_index * CACHE_WAYS) + way_index;
-    long ret;
-    TMU_INSN_R(F7_TMU_RELEASE, ret, slot_idx, 0); 
-  #else
-    if (valid_metadata[set_index][way_index] == false){
-        printf("Error: Attempt to release invalid cache block S:%u W:%u\n", set_index, way_index);
-        exit(1);
-        return;
-    }
-    if (ref_count_metadata[set_index][way_index] == 0){
-        printf("Error: Attempt to release cache block S:%u W:%u with ref_count 0\n", set_index, way_index);
-        exit(1);
-        return;
-    }
-    ref_count_metadata[set_index][way_index] -= 1;
-  #endif
-}
+// static inline bool acquire_cache_block(index_t set_index, index_t way_index){
+//   #ifdef ENABLE_TMU_HARDWARE
+//     long slot_idx = (set_index * CACHE_WAYS) + way_index;
+//     long ret;
+//     TMU_INSN_R(F7_TMU_ACQUIRE, ret, slot_idx, 0); 
+//     return (bool)ret;
+//   #else
+//   if (valid_metadata[set_index][way_index] == false){
+//     printf("Error: Attempt to acquire invalid cache block S:%u W:%u\n", set_index, way_index);
+//       return false;
+//   } else {
+//     ref_count_metadata[set_index][way_index] += 1;
+//       return true;
+//     }
+//   #endif
+// }
+// static inline void release_cache_block(index_t set_index, index_t way_index){
+//   #ifdef ENABLE_TMU_HARDWARE
+//     long slot_idx = (set_index * CACHE_WAYS) + way_index;
+//     long ret;
+//     TMU_INSN_R(F7_TMU_RELEASE, ret, slot_idx, 0); 
+//   #else
+//     if (valid_metadata[set_index][way_index] == false){
+//         printf("Error: Attempt to release invalid cache block S:%u W:%u\n", set_index, way_index);
+//         exit(1);
+//         return;
+//     }
+//     if (ref_count_metadata[set_index][way_index] == 0){
+//         printf("Error: Attempt to release cache block S:%u W:%u with ref_count 0\n", set_index, way_index);
+//         exit(1);
+//         return;
+//     }
+//     ref_count_metadata[set_index][way_index] -= 1;
+//   #endif
+// }
 
 static inline bool swappable_cache_block(index_t set_index, index_t way_index){
   #ifdef ENABLE_TMU_HARDWARE
@@ -212,7 +213,20 @@ static inline bool is_block_valid(index_t set_index, index_t way_index){
   #endif
 }
 
-
+static inline uint64_t is_hit(dram_addr_t dram_addr){
+  index_t set_index = get_cache_set_index(dram_addr);
+  index_t slot_idx = (set_index * CACHE_WAYS << 32) | CACHE_WAYS;
+  uint64_t ret;
+  TMU_INSN_R(F7_TMU_LIGHT_TAG_CHECK, ret, slot_idx, dram_addr);
+  return (uint64_t)ret;
+}
+static inline uint64_t get_way(index_t set_index, dram_addr_t dram_addr){
+  // index_t set_index = get_cache_set_index(dram_addr);
+  index_t slot_idx = (set_index * CACHE_WAYS << 32) | CACHE_WAYS;
+  uint64_t ret;
+  TMU_INSN_R(F7_TMU_GET_WAY, ret, slot_idx, dram_addr);
+  return (uint64_t)ret;
+}
 
 
 

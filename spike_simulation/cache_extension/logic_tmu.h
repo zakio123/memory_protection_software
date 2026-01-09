@@ -57,4 +57,7 @@ public:
   reg_t do_is_bit_set(int idx, int bit_pos);
   reg_t do_show_ref_count(spm_offset_t spm_offset);
   reg_t do_light_tag_check(long slot_idx, dram_addr_t dram_addr);
+
+  reg_t do_get_way(long slot_idx, dram_addr_t dram_addr);
+  reg_t do_hit(long slot_idx, dram_addr_t dram_addr);
 };
