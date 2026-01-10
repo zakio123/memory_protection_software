@@ -26,13 +26,22 @@ struct Info {
     dram_addr_t block_addr;
     int8_t way;
 };
+static inline index_t get_cache_mac_index(dram_addr_t dram_addr) {
+    // Data Tag領域
+    return ((dram_addr) / 64) % DATA_TAG_SETS;
+    // if (dram_addr < COUNTER_BASE) {
+    // } else {
+    //     // Counter Tree領域
+    //     return ((dram_addr) / 64) % TREE_SETS + DATA_TAG_SETS;
+    // }
+}
 static inline index_t get_cache_set_index(dram_addr_t dram_addr) {
+    // Data Tag領域
     if (dram_addr < COUNTER_BASE) {
-        // Data Tag領域
-        return ((dram_addr) / 64) % DATA_TAG_SETS;
+      return (dram_addr / 64) % DATA_TAG_SETS;
     } else {
-        // Counter Tree領域
-        return ((dram_addr) / 64) % TREE_SETS + DATA_TAG_SETS;
+      // Counter Tree領域
+      return (dram_addr / 64) % TREE_SETS + DATA_TAG_SETS;
     }
 }
 static inline index_t get_cache_tree_set_index(dram_addr_t dram_addr) {
@@ -658,11 +667,21 @@ typedef struct {
     int way;
     int hit;
 } light_tag_info_t;
-
+static inline light_tag_info_t light_tag_check_set(index_t set_index, dram_addr_t dram_addr){
+  // #ifdef ENABLE_TMU_HARDWARE
+    long ret;
+    long slot_idx = ((long)set_index * CACHE_WAYS) << 32;
+    slot_idx = slot_idx | CACHE_WAYS; // search_rangeにCACHE_WAYSを指定
+    TMU_INSN_R(F7_TMU_LIGHT_TAG_CHECK, ret, slot_idx, dram_addr);
+    light_tag_info_t info;
+    info.way = (ret >> 32);
+    info.hit = (ret & 0x1);
+    return info;
+}   
 static inline uint64_t light_tag_check_(dram_addr_t dram_addr){
   #ifdef ENABLE_TMU_HARDWARE
     long ret;
-    long slot_idx = ((long)get_cache_set_index(dram_addr) * CACHE_WAYS) << 32;
+    long slot_idx = ((long)get_cache_mac_index(dram_addr) * CACHE_WAYS) << 32;
     slot_idx = slot_idx | CACHE_WAYS; // search_rangeにCACHE_WAYSを指定
     TMU_INSN_R(F7_TMU_LIGHT_TAG_CHECK, ret, slot_idx, dram_addr);
     return (uint64_t)ret;

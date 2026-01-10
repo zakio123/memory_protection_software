@@ -14,13 +14,13 @@
 #include "cache_controll.h"
 #include "addr_util.h"
 #include "sec_operation.h"
-#define REENCRPYTION_SPM_OFFSET DATA_SPM_OFFSET + 64
+#define REENCRYPTION_SPM_OFFSET DATA_SPM_OFFSET + 64
 
 bool instret_dump = false;
 
 
 // マイナーカウンターがオーバーフローした時の復号化+再暗号化処理
-void reencrpytion(dram_addr_t counter_block_addr,spm_offset_t counter_spm_offset){
+static inline void reencryption(dram_addr_t counter_block_addr,spm_offset_t counter_spm_offset){
   // printf("[Core FW] Re-encrypting data block for counter_block_addr=%016llx dma_id=%llu global_mac_req_id=%llu\n", counter_block_addr, global_dma_id, global_mac_req_id);
   dram_addr_t data_block_addr = PROTECTION_BASE + (counter_block_addr - level_base[HEIGHT]) / 64 * (MINOR_COUNTER_COUNT * 64);
   uint64_t old_major_counter = spm_ld64(counter_spm_offset);
@@ -31,10 +31,10 @@ void reencrpytion(dram_addr_t counter_block_addr,spm_offset_t counter_spm_offset
     // global_dma_id += 1;
     dma_id = global_dma_id;
     dram_addr_t dram_addr = data_block_addr + i * 64;
-    spm_copy_to_local(dram_addr, REENCRPYTION_SPM_OFFSET, 64, dma_id);
+    spm_copy_to_local(dram_addr, REENCRYPTION_SPM_OFFSET, 64, dma_id);
     // MACブロックの取得
     dram_addr_t datamacblock_addr = get_datamacblock_addr(dram_addr);
-    index_t set_index = get_cache_set_index(datamacblock_addr);
+    index_t set_index = get_cache_mac_index(datamacblock_addr);
     spm_offset_t spm_offset;
     light_tag_info_t light_info = light_tag_check(datamacblock_addr);
     if (light_info.hit){
@@ -63,7 +63,7 @@ void reencrpytion(dram_addr_t counter_block_addr,spm_offset_t counter_spm_offset
     uint64_t global_bit_offset = 64 + (i * MINOR_COUNTER_WIDTH);
     // dmacの比較
     mac_init(global_mac_req_id,0,1);
-    mac_buffer_set(REENCRPYTION_SPM_OFFSET, dma_id,0);
+    mac_buffer_set(REENCRYPTION_SPM_OFFSET, dma_id,0);
     mac_update(0,511,0);
     mac_buffer_set(counter_spm_offset, dma_id,0);
     mac_update(0,63,0);
@@ -94,18 +94,18 @@ void reencrpytion(dram_addr_t counter_block_addr,spm_offset_t counter_spm_offset
     while(AES_START_REG);
     // 復号化
     spm_wait(dma_id);
-    xor_start(false,false,0,REENCRPYTION_SPM_OFFSET);
+    xor_start(false,false,0,REENCRYPTION_SPM_OFFSET);
     // 再暗号化
     set_seed(new_major_counter, 0, dram_addr);
     while(AES_START_REG);
-    xor_start(false,false,0,REENCRPYTION_SPM_OFFSET);
+    xor_start(false,false,0,REENCRYPTION_SPM_OFFSET);
     // 書き戻し
-    spm_write_back(REENCRPYTION_SPM_OFFSET, dram_addr, 64, 0);
+    spm_write_back(REENCRYPTION_SPM_OFFSET, dram_addr, 64, 0);
     // minorカウンターの更新
     // MACの更新
     // uint64_t mac_req_id = global_mac_req_id;
     mac_init(global_mac_req_id,0,1);
-    mac_buffer_set(REENCRPYTION_SPM_OFFSET, 0,0);
+    mac_buffer_set(REENCRYPTION_SPM_OFFSET, 0,0);
     mac_update(0,511,0);
     mac_buffer_set(counter_spm_offset, dma_id,0);
     mac_update(0,63,0);
@@ -127,7 +127,7 @@ void reencrpytion(dram_addr_t counter_block_addr,spm_offset_t counter_spm_offset
 
 
 // 中間ノードのマイナーカウンターがオーバーフローした時の再計算処理
-void recalc_tag(dram_addr_t node_dram_addr, spm_offset_t node_spm_offset, int height, long index){
+static inline void recalc_tag(dram_addr_t node_dram_addr, spm_offset_t node_spm_offset, int height, long index){
   // printf("[Core FW] Recalculating tag at level %d for node_addr=%016llx dma_id=%llu global_mac_req_id=%llu index=%llu\n", height, node_dram_addr, global_dma_id,global_mac_req_id,index);
   long block_idx = index / MINOR_COUNTER_COUNT;
   dram_addr_t child_base_addr = level_base[height + 2] + block_idx * MINOR_COUNTER_COUNT * 64;
@@ -144,11 +144,11 @@ void recalc_tag(dram_addr_t node_dram_addr, spm_offset_t node_spm_offset, int he
     dma_id_t dma_id = global_dma_id;
     if (light_info.hit){
       // printf("[core fw] cache hit for addr=%016llx\n", child_dram_addr);
-      bool mac_updated = is_mac_updated(get_cache_set_index(child_dram_addr), light_info.way);
+      index_t set_index = get_cache_tree_set_index(child_dram_addr);
+      bool mac_updated = is_mac_updated(set_index, light_info.way);
       if (!mac_updated){
         continue; // MACが更新されていない場合はあとでやればいいのでスキップ
       } else {
-        index_t set_index = get_cache_tree_set_index(child_dram_addr);
         child_spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
         set_block_dirty(set_index, light_info.way);
         setParentUpdated(set_index, light_info.way);
@@ -161,7 +161,7 @@ void recalc_tag(dram_addr_t node_dram_addr, spm_offset_t node_spm_offset, int he
         child_spm_offset = get_temp_spm_offset(temp_idx);
       } else {
         // printf("[core fw] miss for addr=%016llx\n", child_dram_addr);
-        child_spm_offset = REENCRPYTION_SPM_OFFSET; // 一時バッファを使用
+        child_spm_offset = REENCRYPTION_SPM_OFFSET; // 一時バッファを使用
         global_dma_id += 1;
         dma_id = global_dma_id;
         spm_copy_to_local(child_dram_addr, child_spm_offset, 64, dma_id);
@@ -323,7 +323,7 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
         // exit(1);
         if (start_level == HEIGHT - 1){
           // リーフノードであるため、再暗号化処理を行う
-          reencrpytion(dram_addr_array[start_level], spm_offset_array[start_level]);
+          reencryption(dram_addr_array[start_level], spm_offset_array[start_level]);
         } else {
           // tag再計算
           recalc_tag(dram_addr_array[start_level], spm_offset_array[start_level], start_level, path_indecis[start_level]);
@@ -491,6 +491,8 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
   // return tag_id;
 }
 
+static const spm_offset_t DATA_SPM_ARRAY = REENCRYPTION_SPM_OFFSET;
+
 void Verification(dram_addr_t request_addr, uint64_t req_id){
   uint64_t start_time = read_instret();
   // uint64_t mac_req_id = global_mac_req_id;
@@ -499,83 +501,80 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
   dma_id_t data_id = global_dma_id;
   spm_copy_to_local(request_addr, DATA_SPM_OFFSET, 64,data_id);
   // HEIGHT-1がリーフ、0が高さ1
-  uint64_t path_indecis[HEIGHT];
+  // uint64_t path_indecis[HEIGHT];
   spm_offset_t spm_offset_array[HEIGHT];
   dram_addr_t dram_addr_array[HEIGHT];
-  uint64_t load_start_index = 0;
+  uint64_t hit_index = HEIGHT;
   dma_id_t wait_dma_id[HEIGHT];
-  index_t way_index = 0;
   uint64_t tag_path_check_s = read_instret();
-  // for(long i=HEIGHT - 1; i>=0; --i){
+  index_t index = (request_addr - PROTECTION_BASE) / 64;
+  index_t v_i = index;
+  // level_baseもポインタで走査する
   for (long i = 0;i<HEIGHT;i++){
-      // uint64_t st = read_instret();
-      uint64_t index = (request_addr - PROTECTION_BASE) / (64 * (1ULL << (ARTY_LOG2 * (HEIGHT - 1 - i))));
-      path_indecis[i] = index;
-      dram_addr_t dram_addr = index / MINOR_COUNTER_COUNT * 64 + level_base[i + 1];
-      dram_addr_array[i] = dram_addr;
-      // light_tag_info_t info = light_tag_check(dram_addr);
-      uint64_t hit = is_hit(dram_addr);
-      long temp_idx = -1;
-      // dma_id_t tmp_id = global_dma_id;
-      if (hit > 0){
-        load_start_index = i+1;
-        long set_index = get_cache_tree_set_index(dram_addr);
-        way_index = get_way(set_index,dram_addr);
-        spm_offset_t spm_offset = get_cache_block_spm_offset(set_index, way_index);
-        spm_offset_array[i] = spm_offset;
-        wait_dma_id[i] = global_dma_id;
-        update_lru_on_access(set_index, way_index);
-        acquire_read_block(spm_offset);
-        break;
-      } else {
-        // tmp_id += 1;
-        global_dma_id += 1;
-        wait_dma_id[i] = global_dma_id;
-        spm_offset_t spm_offset = pop_temp_buffer();
-        spm_offset_array[i] = spm_offset;
-        temp_idx = alloc_temp_entry(dram_addr, spm_offset);
-        spm_copy_to_local(dram_addr, spm_offset, 64, global_dma_id);
-        // acquire_temp_entry_by_index(temp_idx);
-        acquire_read_block(spm_offset);
-      }
-      // uint64_t se = read_instret();
-      // printf("[Core FW] Level %llu: index=%llu, dram_addr=%016llx, time=%llu\n", i, index, dram_addr, se - st);
+    // uint64_t index = (request_addr - PROTECTION_BASE) / (64 * (1ULL << (ARTY_LOG2 * (HEIGHT - 1 - i))));
+    // asm volatile ("path_a:");
+    // path_indecis[i] = index;
+    dram_addr_t dram_addr = index / MINOR_COUNTER_COUNT * 64 + level_base[HEIGHT - i];
+    index = index / MINOR_COUNTER_COUNT;
+    dram_addr_array[i] = dram_addr;
+    index_t set_index = get_cache_tree_set_index(dram_addr);
+    light_tag_info_t info = light_tag_check_set(set_index, dram_addr);
+    if (info.hit){
+      hit_index = i;
+      index_t way_index = info.way;//get_way(set_index,dram_addr);
+      update_lru_on_access(set_index, way_index);
+      spm_offset_t spm_offset = get_cache_block_spm_offset(set_index, way_index);
+      spm_offset_array[i] = spm_offset;
+      wait_dma_id[i] = global_dma_id;
+      acquire_read_block(spm_offset);
+      break;
+    } else {
+      global_dma_id += 1;
+      wait_dma_id[i] = global_dma_id;
+      spm_offset_t spm_offset = pop_temp_buffer();
+      spm_offset_array[i] = spm_offset;
+      alloc_temp_entry(dram_addr, spm_offset);
+      spm_copy_to_local(dram_addr, spm_offset, 64, global_dma_id);
+      acquire_read_block(spm_offset);
+    }
   }
   uint64_t tag_path_check_e = read_instret();
-  printf("[Core FW] Verification Tag Path Check Time: %llu\n", tag_path_check_e - tag_path_check_s);
+  // printf("[Core FW] Verification Tag Path Check Time: %llu %llu\n", tag_path_check_e - tag_path_check_s,hit_index);
+  // exit(1);
   uint64_t verify_s = read_instret();
   uint64_t mac_req_id = 0;
-  for (uint64_t i = load_start_index;i<HEIGHT;i++){
-    long j = (HEIGHT + load_start_index) - 1 - i;
-    spm_offset_t parent_spm = (j == 0) ? 0 : spm_offset_array[j-1];
-    // mac_req_id += 1;
-    dma_id_t need_id = (j == 0) ? wait_dma_id[0] : wait_dma_id[j-1];
+  // index = (request_addr - PROTECTION_BASE) / 64;
+  for (uint64_t i = 0;i<hit_index;i++){
+    spm_offset_t parent_spm = (i == HEIGHT - 1) ? 0 : spm_offset_array[i+1];
+    dma_id_t need_id = (i == HEIGHT - 1) ? wait_dma_id[HEIGHT - 1] : wait_dma_id[i+1];
     mac_req_id = global_mac_req_id;
-    verify_one_height(spm_offset_array[j], parent_spm, path_indecis[j], mac_req_id,need_id, dram_addr_array[j]);
+    verify_one_height(spm_offset_array[i], parent_spm, v_i, mac_req_id,need_id, dram_addr_array[i]);
     global_mac_req_id += 1;
+    v_i = v_i / MINOR_COUNTER_COUNT;
   }
   uint64_t verify_e = read_instret();
   uint64_t wait_s = read_instret();
-  dma_id_t wait_id = wait_dma_id[HEIGHT-1];
+  dma_id_t wait_id = wait_dma_id[0];
   spm_wait(wait_id);
   uint64_t wait_e = read_instret();
   uint64_t set_seed_s = read_instret();
-  uint64_t major_counter = spm_ld64(spm_offset_array[HEIGHT-1]);
+  spm_offset_t base_spm_offset = spm_offset_array[0];
+  uint64_t major_counter = spm_ld64(base_spm_offset);
   // 1. 対象となるマイナーカウンターのインデックスを計算
   uint64_t minor_idx = (request_addr / 64) % MINOR_COUNTER_COUNT;
   // 2. データの開始位置（ビット単位）を計算
   uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
   // 3. 読み出すべきアドレス（8Bアライン）と、その中でのビットオフセットを計算
-  uint64_t base_addr = spm_offset_array[HEIGHT-1];
+  // uint64_t base_addr = spm_ld64(DATA_SPM_ARRAY + (HEIGHT-1) * 8);
   uint64_t word_offset_bytes = (global_bit_offset / 64) * 8; // 8バイト単位のオフセット
   uint64_t local_bit_offset  = global_bit_offset % 64;       // 64bitワード内での開始ビット
   // 4. 最初の64bitをロードしてシフト
-  uint64_t raw_data = spm_ld64(base_addr + word_offset_bytes);
+  uint64_t raw_data = spm_ld64(base_spm_offset + word_offset_bytes);
   uint64_t extracted_val = raw_data >> local_bit_offset;
   // 5. カウンターが64bit境界をまたぐか判定し、必要なら2回目のロードを行う
   //    (開始位置 + データ幅 が 64 を超える場合、次のワードにデータがはみ出している)
   if (local_bit_offset + MINOR_COUNTER_WIDTH > 64) {
-      uint64_t next_data = spm_ld64(base_addr + word_offset_bytes + 8);
+      uint64_t next_data = spm_ld64(base_spm_offset + word_offset_bytes + 8);
       // はみ出した分（上位ビット）を結合
       // (64 - local_bit_offset) は、1つ目のワードに残っていたビット数
       extracted_val |= (next_data << (64 - local_bit_offset));
@@ -623,7 +622,7 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
   mac_init(global_mac_req_id,0,1);
   mac_buffer_set(DATA_SPM_OFFSET,data_id,0);
   mac_update(0, 511,0);
-  mac_buffer_set(spm_offset_array[HEIGHT-1],wait_dma_id[HEIGHT-1],0);
+  mac_buffer_set(base_spm_offset,wait_dma_id[0],0);
   mac_update(0,63,0);
   mac_update(global_bit_offset, global_bit_offset + (MINOR_COUNTER_WIDTH - 1),0);
   mac_input_core(request_addr,0);
@@ -640,43 +639,23 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
   release_read_block(spm_offset);
   uint64_t response_e = read_instret();
   uint64_t start_swapp_time = read_instret();
-  for (long i = HEIGHT - 1; i >= (long)load_start_index; i--){
+  for (long i = 0; i < hit_index; i++){
     spm_offset_t spm_offset = spm_offset_array[i];
     release_read_block(spm_offset);
   }
-  if (load_start_index != 0){
-    spm_offset_t spm_offset = spm_offset_array[load_start_index - 1];
+  if (hit_index != HEIGHT){
+    spm_offset_t spm_offset = spm_offset_array[hit_index];
     release_read_block(spm_offset);
   }
-  for (uint64_t i = load_start_index;i<HEIGHT;i++){
+  for (uint64_t i = 0;i<hit_index;i++){
     dram_addr_t dram_addr = dram_addr_array[i];
     swapp_dram_addr(dram_addr);
-    // index_t set_index = get_cache_tree_set_index(dram_addr);
-    // long way = get_victim_way(set_index);
-    // bool mac_updated = is_mac_updated(set_index, way);
-    // long idx = find_temp_entry(dram_addr);
-    // release_temp_entry_by_index(idx);
-    // if (mac_updated){
-    //   bool temp_dirty = is_dirty_temp_entry_by_index(idx);
-    //   spm_offset_t old_spm_offset = get_cache_block_spm_offset(set_index, way);
-    //   dram_addr_t old_dram_addr = get_block_addr(set_index, way);
-    //   bool dirty = is_block_dirty(set_index, way);
-    //   if (dirty){
-    //     spm_write_back(old_spm_offset, old_dram_addr, 64, 0);
-    //   }
-    //   swapp_temp_cache(dram_addr, spm_offset_array[i], temp_dirty, way);
-    //   push_temp_buffer(old_spm_offset);
-    //   setParentUpdated(set_index, way);
-    // } else {
-    //   push_temp_buffer(spm_offset_array[i]);
-    // }
-    // invalidate_temp_entry_by_index(idx);
   }
   uint64_t swapp_end_time = read_instret();
   if (instret_dump){
     printf("Total instret time %d\n", swapp_end_time - start_time);
     printf("tag check time %d\n", tag_path_check_e - tag_path_check_s);
-    printf("verify time %d verify level %d\n", verify_e - verify_s, load_start_index);
+    printf("verify time %d verify level %d\n", verify_e - verify_s, hit_index);
     printf("set seed time %d\n", set_seed_e - set_seed_s); 
     printf("load mac time %d\n", datamac_dma_e - datamac_dma_s);
     printf("mac compute time %d\n", datamac_e - datamac_s);

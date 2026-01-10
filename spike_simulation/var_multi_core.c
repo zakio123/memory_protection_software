@@ -15,9 +15,9 @@
 #include "addr_util.h"
 #include "sec_operation.h"
 #include "lock.h"
-#include "spm_rwlock.h"
+// #include "spm_rwlock.h"
 
-dram_addr_t level_base[HEIGHT + 1] = {0};
+// dram_addr_t level_base[HEIGHT + 1] = {0};
 
 volatile bool init_done = false;
 
