@@ -256,6 +256,10 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
         way_index = info.way;
         wait_dma_id[HEIGHT - 1 - i] = global_dma_id;
         acquire_write_block(spm_offset);
+        if (i == 0){
+          set_block_dirty(set_index, way_index);
+          clearParentUpdated(set_index, way_index);
+        }
         break;
       } else {
         global_dma_id += 1;
@@ -266,8 +270,9 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
         spm_copy_to_local(dram_addr, spm_offset, 64, global_dma_id);
         // acquire_temp_entry_by_index(temp_idx);
         acquire_write_block(spm_offset);
-        dirty_temp_entry_by_index(temp_idx);
-
+        if (i == 0){
+          dirty_temp_entry_by_index(temp_idx);
+        }
       }
   }
   // uint64_t counter_id = data_id;
@@ -283,15 +288,117 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
   // 一時的なルートノードのアップデート
   if (mac_req_id > 0){
     mac_wait(mac_req_id,0);
-
   }
-  if (load_start_index == 0){
-    // rootノードの更新
-    uint64_t root = spm_ld64(0);
-    root += 1;
-    spm_sd64(0, root);
-  } else {
-    uint64_t start_level = load_start_index - 1;
+  // リーフのみを更新
+  // if (load_start_index == 0){
+  //   // rootノードの更新
+  //   uint64_t root = spm_ld64(0);
+  //   root += 1;
+  //   spm_sd64(0, root);
+  // } else {
+  //   uint64_t start_level = load_start_index - 1;
+  //   uint64_t minor_idx = path_indecis[start_level] % MINOR_COUNTER_COUNT; 
+  //   uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
+  //   uint64_t base_addr = spm_offset_array[start_level]; // または start_level
+  //   uint64_t word_offset_bytes = (global_bit_offset / 64) * 8;
+  //   uint64_t local_bit_offset  = global_bit_offset % 64;
+  //   // 2. データの読み出し（Read-Modify-Writeのため、周辺ビットも含めて読む）
+  //   uint64_t word1 = spm_ld64(base_addr + word_offset_bytes);
+  //   uint64_t word2 = 0;
+  //   bool is_split = (local_bit_offset + MINOR_COUNTER_WIDTH > 64);
+  //   // またいでいる場合は次のワードも読む
+  //   if (is_split) {
+  //       word2 = spm_ld64(base_addr + word_offset_bytes + 8);
+  //   }
+  //   // 3. 現在のマイナーカウンター値の抽出
+  //   uint64_t current_val_raw = word1 >> local_bit_offset;
+  //   if (is_split) {
+  //       // 次のワードの下位ビットを、現在の上位ビットとして結合
+  //       current_val_raw |= (word2 << (64 - local_bit_offset));
+  //   }
+  //   uint64_t current_minor_val = current_val_raw & MINOR_COUNTER_MASK;
+  //   // 4. 値の更新（インクリメントとオーバーフロー判定）
+  //   if (current_minor_val == MINOR_COUNTER_MASK) {
+  //       // オーバーフロー時の処理
+  //       // printf("[Core FW] Minor counter overflow at level %llu for request_addr=%016llx\n", start_level, request_addr);
+  //       // // pathのdram_addrとインデックスを表示
+  //       // for (uint64_t lvl = start_level; lvl < HEIGHT; lvl++) {
+  //       //     printf("  Level %llu: dram_addr=%016llx, index=%llu\n", lvl, dram_addr_array[lvl], path_indecis[lvl]);
+  //       // }
+  //       // exit(1);
+  //       if (start_level == HEIGHT - 1){
+  //         // リーフノードであるため、再暗号化処理を行う
+  //         reencryption(dram_addr_array[start_level], spm_offset_array[start_level]);
+  //       } else {
+  //         // tag再計算
+  //         recalc_tag(dram_addr_array[start_level], spm_offset_array[start_level], start_level, path_indecis[start_level]);
+  //       }
+  //   } else {
+  //       uint64_t new_minor_val = current_minor_val + 1;
+  //       // 5. 書き戻し用データの作成と保存
+  //       // 書き戻しデータのビット幅（Word1に含まれる分）
+  //       uint64_t bits_in_first = is_split ? (64 - local_bit_offset) : MINOR_COUNTER_WIDTH;
+  //       uint64_t mask_first = MINOR_COUNTER_MASK;
+  //       // A. 更新対象の場所を0クリア (Clear)
+  //       word1 &= ~(mask_first << local_bit_offset);
+  //       // B. 新しい値の下位パートをセット (Set)
+  //       word1 |= ((new_minor_val & mask_first) << local_bit_offset);
+  //       // C. 書き込み
+  //       spm_sd64(base_addr + word_offset_bytes, word1);
+  //       // --- Word 2 の更新（またいでいる場合のみ） ---
+  //       if (is_split) {
+  //         uint64_t bits_in_second = MINOR_COUNTER_WIDTH - bits_in_first;
+  //         uint64_t mask_second = (1ULL << bits_in_second) - 1;
+  //         // A. 更新対象の場所(先頭)を0クリア
+  //         word2 &= ~mask_second;
+  //         // B. 新しい値の上位パートをシフトしてセット
+  //         word2 |= (new_minor_val >> bits_in_first) & mask_second;
+  //         // C. 書き込み
+  //         spm_sd64(base_addr + word_offset_bytes + 8, word2);
+  //       }
+  //   }
+  //   index_t set_index = get_cache_set_index(dram_addr_array[start_level]);
+  //   clearParentUpdated(set_index, way_index);
+  //   set_block_dirty(set_index, way_index);
+  // }
+  // 木の更新：ルートから葉まで降りていく
+  // リーフのみを更新
+
+  // for (uint64_t i=load_start_index;i<HEIGHT;i++){
+  //   mac_req_id = global_mac_req_id;
+  //   update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, wait_dma_id[i], dram_addr_array[i]);
+  //   global_mac_req_id += 1;
+  //   // long idx = find_temp_entry(dram_addr_array[i]);
+  // }
+  // if (mac_req_id > 0){
+  //   mac_wait(mac_req_id,0);
+  // }
+  // 1. 対象となるマイナーカウンターのインデックスを計算
+  // {uint64_t major_counter = spm_ld64(spm_offset_array[HEIGHT-1]);
+  // uint64_t minor_idx = (request_addr / 64) % MINOR_COUNTER_COUNT;
+  // // 2. データの開始位置（ビット単位）を計算
+  // uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
+  // // 3. 読み出すべきアドレス（8Bアライン）と、その中でのビットオフセットを計算
+  // uint64_t base_addr = spm_offset_array[HEIGHT-1];
+  // uint64_t word_offset_bytes = (global_bit_offset / 64) * 8; // 8バイト単位のオフセット
+  // uint64_t local_bit_offset  = global_bit_offset % 64;       // 64bitワード内での開始ビット
+  // // 4. 最初の64bitをロードしてシフト
+  // uint64_t raw_data = spm_ld64(base_addr + word_offset_bytes);
+  // uint64_t extracted_val = raw_data >> local_bit_offset;
+  // // 5. カウンターが64bit境界をまたぐか判定し、必要なら2回目のロードを行う
+  // //    (開始位置 + データ幅 が 64 を超える場合、次のワードにデータがはみ出している)
+  // if (local_bit_offset + MINOR_COUNTER_WIDTH > 64) {
+  //     uint64_t next_data = spm_ld64(base_addr + word_offset_bytes + 8);
+  //     // はみ出した分（上位ビット）を結合
+  //     // (64 - local_bit_offset) は、1つ目のワードに残っていたビット数
+  //     extracted_val |= (next_data << (64 - local_bit_offset));
+  // }
+  // // 6. ビットマスクを生成して不要な上位ビットを切り落とす;
+  // uint16_t minor_counter_value = extracted_val & MINOR_COUNTER_MASK;}
+  // 結果の使用
+  // リーフのみを更新
+    uint64_t start_level = HEIGHT - 1;
+    uint64_t major_counter = spm_ld64(spm_offset_array[start_level]);
     uint64_t minor_idx = path_indecis[start_level] % MINOR_COUNTER_COUNT; 
     uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
     uint64_t base_addr = spm_offset_array[start_level]; // または start_level
@@ -312,6 +419,7 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
         current_val_raw |= (word2 << (64 - local_bit_offset));
     }
     uint64_t current_minor_val = current_val_raw & MINOR_COUNTER_MASK;
+    uint16_t minor_counter_value = current_minor_val;
     // 4. 値の更新（インクリメントとオーバーフロー判定）
     if (current_minor_val == MINOR_COUNTER_MASK) {
         // オーバーフロー時の処理
@@ -321,15 +429,16 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
         //     printf("  Level %llu: dram_addr=%016llx, index=%llu\n", lvl, dram_addr_array[lvl], path_indecis[lvl]);
         // }
         // exit(1);
-        if (start_level == HEIGHT - 1){
-          // リーフノードであるため、再暗号化処理を行う
-          reencryption(dram_addr_array[start_level], spm_offset_array[start_level]);
-        } else {
-          // tag再計算
-          recalc_tag(dram_addr_array[start_level], spm_offset_array[start_level], start_level, path_indecis[start_level]);
-        }
+        // if (start_level == HEIGHT - 1){
+        //   // リーフノードであるため、再暗号化処理を行う
+        //   reencryption(dram_addr_array[start_level], spm_offset_array[start_level]);
+        // } else {
+        //   // tag再計算
+        //   recalc_tag(dram_addr_array[start_level], spm_offset_array[start_level], start_level, path_indecis[start_level]);
+        // }
     } else {
         uint64_t new_minor_val = current_minor_val + 1;
+        minor_counter_value += 1;
         // 5. 書き戻し用データの作成と保存
         // 書き戻しデータのビット幅（Word1に含まれる分）
         uint64_t bits_in_first = is_split ? (64 - local_bit_offset) : MINOR_COUNTER_WIDTH;
@@ -352,43 +461,9 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
           spm_sd64(base_addr + word_offset_bytes + 8, word2);
         }
     }
-    index_t set_index = get_cache_set_index(dram_addr_array[start_level]);
-    clearParentUpdated(set_index, way_index);
-    set_block_dirty(set_index, way_index);
-  }
-  // 木の更新：ルートから葉まで降りていく
-  for (uint64_t i=load_start_index;i<HEIGHT;i++){
-    mac_req_id = global_mac_req_id;
-    update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, wait_dma_id[i], dram_addr_array[i]);
-    global_mac_req_id += 1;
-    // long idx = find_temp_entry(dram_addr_array[i]);
-  }
-  if (mac_req_id > 0){
-    mac_wait(mac_req_id,0);
-  }
-  // 1. 対象となるマイナーカウンターのインデックスを計算
-  uint64_t major_counter = spm_ld64(spm_offset_array[HEIGHT-1]);
-  uint64_t minor_idx = (request_addr / 64) % MINOR_COUNTER_COUNT;
-  // 2. データの開始位置（ビット単位）を計算
-  uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
-  // 3. 読み出すべきアドレス（8Bアライン）と、その中でのビットオフセットを計算
-  uint64_t base_addr = spm_offset_array[HEIGHT-1];
-  uint64_t word_offset_bytes = (global_bit_offset / 64) * 8; // 8バイト単位のオフセット
-  uint64_t local_bit_offset  = global_bit_offset % 64;       // 64bitワード内での開始ビット
-  // 4. 最初の64bitをロードしてシフト
-  uint64_t raw_data = spm_ld64(base_addr + word_offset_bytes);
-  uint64_t extracted_val = raw_data >> local_bit_offset;
-  // 5. カウンターが64bit境界をまたぐか判定し、必要なら2回目のロードを行う
-  //    (開始位置 + データ幅 が 64 を超える場合、次のワードにデータがはみ出している)
-  if (local_bit_offset + MINOR_COUNTER_WIDTH > 64) {
-      uint64_t next_data = spm_ld64(base_addr + word_offset_bytes + 8);
-      // はみ出した分（上位ビット）を結合
-      // (64 - local_bit_offset) は、1つ目のワードに残っていたビット数
-      extracted_val |= (next_data << (64 - local_bit_offset));
-  }
-  // 6. ビットマスクを生成して不要な上位ビットを切り落とす;
-  uint16_t minor_counter_value = extracted_val & MINOR_COUNTER_MASK;
-  // 結果の使用
+  // index_t set_index = get_cache_set_index(dram_addr_array[start_level]);
+  // clearParentUpdated(set_index, way_index);
+  // set_block_dirty(set_index, way_index);
   // printf("[Core FW] Retrieved Counters: major=%016llx, minor=%02x for request_addr=%016llx\n", major_counter, minor_counter_value, request_addr);
   set_seed(major_counter, minor_counter_value, request_addr);
   dram_addr_t datamacblock_addr = DATA_TAG_BASE + (((request_addr - PROTECTION_BASE) / (64 * 8))) * 64;
@@ -463,7 +538,9 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
   }
   for (uint64_t i = load_start_index;i<HEIGHT;i++){
     dram_addr_t dram_addr = dram_addr_array[i];
-    swapp_dram_addr(dram_addr);
+    bool is_write = true;
+    bool is_leaf = (i == HEIGHT - 1);
+    swapp_dram_addr(dram_addr,is_leaf,true);
     // index_t set_index = get_cache_tree_set_index(dram_addr);
     // uint64_t tmp = read_instret();
     // long way = get_victim_way(set_index);
@@ -491,7 +568,6 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
   // return tag_id;
 }
 
-static const spm_offset_t DATA_SPM_ARRAY = REENCRYPTION_SPM_OFFSET;
 
 void Verification(dram_addr_t request_addr, uint64_t req_id){
   uint64_t start_time = read_instret();
@@ -649,7 +725,7 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
   }
   for (uint64_t i = 0;i<hit_index;i++){
     dram_addr_t dram_addr = dram_addr_array[i];
-    swapp_dram_addr(dram_addr);
+    swapp_dram_addr(dram_addr,false,false);
   }
   uint64_t swapp_end_time = read_instret();
   if (instret_dump){

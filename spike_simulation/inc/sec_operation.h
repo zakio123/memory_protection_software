@@ -401,7 +401,7 @@ AFTER_PATH_CHECK_EVICTION:
   return;
 }
 
-static inline void swapp_dram_addr(dram_addr_t dram_addr){
+static inline void swapp_dram_addr(dram_addr_t dram_addr,bool is_leaf,bool is_write){
   int hartid;
     asm volatile(
         "csrr %0, mhartid"
@@ -433,7 +433,11 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr){
       bool cache_dirty = is_block_dirty(set_index, light_info.way);
       swapp_temp_cache(dram_addr, temp_spm, temp_dirty, light_info.way);
       long ret = invalidate_temp_entry_by_index(idx);
-      setParentUpdated(set_index, light_info.way);
+      if (is_leaf && is_write){
+        clearParentUpdated(set_index, light_info.way);
+      } else {
+        setParentUpdated(set_index, light_info.way);
+      }
       if (!mac_updated){
         bool suc = acquire_write_block(old_spm);
         if (!suc){
