@@ -389,7 +389,7 @@ static inline dma_id_t ensureBlockInSpm(dram_addr_t required_dram_addr, struct I
     if (!swappable_cache_block(set_index, tag_info.way)){
       exit(1);
     }
-    spm_write_back(tag_info.spm_offset, tag_info.block_addr, 64,0);
+    spm_write_back(tag_info.spm_offset, tag_info.block_addr, 0);
   }
   #ifdef ENABLE_TMU_HARDWARE
     long slot_idx = (set_index * CACHE_WAYS) + tag_info.way;
@@ -401,7 +401,7 @@ static inline dma_id_t ensureBlockInSpm(dram_addr_t required_dram_addr, struct I
     ref_count_metadata[set_index][tag_info.way] = 0;
     block_addr_metadata[set_index][tag_info.way] = required_dram_addr;
   #endif
-  spm_copy_to_local(required_dram_addr, tag_info.spm_offset, 64,read_id);
+  spm_copy_to_local(required_dram_addr, tag_info.spm_offset, read_id);
   tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
   clear_loaded(set_index, tag_info.way);
   return read_id;

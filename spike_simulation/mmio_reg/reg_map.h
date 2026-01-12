@@ -13,7 +13,7 @@ extern "C" {
 /* --- SPM アドレスマップ（定数マクロに統一） --- */
 #define SPM_BASE        0x60000000ULL
 #define SPM_CTRL_SIZE   0x00000100ULL /* 4 KiB */
-#define SPM_MEM_SIZE    0x00020000ULL /* 128 KiB */
+#define SPM_MEM_SIZE    0x00030000ULL /* 192 KiB */
 #define SPM_TOTAL_SIZE  (SPM_CTRL_SIZE + SPM_MEM_SIZE)
 
 /* 64-bit レジスタオフセット（SPM_BASEからの相対） */

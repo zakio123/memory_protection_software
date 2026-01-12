@@ -89,9 +89,13 @@ void mac_wait(uint64_t req_id, long hart_id){
             counter += 1;
             uint64_t complete_id = MAC_ID;
             if (req_id <= complete_id) break;
-            if (counter % 100000000 == 0){
+            if (counter % 1000000 == 0){
                 lock_print();
                 printf("MAC WAIT: hart_id=0 waiting for req_id=%llu current_complete_id=%llu\n", req_id, complete_id);
+                uint64_t spm_id = SPM_COMPLETE_ID;
+                printf("  SPM COMPLETE ID=%llu\n", spm_id);
+                uint64_t a = MAC_ID_2;
+                printf("  MAC COMPLETE ID=%llu\n", a);
                 unlock_print();
                 exit(1);
             }
@@ -102,9 +106,13 @@ void mac_wait(uint64_t req_id, long hart_id){
             counter += 1;
             uint64_t complete_id = MAC_ID_2;
             if (req_id <= complete_id) break;
-            if (counter % 1000 == 0){
+            if (counter % 10000 == 0){
                 lock_print();
                 printf("WAIT: hart_id=1 waiting for req_id=%llu current_complete_id=%llu\n", req_id, complete_id);
+                uint64_t spm_id = SPM_COMPLETE_ID;
+                printf("  SPM COMPLETE ID=%llu\n", spm_id);
+                uint64_t a = MAC_ID;
+                printf(" anotje MAC COMPLETE ID=%llu\n", a);
                 unlock_print();
                 exit(1);
             }

@@ -5,6 +5,7 @@ int axim_lock = 0;
 int xor_lock = 0;
 int spm_lock = 0;
 int print_lock = 0;
+int tree_lock = 0;
 void lock_print() {
     while (__sync_lock_test_and_set(&print_lock, 1)) {
     }
@@ -21,7 +22,7 @@ void unlock_mac() {
 }
 static inline void lock_dma() {
     // 失敗したらノップを入れたい
-    int counter = 0;
+    // int counter = 0;
     while (__sync_lock_test_and_set(&dma_lock, 1)) {
         // for (int i = 0; i < 4; i++) {
         //     asm volatile("nop");
@@ -29,17 +30,17 @@ static inline void lock_dma() {
         // asm volatile("nop");
         // asm volatile("nop");
         // asm volatile("nop");
-        counter++;
-        if (counter % 1000 == 0) {
-            lock_print();
-            int hartid = -1;
-            asm volatile(
-                "csrr %0, mhartid"
-                : "=r"(hartid)
-            );
-            printf("DMA lock waiting... counter=%d hartid=%d\n", counter, hartid);
-            unlock_print();
-        }
+        // counter++;
+        // if (counter % 1000 == 0) {
+        //     lock_print();
+        //     int hartid = -1;
+        //     asm volatile(
+        //         "csrr %0, mhartid"
+        //         : "=r"(hartid)
+        //     );
+        //     printf("DMA lock waiting... counter=%d hartid=%d\n", counter, hartid);
+        //     unlock_print();
+        // }
     }
 }
 static inline void unlock_dma() {
@@ -60,24 +61,33 @@ void unlock_xor() {
     __sync_lock_release(&xor_lock);
 }
 void lock_spm() {
-    int counter = 0;
+    // int counter = 0;
     while (__sync_lock_test_and_set(&spm_lock, 1)) {
-        counter ++;
-        if (counter % 1000 == 0) {
-            lock_print();
-            int hartid = -1;
-            asm volatile(
-                "csrr %0, mhartid"
-                : "=r"(hartid)
-            );
-            printf("SPM lock waiting... counter=%d hartid=%d\n", counter, hartid);
-            unlock_print();
-        }
+        // counter ++;
+        // if (counter % 1000 == 0) {
+        //     lock_print();
+        //     int hartid = -1;
+        //     asm volatile(
+        //         "csrr %0, mhartid"
+        //         : "=r"(hartid)
+        //     );
+        //     printf("SPM lock waiting... counter=%d hartid=%d\n", counter, hartid);
+        //     unlock_print();
+        // }
     }
 }
 void unlock_spm() {
     __sync_lock_release(&spm_lock);
 }
+
+void lock_tree(){
+    while (__sync_lock_test_and_set(&tree_lock, 1)) {
+    }
+}
+void unlock_tree(){
+    __sync_lock_release(&tree_lock);
+}
+
 // // Readers-Writer Lock (RWLock) の導入
 // // --- 変数定義 ---
 // // RWロックの管理変数を保護するための小さなスピンロック

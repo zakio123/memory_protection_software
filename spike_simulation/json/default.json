@@ -6,5 +6,5 @@
     "PROTECTION_BASE": "0x90000000",
     "PROTECTION_SIZE" : 16,
     "SIZE_UNIT" : "GB",
-    "CACHE_WAYS_LOG2": 1
+    "CACHE_WAYS_LOG2": 2
 }
