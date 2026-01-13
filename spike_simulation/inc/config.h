@@ -14,8 +14,8 @@ extern "C" {
 #define DATA_TAG_SIZE  (PROTECTION_SIZE / 8) 
 #define COUNTER_BASE (DATA_TAG_BASE + DATA_TAG_SIZE) // 0x04800000
 #define DATA_SPM_OFFSET (0x40)
-#define TOTAL_SLOTS (512)
-#define DATA_TAG_SLOTS_DM (64)
+#define TOTAL_SLOTS (1024)
+#define DATA_TAG_SLOTS_DM (128)
 #define TREE_SLOTS_DM (TOTAL_SLOTS - DATA_TAG_SLOTS_DM)
 
 
@@ -44,6 +44,7 @@ typedef long index_t;
 #define ENABLE_TMX_HARDWARE
 #define ENABLE_TMU_HARDWARE
 // #define DUMP
+#define EAGER
 #define ENABLE_TMU_BIT_MANIPULATION
 #define LOADED_BIT_POS (0)
 #define MAC_UPDATED_BIT_POS (1)

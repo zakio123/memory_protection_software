@@ -1,10 +1,138 @@
 #include "cache_controll.h"
 #include "spm_rwlock.h"
+#include "config.h"
+#define REENCRYPTION_SPM_OFFSET DATA_SPM_OFFSET + 64
 uint64_t global_mac_req_id = 1;
 uint64_t global_dma_id = 0;
 dram_addr_t level_base[HEIGHT + 1] = {0};
 
+void update_tag(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, 
+  uint32_t mac_req_id, dma_id_t dma_id,dram_addr_t dram_addr){
+    int hart_id = -1;
+    asm volatile(
+        "csrr %0, mhartid"
+        : "=r"(hart_id)
+    );
+  mac_init(mac_req_id,hart_id,0);
+  if (parent_spm_offset == 0){
+      mac_buffer_set(0, dma_id,hart_id);
+      mac_update(0,63,hart_id);
+  } else {
+      uint64_t start_bit = 64 + (node_index / MINOR_COUNTER_COUNT) % MINOR_COUNTER_COUNT * MINOR_COUNTER_WIDTH;
+      mac_buffer_set(parent_spm_offset, dma_id,hart_id);
+      mac_update(0,63,hart_id);
+      mac_update(start_bit, start_bit + (MINOR_COUNTER_WIDTH - 1),hart_id);
+  }
+  mac_buffer_set(child_spm_offset, dma_id,hart_id);
+  mac_update(0, 447,hart_id);
+  mac_input_core(dram_addr,hart_id);
+  mac_digest(child_spm_offset + 56, dma_id,hart_id);
+}
 
+static inline uint64_t reencryption(dram_addr_t counter_block_addr,spm_offset_t counter_spm_offset){
+  printf("[Core FW] Starting re-encryption for counter_block_addr=%016llx\n", counter_block_addr);
+  dram_addr_t data_block_addr = PROTECTION_BASE + (counter_block_addr - level_base[HEIGHT]) / 64 * (MINOR_COUNTER_COUNT * 64);
+  uint64_t old_major_counter = spm_ld64(counter_spm_offset);
+  uint64_t new_major_counter = old_major_counter + 1;
+  dma_id_t dma_id;
+  for (long i = 0;i < MINOR_COUNTER_COUNT;i++){
+    // 必要なデータを読み出す。
+    // global_dma_id += 1;
+    dma_id = global_dma_id;
+    dram_addr_t dram_addr = data_block_addr + i * 64;
+    spm_copy_to_local(dram_addr, REENCRYPTION_SPM_OFFSET, dma_id);
+    // MACブロックの取得
+    dram_addr_t datamacblock_addr = get_datamacblock_addr(dram_addr);
+    index_t set_index = get_cache_mac_index(datamacblock_addr);
+    spm_offset_t spm_offset;
+    light_tag_info_t light_info = light_tag_check(datamacblock_addr);
+    if (light_info.hit){
+      spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+    } else {
+      global_dma_id += 1;
+      dma_id = global_dma_id;
+      if (light_info.way == -1){
+        light_info.way = get_victim_way(set_index);
+        spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+        bool dirty = is_block_dirty(set_index, light_info.way);
+        if (dirty){
+          dram_addr_t old_block_addr = get_block_addr(set_index, light_info.way);
+          spm_write_back(spm_offset, old_block_addr,  0);
+        }
+      } else {
+        set_block_valid(set_index, light_info.way);
+        spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+      }
+      spm_copy_to_local(datamacblock_addr, spm_offset, dma_id);
+      set_block_addr(set_index, light_info.way, datamacblock_addr);
+      clear_block_dirty(set_index, light_info.way);
+    }
+    // マイナーカウンターの取得
+    uint64_t global_bit_offset = 64 + (i * MINOR_COUNTER_WIDTH);
+    // dmacの比較
+    mac_init(global_mac_req_id,0,1);
+    mac_buffer_set(REENCRYPTION_SPM_OFFSET, dma_id,0);
+    mac_update(0,511,0);
+    mac_buffer_set(counter_spm_offset, dma_id,0);
+    mac_update(0,63,0);
+    mac_update(global_bit_offset, global_bit_offset + MINOR_COUNTER_WIDTH - 1,0);
+    mac_input_core(dram_addr,0);
+    spm_offset_t dmac_byte_offset = ((dram_addr - PROTECTION_BASE) / 64) % 8 * 8;
+    mac_result_compare(spm_offset + dmac_byte_offset,dma_id,0);
+    mac_wait(global_mac_req_id,0);
+    global_mac_req_id += 1;
+    // 3. 読み出すべきアドレス（8Bアライン）と、その中でのビットオフセットを計算
+    uint64_t word_offset_bytes = (global_bit_offset / 64) * 8; // 8バイト単位のオフセット
+    uint64_t local_bit_offset  = global_bit_offset % 64;       // 64bitワード内での開始ビット
+    // 4. 最初の64bitをロードしてシフト
+    uint64_t raw_data = spm_ld64(counter_spm_offset + word_offset_bytes);
+    uint64_t extracted_val = raw_data >> local_bit_offset;
+    // 5. カウンターが64bit境界をまたぐか判定し、必要なら2回目のロードを行う
+    // (開始位置 + データ幅 が 64 を超える場合、次のワードにデータがはみ出している)
+    if (local_bit_offset + MINOR_COUNTER_WIDTH > 64) {
+        uint64_t next_data = spm_ld64(counter_spm_offset + word_offset_bytes + 8);
+        // はみ出した分（上位ビット）を結合
+        // (64 - local_bit_offset) は、1つ目のワードに残っていたビット数
+        extracted_val |= (next_data << (64 - local_bit_offset));
+    }
+    // 6. ビットマスクを生成して不要な上位ビットを切り落とす;
+    uint16_t minor_counter_value = extracted_val & MINOR_COUNTER_MASK;
+    // 結果の使用
+    set_seed(old_major_counter, minor_counter_value, dram_addr);
+    while(AES_START_REG);
+    // 復号化
+    spm_wait(dma_id);
+    xor_start(false,false,0,REENCRYPTION_SPM_OFFSET);
+    // 再暗号化
+    set_seed(new_major_counter, 0, dram_addr);
+    while(AES_START_REG);
+    xor_start(false,false,0,REENCRYPTION_SPM_OFFSET);
+    // 書き戻し
+    spm_write_back(REENCRYPTION_SPM_OFFSET, dram_addr,  0);
+    // minorカウンターの更新
+    // MACの更新
+    // uint64_t mac_req_id = global_mac_req_id;
+    mac_init(global_mac_req_id,0,1);
+    mac_buffer_set(REENCRYPTION_SPM_OFFSET, 0,0);
+    mac_update(0,511,0);
+    mac_buffer_set(counter_spm_offset, dma_id,0);
+    mac_update(0,63,0);
+    mac_update(global_bit_offset, global_bit_offset + MINOR_COUNTER_WIDTH - 1,0);
+    mac_input_core(dram_addr,0);
+    mac_digest(spm_offset + dmac_byte_offset,dma_id,0);
+    mac_wait(global_mac_req_id,0);
+    global_mac_req_id += 1;
+  }
+  // majorカウンターをインクリメント
+  spm_sd64(counter_spm_offset, new_major_counter);
+  // // minorカウンターエリアを0クリア
+  // for (long i = 0;i < 384 / 8;i++){
+  //   spm_sd64(counter_spm_offset + 8 + i * 8, 0);
+  // }
+  // printf("[Core FW] Re-encrypted data block for counter_block_addr=%016llx\n", counter_block_addr);
+  // return dma_id;
+  return global_mac_req_id;
+}
 
 static inline void verify_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, 
     uint32_t mac_req_id, dma_id_t dma_id,dram_addr_t dram_addr){
@@ -29,6 +157,109 @@ static inline void verify_one_height(spm_offset_t child_spm_offset, spm_offset_t
   mac_result_compare(child_spm_offset + 56, dma_id,hart_id);
 }
 
+
+// 中間ノードのマイナーカウンターがオーバーフローした時の再計算処理
+// Eagerアップデート用
+static inline uint64_t recalc_tag(dram_addr_t node_dram_addr, spm_offset_t node_spm_offset, int height, long index){
+  long block_idx = index / MINOR_COUNTER_COUNT;
+  uint64_t maq_req_id = global_mac_req_id;
+  dram_addr_t child_base_addr = level_base[height + 2] + block_idx * MINOR_COUNTER_COUNT * 64;
+  uint64_t old_major_counter = spm_ld64(node_spm_offset);
+  uint64_t new_major_counter = old_major_counter + 1;
+  for (long i = 0;i < MINOR_COUNTER_COUNT;i++){
+    // 子ノードの検証
+    // 子ノードのアドレス計算
+    long child_index = (block_idx * MINOR_COUNTER_COUNT + i) * MINOR_COUNTER_COUNT;
+    dram_addr_t child_dram_addr = child_base_addr + i * 64;
+    light_tag_info_t light_info = light_tag_check(child_dram_addr);
+    spm_offset_t child_spm_offset;
+    long temp_idx = -1;
+    dma_id_t dma_id = global_dma_id;
+    if (light_info.hit){
+      index_t set_index = get_cache_tree_set_index(child_dram_addr);
+      // bool mac_updated = is_mac_updated(set_index, light_info.way);
+      // if (!mac_updated){
+      //   continue; // MACが更新されていない場合はあとでやればいいのでスキップ
+      // } else {
+      child_spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+      set_block_dirty(set_index, light_info.way);
+      // setParentUpdated(set_index, light_info.way);
+      // }
+    } else {
+      // tempバッファを検索
+      temp_idx = find_temp_entry(child_dram_addr);
+      if (temp_idx >= 0){
+        child_spm_offset = get_temp_spm_offset(temp_idx);
+      } else {
+        child_spm_offset = REENCRYPTION_SPM_OFFSET; // 一時バッファを使用
+        global_dma_id += 1;
+        dma_id = global_dma_id;
+        spm_copy_to_local(child_dram_addr, child_spm_offset, dma_id);
+      }
+    }
+    spm_wait(dma_id);
+    spm_sd64(node_spm_offset, old_major_counter);
+    verify_one_height(child_spm_offset, node_spm_offset, child_index, maq_req_id, dma_id, child_dram_addr);
+    mac_wait(maq_req_id,0);
+    maq_req_id += 1;
+    uint64_t word1 = 0;
+    uint64_t word2 = 0;
+    uint64_t global_bit_offset = 64 + (i * MINOR_COUNTER_WIDTH);
+    uint64_t local_bit_offset = (i * MINOR_COUNTER_WIDTH) % 64;
+    uint64_t word_offset_bytes = (global_bit_offset / 64) * 8;
+    bool is_split = (local_bit_offset + MINOR_COUNTER_WIDTH > 64);
+    // またいでいる場合は次のワードも読む
+    word1 = spm_ld64(node_spm_offset + word_offset_bytes);
+    if (is_split) {
+        word2 = spm_ld64(node_spm_offset + word_offset_bytes + 8);
+    }
+    // 3. 現在のマイナーカウンター値の抽出
+    // uint64_t current_minor_val = 0;
+    // 4. 値の更新（インクリメントとオーバーフロー判定）
+    uint64_t new_minor_val = 0;
+    // 5. 書き戻し用データの作成と保存
+    // 書き戻しデータのビット幅（Word1に含まれる分）
+    uint64_t bits_in_first = is_split ? (64 - local_bit_offset) : MINOR_COUNTER_WIDTH;
+    uint64_t mask_first = MINOR_COUNTER_MASK;
+    // A. 更新対象の場所を0クリア (Clear)
+    word1 &= ~(mask_first << local_bit_offset);
+    // B. 新しい値の下位パートをセット (Set)
+    word1 |= ((new_minor_val & mask_first) << local_bit_offset);
+    // C. 書き込み
+    spm_sd64(node_spm_offset + word_offset_bytes, word1);
+    // --- Word 2 の更新（またいでいる場合のみ） ---
+    if (is_split) {
+        uint64_t bits_in_second = MINOR_COUNTER_WIDTH - bits_in_first;
+        uint64_t mask_second = (1ULL << bits_in_second) - 1;
+        // A. 更新対象の場所(先頭)を0クリア
+        word2 &= ~mask_second;
+        // B. 新しい値の上位パートをシフトしてセット
+        word2 |= (new_minor_val >> bits_in_first) & mask_second;
+        // C. 書き込み
+        spm_sd64(node_spm_offset + word_offset_bytes + 8, word2);
+    }
+    spm_sd64(node_spm_offset, new_major_counter);
+    update_tag(child_spm_offset, node_spm_offset, child_index, maq_req_id, dma_id, child_dram_addr);
+    mac_wait(maq_req_id,0);
+    maq_req_id += 1;
+    if (!light_info.hit){
+      if (temp_idx >= 0){
+        dirty_temp_entry_by_index(temp_idx);
+      } else {
+        spm_write_back(child_spm_offset, child_dram_addr, 0);
+      }
+    }
+  }
+  global_mac_req_id = maq_req_id;
+  // // exit(1);
+  // for (int i = 0;i<8;i++){
+  //   printf("data[%d] %llx \n", i, spm_ld64(node_spm_offset + i * 8));
+  // }
+  // exit(1);
+  return maq_req_id;
+}
+
+
 static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, 
   bool update_counter, uint32_t mac_req_id, dma_id_t dma_id,
   dram_addr_t dram_addr){
@@ -37,17 +268,9 @@ static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t
         "csrr %0, mhartid"
         : "=r"(hart_id)
     );
-  mac_init(mac_req_id,hart_id, 0);
-  if (parent_spm_offset == 0){
-      mac_buffer_set(0, dma_id,hart_id);
-      mac_update(0,63,hart_id);
-  } else {
-      uint64_t start_bit = 64 + (node_index / MINOR_COUNTER_COUNT) % MINOR_COUNTER_COUNT * MINOR_COUNTER_WIDTH;
-      mac_buffer_set(parent_spm_offset, dma_id,hart_id);
-      mac_update(0,63,hart_id);
-      mac_update(start_bit, start_bit + (MINOR_COUNTER_WIDTH - 1),hart_id);
-  }
-  // ブロックの更新
+    // ブロックの更新
+  spm_wait(dma_id);
+  uint64_t mac_req = mac_req_id;
   if (update_counter){
     uint64_t minor_idx = node_index % MINOR_COUNTER_COUNT; 
     uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
@@ -74,57 +297,58 @@ static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t
     if (current_minor_val == MINOR_COUNTER_MASK) {
         // オーバーフロー時の処理
         new_minor_val = 0;
-        // --- メジャーカウンターの更新処理 ---
-        // ここにメジャーカウンターのインクリメント処理が入ります
-        // 例:
-        // uint64_t major_counter = spm_ld64(base_addr);
-        // spm_sd64(base_addr, major_counter + 1);
-        // ----------------------------------
+        int start_level = -1;
+        for (int l = 0; l < HEIGHT; l++) {
+          dram_addr_t base = level_base[l+1];
+          dram_addr_t next_base = (l < HEIGHT - 1) ? level_base[l+2] : UINT64_MAX;
+          if (dram_addr >= base && dram_addr < next_base) {
+            start_level = l;
+            break;
+          }
+        }
+        #ifdef EAGER
+        if (start_level == HEIGHT - 1){
+          // リーフノードであるため、再暗号化処理を行う
+          mac_req = reencryption(dram_addr, child_spm_offset );
+        } else {
+          // tag再計算
+          mac_req = recalc_tag(dram_addr, child_spm_offset, start_level, node_index);
+        }
+        #endif
     } else {
         new_minor_val = current_minor_val + 1;
-    }
-    // 5. 書き戻し用データの作成と保存
-    // 書き戻しデータのビット幅（Word1に含まれる分）
-    uint64_t bits_in_first = is_split ? (64 - local_bit_offset) : MINOR_COUNTER_WIDTH;
-    uint64_t mask_first = MINOR_COUNTER_MASK;
-    // A. 更新対象の場所を0クリア (Clear)
-    word1 &= ~(mask_first << local_bit_offset);
-    // B. 新しい値の下位パートをセット (Set)
-    word1 |= ((new_minor_val & mask_first) << local_bit_offset);
-    // C. 書き込み
-    spm_sd64(base_addr + word_offset_bytes, word1);
-    // --- Word 2 の更新（またいでいる場合のみ） ---
-    if (is_split) {
-        uint64_t bits_in_second = MINOR_COUNTER_WIDTH - bits_in_first;
-        uint64_t mask_second = (1ULL << bits_in_second) - 1;
-        // A. 更新対象の場所(先頭)を0クリア
-        word2 &= ~mask_second;
-        // B. 新しい値の上位パートをシフトしてセット
-        word2 |= (new_minor_val >> bits_in_first) & mask_second;
+        // 5. 書き戻し用データの作成と保存
+        // 書き戻しデータのビット幅（Word1に含まれる分）
+        uint64_t bits_in_first = is_split ? (64 - local_bit_offset) : MINOR_COUNTER_WIDTH;
+        uint64_t mask_first = MINOR_COUNTER_MASK;
+        // A. 更新対象の場所を0クリア (Clear)
+        word1 &= ~(mask_first << local_bit_offset);
+        // B. 新しい値の下位パートをセット (Set)
+        word1 |= ((new_minor_val & mask_first) << local_bit_offset);
         // C. 書き込み
-        spm_sd64(base_addr + word_offset_bytes + 8, word2);
+        spm_sd64(base_addr + word_offset_bytes, word1);
+        // --- Word 2 の更新（またいでいる場合のみ） ---
+        if (is_split) {
+            uint64_t bits_in_second = MINOR_COUNTER_WIDTH - bits_in_first;
+            uint64_t mask_second = (1ULL << bits_in_second) - 1;
+            // A. 更新対象の場所(先頭)を0クリア
+            word2 &= ~mask_second;
+            // B. 新しい値の上位パートをシフトしてセット
+            word2 |= (new_minor_val >> bits_in_first) & mask_second;
+            // C. 書き込み
+            spm_sd64(base_addr + word_offset_bytes + 8, word2);
+        }
     }
-    // uint64_t major_counter = spm_ld64(child_spm_offset);
-    // uint64_t minor_counter_byte_address = child_spm_offset + 8 + (node_index % 32) / 8 * 8;
-    // uint64_t minor_counter = spm_ld64(minor_counter_byte_address);
-    // // ここから過去のminor counterを取り出す
-    // uint8_t minor_counter_value = (minor_counter >> ((node_index % 8) * 8)) & 0xFF;
-    // uint8_t new_minor_counter = 0;
-    // if (minor_counter_value == 0xFF){
-    //     // uint64_t new_major_counter = major_counter + 1;
-    //     // spm_sd64(child_spm_offset, new_major_counter);
-    //     new_minor_counter = 0; 
-    // } else {
-    //     new_minor_counter = minor_counter_value + 1;
-    // }
-    // uint64_t shift_amount = (node_index % 8) * 8;
-    // uint64_t clear_mask = ~(0xFFULL << shift_amount);
-    // uint64_t cleared_minor_counter = minor_counter & clear_mask;
-    // uint64_t shifted_new_value = (new_minor_counter);
-    // shifted_new_value <<= shift_amount;
-    // uint64_t final_word = cleared_minor_counter | shifted_new_value;
-    // 書き戻し
-    // spm_sd64(minor_counter_byte_address, final_word);
+  }
+  mac_init(mac_req,hart_id, 0);
+  if (parent_spm_offset == 0){
+      mac_buffer_set(0, dma_id,hart_id);
+      mac_update(0,63,hart_id);
+  } else {
+      uint64_t start_bit = 64 + (node_index / MINOR_COUNTER_COUNT) % MINOR_COUNTER_COUNT * MINOR_COUNTER_WIDTH;
+      mac_buffer_set(parent_spm_offset, dma_id,hart_id);
+      mac_update(0,63,hart_id);
+      mac_update(start_bit, start_bit + (MINOR_COUNTER_WIDTH - 1),hart_id);
   }
   mac_buffer_set(child_spm_offset, dma_id,hart_id);
   mac_update(0, 447,hart_id);
@@ -132,7 +356,10 @@ static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t
   // mac_buffer_set(dram_addr_offset, dma_id);
   // mac_update(0,63);
   mac_digest(child_spm_offset + 56,dma_id,hart_id);
+  // return maq_req_id;
 }
+
+
 
 static inline void evicted_node_update(dram_addr_t old_addr, spm_offset_t old_spm) {
     // printf("evict\n");

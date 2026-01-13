@@ -14,7 +14,6 @@
 #include "cache_controll.h"
 #include "addr_util.h"
 #include "sec_operation.h"
-#define REENCRYPTION_SPM_OFFSET DATA_SPM_OFFSET + 64
 
 bool instret_dump = false;
 
@@ -581,6 +580,38 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
     }
   }
   uint64_t tag_path_check_e = read_instret();
+  // SPMに当該MACブロックがあるかを確認。なければコピー。
+  uint64_t datamac_dma_s = read_instret();
+  dram_addr_t datamacblock_addr = get_datamacblock_addr(request_addr);
+  index_t set_index = get_cache_set_index(datamacblock_addr);
+  dma_id_t tag_id = global_dma_id;
+  spm_offset_t spm_offset;
+  light_tag_info_t light_info = light_tag_check(datamacblock_addr);
+  if (light_info.hit){
+    spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+    update_lru_on_access(set_index, light_info.way);
+  } else {
+    tag_id += 1;
+    global_dma_id += 1;
+    if (light_info.way == -1){
+      light_info.way = get_victim_way(set_index);
+      spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+      bool dirty = is_block_dirty(set_index, light_info.way);
+      if (dirty){
+        dram_addr_t old_block_addr = get_block_addr(set_index, light_info.way);
+        spm_write_back(spm_offset, old_block_addr, 0);
+      }
+    } else {
+      set_block_valid(set_index, light_info.way);
+      spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+    }
+    spm_copy_to_local(datamacblock_addr, spm_offset, tag_id);
+    set_block_addr(set_index, light_info.way, datamacblock_addr);
+    clear_block_dirty(set_index, light_info.way);
+    update_lru_on_access(set_index, light_info.way);
+  }
+  acquire_read_block(spm_offset);
+  uint64_t datamac_dma_e = read_instret();
   // printf("[Core FW] Verification Tag Path Check Time: %llu %llu\n", tag_path_check_e - tag_path_check_s,hit_index);
   // exit(1);
   uint64_t verify_s = read_instret();
@@ -628,38 +659,6 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
   // 結果の使用
   set_seed(major_counter, minor_counter_value, request_addr);
   uint64_t set_seed_e = read_instret();
-  // SPMに当該MACブロックがあるかを確認。なければコピー。
-  uint64_t datamac_dma_s = read_instret();
-  dram_addr_t datamacblock_addr = get_datamacblock_addr(request_addr);
-  index_t set_index = get_cache_set_index(datamacblock_addr);
-  dma_id_t tag_id = global_dma_id;
-  spm_offset_t spm_offset;
-  light_tag_info_t light_info = light_tag_check(datamacblock_addr);
-  if (light_info.hit){
-    spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
-    update_lru_on_access(set_index, light_info.way);
-  } else {
-    tag_id += 1;
-    global_dma_id += 1;
-    if (light_info.way == -1){
-      light_info.way = get_victim_way(set_index);
-      spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
-      bool dirty = is_block_dirty(set_index, light_info.way);
-      if (dirty){
-        dram_addr_t old_block_addr = get_block_addr(set_index, light_info.way);
-        spm_write_back(spm_offset, old_block_addr, 0);
-      }
-    } else {
-      set_block_valid(set_index, light_info.way);
-      spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
-    }
-    spm_copy_to_local(datamacblock_addr, spm_offset, tag_id);
-    set_block_addr(set_index, light_info.way, datamacblock_addr);
-    clear_block_dirty(set_index, light_info.way);
-    update_lru_on_access(set_index, light_info.way);
-  }
-  acquire_read_block(spm_offset);
-  uint64_t datamac_dma_e = read_instret();
   uint64_t datamac_s = read_instret();
   mac_init(global_mac_req_id,0,1);
   mac_buffer_set(DATA_SPM_OFFSET,data_id,0);
@@ -673,9 +672,13 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
   uint64_t datamac_e = read_instret();
   uint64_t response_s = read_instret();
   while(AES_START_REG);
+  uint64_t data_wait_s = read_instret();
   spm_wait(data_id);
+  uint64_t data_wait_e = read_instret();
   xor_start(false, true,req_id,DATA_SPM_OFFSET);
+  uint64_t mac_wait_s = read_instret();
   mac_wait(global_mac_req_id,0);
+  uint64_t mac_wait_e = read_instret();
   global_mac_req_id += 1;
   axim_read_return(req_id);
   release_read_block(spm_offset);
@@ -703,6 +706,8 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
     printf("load mac time %d\n", datamac_dma_e - datamac_dma_s);
     printf("mac compute time %d\n", datamac_e - datamac_s);
     printf("response time %d\n", response_e - response_s);
+    printf("data wait time %d\n", data_wait_e - data_wait_s);
+    printf("mac wait time %d\n", mac_wait_e - mac_wait_s);
     printf("swapp total time %d\n", swapp_end_time - start_swapp_time);
   }
 }
@@ -729,6 +734,9 @@ int main(void){
     bool is_write = (AXIM_STATUS_REG & 2) != 0;
     dram_addr_t addr = AXIM_REQ_ADDR_REG;
     uint64_t req_id = AXIM_REQ_ID_REG;
+    // lock_print();
+    // printf("Received request: addr=%016llx, is_write=%d, req_id=%d\n", addr, is_write, req_id);
+    // unlock_print();
     total += 1;
     if (total % 10000 == 0){
       printf("Processed %d requests\n", total);
