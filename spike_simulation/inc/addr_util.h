@@ -1,6 +1,7 @@
 #include "config.h"
 static inline dram_addr_t calculate_level_base_addr(uint64_t level) {
-    dram_addr_t offset = 64 * ((1 << (ARTY_LOG2 * (level-1))) - 1) / (MINOR_COUNTER_COUNT - 1);
+    dram_addr_t tmp = 64ULL * ((1ULL << (ARTY_LOG2 * (level-1ULL))) - 1ULL);
+    dram_addr_t offset = tmp / (MINOR_COUNTER_COUNT - 1);
     return offset;
 }
 

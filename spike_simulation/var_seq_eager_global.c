@@ -13,9 +13,113 @@
 #include "config.h"
 #include "cache_controll.h"
 #include "addr_util.h"
-#include "sec_operation.h"
-
+// #include "sec_operation.h"
+dram_addr_t level_base[HEIGHT + 1] = {0};
+dma_id_t global_dma_id = 0;
+uint64_t global_mac_req_id = 1;
 bool instret_dump = false;
+
+static inline void update_one_height_global(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, 
+  bool update_counter, uint32_t mac_req_id, dma_id_t dma_id,
+  dram_addr_t dram_addr){
+    int hart_id = -1;
+    asm volatile(
+        "csrr %0, mhartid"
+        : "=r"(hart_id)
+    );
+    // ブロックの更新
+  uint64_t mac_req = mac_req_id;
+  if (update_counter){
+    uint64_t counter_idx = node_index % MINOR_COUNTER_COUNT; 
+    uint64_t global_bit_offset = (counter_idx * MINOR_COUNTER_WIDTH);
+    uint64_t base_addr = child_spm_offset; // または start_level
+    uint64_t word_offset_bytes = (global_bit_offset / 64) * 8;
+    uint64_t local_bit_offset  = global_bit_offset % 64;
+    // 2. データの読み出し（Read-Modify-Writeのため、周辺ビットも含めて読む）
+    uint64_t word1 = spm_ld64(base_addr + word_offset_bytes);
+    uint64_t word2 = 0;
+    bool is_split = (local_bit_offset + MINOR_COUNTER_WIDTH > 64);
+    // またいでいる場合は次のワードも読む
+    if (is_split) {
+        word2 = spm_ld64(base_addr + word_offset_bytes + 8);
+    }
+    // 3. 現在のマイナーカウンター値の抽出
+    uint64_t current_val_raw = word1 >> local_bit_offset;
+    if (is_split) {
+        // 次のワードの下位ビットを、現在の上位ビットとして結合
+        current_val_raw |= (word2 << (64 - local_bit_offset));
+    }
+    uint64_t current_minor_val = current_val_raw & MINOR_COUNTER_MASK;
+    // 4. 値の更新（インクリメントとオーバーフロー判定）
+    uint64_t new_minor_val;
+    if (current_minor_val == MINOR_COUNTER_MASK) {
+      // グローバルでオーバーフローしたらエラー
+      printf("[Error] Global minor counter overflow at dram_addr=%016llx\n", dram_addr);
+      exit(1);
+    } else {
+        new_minor_val = current_minor_val + 1;
+        // 5. 書き戻し用データの作成と保存
+        // 書き戻しデータのビット幅（Word1に含まれる分）
+        uint64_t bits_in_first = is_split ? (64 - local_bit_offset) : MINOR_COUNTER_WIDTH;
+        uint64_t mask_first = MINOR_COUNTER_MASK;
+        // A. 更新対象の場所を0クリア (Clear)
+        word1 &= ~(mask_first << local_bit_offset);
+        // B. 新しい値の下位パートをセット (Set)
+        word1 |= ((new_minor_val & mask_first) << local_bit_offset);
+        // C. 書き込み
+        spm_sd64(base_addr + word_offset_bytes, word1);
+        // --- Word 2 の更新（またいでいる場合のみ） ---
+        if (is_split) {
+            uint64_t bits_in_second = MINOR_COUNTER_WIDTH - bits_in_first;
+            uint64_t mask_second = (1ULL << bits_in_second) - 1;
+            // A. 更新対象の場所(先頭)を0クリア
+            word2 &= ~mask_second;
+            // B. 新しい値の上位パートをシフトしてセット
+            word2 |= (new_minor_val >> bits_in_first) & mask_second;
+            // C. 書き込み
+            spm_sd64(base_addr + word_offset_bytes + 8, word2);
+        }
+    }
+  }
+  mac_init(mac_req,hart_id, 0);
+  if (parent_spm_offset == 0){
+      mac_buffer_set(0, dma_id,hart_id);
+      mac_update(0,63,hart_id);
+  } else {
+      uint64_t start_bit = (node_index / MINOR_COUNTER_COUNT) % MINOR_COUNTER_COUNT * MINOR_COUNTER_WIDTH;
+      mac_buffer_set(parent_spm_offset, dma_id,hart_id);
+      mac_update(start_bit, start_bit + (MINOR_COUNTER_WIDTH - 1),hart_id);
+  }
+  mac_buffer_set(child_spm_offset, dma_id,hart_id);
+  mac_update(0, 447,hart_id);
+  mac_input_core(dram_addr,hart_id);
+  mac_digest(child_spm_offset + 56,dma_id,hart_id);
+}
+
+static inline void verify_one_height_global(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, 
+  uint32_t mac_req_id, dma_id_t dma_id,dram_addr_t dram_addr){
+    int hart_id = -1;
+    asm volatile(
+        "csrr %0, mhartid"
+        : "=r"(hart_id)
+    );
+  // ブロックの更新
+  uint64_t mac_req = mac_req_id;
+  mac_init(mac_req,hart_id, 0);
+  if (parent_spm_offset == 0){
+      mac_buffer_set(0, dma_id,hart_id);
+      mac_update(0,63,hart_id);
+  } else {
+      uint64_t start_bit = (node_index / MINOR_COUNTER_COUNT) % MINOR_COUNTER_COUNT * MINOR_COUNTER_WIDTH;
+      mac_buffer_set(parent_spm_offset, dma_id,hart_id);
+      mac_update(start_bit, start_bit + (MINOR_COUNTER_WIDTH - 1),hart_id);
+  }
+  mac_buffer_set(child_spm_offset, dma_id,hart_id);
+  mac_update(0, 447,hart_id);
+  mac_input_core(dram_addr,hart_id);
+  mac_result_compare(child_spm_offset + 56,dma_id,hart_id);
+}
+
 
 void swapp_exact(dram_addr_t dram_addr){
   long idx = find_temp_entry(dram_addr);
@@ -96,7 +200,7 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
     spm_offset_t parent_spm = (i == HEIGHT - 1) ? 0 : spm_offset_array[i+1];
     dma_id_t need_id = (i == HEIGHT - 1) ? wait_dma_id[HEIGHT - 1] : wait_dma_id[i+1];
     mac_req_id = global_mac_req_id;
-    verify_one_height(spm_offset_array[i], parent_spm, path_indecis[i], mac_req_id,need_id, dram_addr_array[i]);
+    verify_one_height_global(spm_offset_array[i], parent_spm, path_indecis[i], mac_req_id,need_id, dram_addr_array[i]);
     global_mac_req_id += 1;
   }
   // update
@@ -109,7 +213,7 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
     spm_offset_t parent_spm = (i == HEIGHT - 1) ? 0 : spm_offset_array[i+1];
     dma_id_t need_id = (i == HEIGHT - 1) ? wait_dma_id[HEIGHT - 1] : wait_dma_id[i+1];
     mac_req_id = global_mac_req_id;
-    update_one_height(spm_offset_array[i], parent_spm, path_indecis[i], true, mac_req_id, need_id, dram_addr_array[i]);
+    update_one_height_global(spm_offset_array[i], parent_spm, path_indecis[i], true, mac_req_id, need_id, dram_addr_array[i]);
     global_mac_req_id += 1;
   }
   // 一時的なルートノードのアップデート
@@ -117,10 +221,9 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
     mac_wait(mac_req_id,0);
   }
   spm_offset_t base_spm_offset = spm_offset_array[0];
-  uint64_t major_counter = spm_ld64(base_spm_offset);
   // 1. 対象となるマイナーカウンターのインデックスを計算
   uint64_t minor_idx = (request_addr / 64) % MINOR_COUNTER_COUNT;
-  uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
+  uint64_t global_bit_offset = (minor_idx * MINOR_COUNTER_WIDTH);
   uint64_t word_offset_bytes = (global_bit_offset / 64) * 8; // 8バイト単位のオフセット
   uint64_t local_bit_offset  = global_bit_offset % 64;       // 64bitワード内での開始ビット
   uint64_t raw_data = spm_ld64(base_spm_offset + word_offset_bytes);
@@ -132,8 +235,8 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
       extracted_val |= (next_data << (64 - local_bit_offset));
   }
   // 6. ビットマスクを生成して不要な上位ビットを切り落とす;
-  uint16_t minor_counter_value = extracted_val & MINOR_COUNTER_MASK;
-  set_seed(major_counter, minor_counter_value, request_addr);
+  uint64_t major_counter_value = extracted_val & MINOR_COUNTER_MASK;
+  set_seed_global(major_counter_value, request_addr);
   dram_addr_t datamacblock_addr = DATA_TAG_BASE + (((request_addr - PROTECTION_BASE) / (64 * 8))) * 64;
   index_t set_index = get_cache_mac_index(datamacblock_addr);
   light_tag_info_t light_info = light_tag_check_set(set_index, datamacblock_addr);
@@ -174,13 +277,10 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
   while(AES_START_REG);
   xor_start(true, false,req_id,DATA_SPM_OFFSET);
   // --- 手順3: MAC計算 ---
-  // mac_req_id += 1;
-  // mac_req_id = global_mac_req_id;
   mac_init(global_mac_req_id,0,1);
   mac_buffer_set(DATA_SPM_OFFSET, tag_id,0); 
   mac_update(0, 511,0);
   mac_buffer_set(spm_offset_array[0], tag_id,0);
-  mac_update(0,63,0);
   mac_update(global_bit_offset, global_bit_offset + (MINOR_COUNTER_WIDTH - 1),0);
   mac_input_core(request_addr,0);
   mac_digest(spm_offset + ((request_addr - PROTECTION_BASE) / 64) % 8 * 8, tag_id,0);
@@ -266,15 +366,13 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
     update_lru_on_access(set_index, light_info.way);
   }
   uint64_t datamac_dma_e = read_instret();
-  // printf("[Core FW] Verification Tag Path Check Time: %llu %llu\n", tag_path_check_e - tag_path_check_s,hit_index);
-  // exit(1);
   uint64_t verify_s = read_instret();
   uint64_t mac_req_id = 0;
   for (uint64_t i = 0;i<HEIGHT;i++){
     spm_offset_t parent_spm = (i == HEIGHT - 1) ? 0 : spm_offset_array[i+1];
     dma_id_t need_id = (i == HEIGHT - 1) ? wait_dma_id[HEIGHT - 1] : wait_dma_id[i+1];
     mac_req_id = global_mac_req_id;
-    verify_one_height(spm_offset_array[i], parent_spm, v_i, mac_req_id,need_id, dram_addr_array[i]);
+    verify_one_height_global(spm_offset_array[i], parent_spm, v_i, mac_req_id,need_id, dram_addr_array[i]);
     global_mac_req_id += 1;
     v_i = v_i / MINOR_COUNTER_COUNT;
   }
@@ -287,10 +385,9 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
   uint64_t wait_e = read_instret();
   uint64_t set_seed_s = read_instret();
   spm_offset_t base_spm_offset = spm_offset_array[0];
-  uint64_t major_counter = spm_ld64(base_spm_offset);
   // 1. 対象となるマイナーカウンターのインデックスを計算
   uint64_t minor_idx = (request_addr / 64) % MINOR_COUNTER_COUNT;
-  uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
+  uint64_t global_bit_offset = (minor_idx * MINOR_COUNTER_WIDTH);
   uint64_t word_offset_bytes = (global_bit_offset / 64) * 8; // 8バイト単位のオフセット
   uint64_t local_bit_offset  = global_bit_offset % 64;       // 64bitワード内での開始ビット
   uint64_t raw_data = spm_ld64(base_spm_offset + word_offset_bytes);
@@ -302,22 +399,15 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
       extracted_val |= (next_data << (64 - local_bit_offset));
   }
   // 6. ビットマスクを生成して不要な上位ビットを切り落とす;
-  uint16_t minor_counter_value = extracted_val & MINOR_COUNTER_MASK;
+  uint64_t major_counter_value = extracted_val & MINOR_COUNTER_MASK;
   // 結果の使用
-  set_seed(major_counter, minor_counter_value, request_addr);
+  set_seed_global(major_counter_value, request_addr);
   uint64_t set_seed_e = read_instret();
   uint64_t datamac_s = read_instret();
-  if (global_mac_req_id == 38098){
-    printf("counter_spm_offset %llx\n", base_spm_offset);
-    printf("major_counter %llx minor_counter_value %llx\n", major_counter, minor_counter_value);
-    printf("request_addr %llx\n", request_addr);
-    printf("datamacblock_addr %llx\n", datamacblock_addr);
-  }
   mac_init(global_mac_req_id,0,1);
   mac_buffer_set(DATA_SPM_OFFSET,data_id,0);
   mac_update(0, 511,0);
   mac_buffer_set(base_spm_offset,wait_dma_id[0],0);
-  mac_update(0,63,0);
   mac_update(global_bit_offset, global_bit_offset + (MINOR_COUNTER_WIDTH - 1),0);
   mac_input_core(request_addr,0);
   spm_offset_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
@@ -366,7 +456,8 @@ int main(void){
     spm_sd64(i*8, 0); 
   }
   // rootノードの初期化
-  spm_sd64(0,1);
+  // グローバルではルートの初期値は0
+  // spm_sd64(0,1);
   init_cache_system();
   temp_system_init(CACHE_DATA_SPM_BASE + CACHE_SETS * CACHE_WAYS * 64);
   // dma_id_t dma_id = 0;

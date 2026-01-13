@@ -30,14 +30,13 @@ void update_tag(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, u
 }
 
 static inline uint64_t reencryption(dram_addr_t counter_block_addr,spm_offset_t counter_spm_offset){
-  printf("[Core FW] Starting re-encryption for counter_block_addr=%016llx\n", counter_block_addr);
   dram_addr_t data_block_addr = PROTECTION_BASE + (counter_block_addr - level_base[HEIGHT]) / 64 * (MINOR_COUNTER_COUNT * 64);
   uint64_t old_major_counter = spm_ld64(counter_spm_offset);
   uint64_t new_major_counter = old_major_counter + 1;
   dma_id_t dma_id;
   for (long i = 0;i < MINOR_COUNTER_COUNT;i++){
     // 必要なデータを読み出す。
-    // global_dma_id += 1;
+    global_dma_id += 1;
     dma_id = global_dma_id;
     dram_addr_t dram_addr = data_block_addr + i * 64;
     spm_copy_to_local(dram_addr, REENCRYPTION_SPM_OFFSET, dma_id);
@@ -48,6 +47,7 @@ static inline uint64_t reencryption(dram_addr_t counter_block_addr,spm_offset_t 
     light_tag_info_t light_info = light_tag_check(datamacblock_addr);
     if (light_info.hit){
       spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+      set_block_dirty(set_index, light_info.way);
     } else {
       global_dma_id += 1;
       dma_id = global_dma_id;
@@ -65,10 +65,12 @@ static inline uint64_t reencryption(dram_addr_t counter_block_addr,spm_offset_t 
       }
       spm_copy_to_local(datamacblock_addr, spm_offset, dma_id);
       set_block_addr(set_index, light_info.way, datamacblock_addr);
-      clear_block_dirty(set_index, light_info.way);
+      set_block_dirty(set_index, light_info.way);
+      // clear_block_dirty(set_index, light_info.way);
     }
     // マイナーカウンターの取得
     uint64_t global_bit_offset = 64 + (i * MINOR_COUNTER_WIDTH);
+    spm_sd64(counter_spm_offset, old_major_counter);
     // dmacの比較
     mac_init(global_mac_req_id,0,1);
     mac_buffer_set(REENCRYPTION_SPM_OFFSET, dma_id,0);
@@ -110,10 +112,41 @@ static inline uint64_t reencryption(dram_addr_t counter_block_addr,spm_offset_t 
     // 書き戻し
     spm_write_back(REENCRYPTION_SPM_OFFSET, dram_addr,  0);
     // minorカウンターの更新
+    uint64_t word1 = 0;
+    uint64_t word2 = 0;
+    bool is_split = (local_bit_offset + MINOR_COUNTER_WIDTH > 64);
+    // またいでいる場合は次のワードも読む
+    word1 = spm_ld64(counter_spm_offset + word_offset_bytes);
+    if (is_split) {
+        word2 = spm_ld64(counter_spm_offset + word_offset_bytes + 8);
+    }
+    uint64_t new_minor_val = 0;
+    // 5. 書き戻し用データの作成と保存
+    // 書き戻しデータのビット幅（Word1に含まれる分）
+    uint64_t bits_in_first = is_split ? (64 - local_bit_offset) : MINOR_COUNTER_WIDTH;
+    uint64_t mask_first = MINOR_COUNTER_MASK;
+    // A. 更新対象の場所を0クリア (Clear)
+    word1 &= ~(mask_first << local_bit_offset);
+    // B. 新しい値の下位パートをセット (Set)
+    word1 |= ((new_minor_val & mask_first) << local_bit_offset);
+    // C. 書き込み
+    spm_sd64(counter_spm_offset + word_offset_bytes, word1);
+    // --- Word 2 の更新（またいでいる場合のみ） ---
+    if (is_split) {
+        uint64_t bits_in_second = MINOR_COUNTER_WIDTH - bits_in_first;
+        uint64_t mask_second = (1ULL << bits_in_second) - 1;
+        // A. 更新対象の場所(先頭)を0クリア
+        word2 &= ~mask_second;
+        // B. 新しい値の上位パートをシフトしてセット
+        word2 |= (new_minor_val >> bits_in_first) & mask_second;
+        // C. 書き込み
+        spm_sd64(counter_spm_offset + word_offset_bytes + 8, word2);
+    }
+    spm_sd64(counter_spm_offset, new_major_counter);
     // MACの更新
     // uint64_t mac_req_id = global_mac_req_id;
     mac_init(global_mac_req_id,0,1);
-    mac_buffer_set(REENCRYPTION_SPM_OFFSET, 0,0);
+    mac_buffer_set(REENCRYPTION_SPM_OFFSET, dma_id,0);
     mac_update(0,511,0);
     mac_buffer_set(counter_spm_offset, dma_id,0);
     mac_update(0,63,0);
@@ -126,11 +159,11 @@ static inline uint64_t reencryption(dram_addr_t counter_block_addr,spm_offset_t 
   // majorカウンターをインクリメント
   spm_sd64(counter_spm_offset, new_major_counter);
   // // minorカウンターエリアを0クリア
-  // for (long i = 0;i < 384 / 8;i++){
-  //   spm_sd64(counter_spm_offset + 8 + i * 8, 0);
-  // }
-  // printf("[Core FW] Re-encrypted data block for counter_block_addr=%016llx\n", counter_block_addr);
+  for (long i = 0;i < MINOR_COUNTER_COUNT * MINOR_COUNTER_WIDTH / 64;i++){
+    spm_sd64(counter_spm_offset + 8 + i * 8, 0);
+  }
   // return dma_id;
+  // exit(1);
   return global_mac_req_id;
 }
 
