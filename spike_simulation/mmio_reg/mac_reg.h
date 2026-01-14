@@ -20,14 +20,11 @@ void mac_init(uint64_t req_id, int hart_id, int is_write){
     // uint64_t cmd = ((uint64_t)req_id << 32) | 1;
     // MAC_COMMAND = cmd; // INIT
     // printf("MAC INIT called with req_id=%llu\n", req_id);
-    // int hid = -1;
-    // asm volatile(
-    //     "csrr %0, mhartid"
-    //     : "=r"(hid)
-    // );
-    // lock_print();
-    // printf("MAC INIT called with req_id=%llu hart_id=%d is_dmac=%d\n", req_id, hart_id,is_write);
-    // unlock_print();
+    // if (req_id > 21000){
+    //     lock_print();
+    //     printf("MAC INIT called with req_id=%llu hart_id=%d is_dmac=%d\n", req_id, hart_id,is_write);
+    //     unlock_print();
+    // }
     long unused;
     if (hart_id == 0){
         MAC_INSN_R(F7_MAC_INIT, unused, req_id, is_write);    
@@ -106,7 +103,7 @@ void mac_wait(uint64_t req_id, long hart_id){
             counter += 1;
             uint64_t complete_id = MAC_ID_2;
             if (req_id <= complete_id) break;
-            if (counter % 10000 == 0){
+            if (counter % 1000000 == 0){
                 lock_print();
                 printf("WAIT: hart_id=1 waiting for req_id=%llu current_complete_id=%llu\n", req_id, complete_id);
                 uint64_t spm_id = SPM_COMPLETE_ID;

@@ -329,6 +329,7 @@ static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t
     uint64_t new_minor_val;
     if (current_minor_val == MINOR_COUNTER_MASK) {
         // オーバーフロー時の処理
+        #ifdef EAGER
         new_minor_val = 0;
         int start_level = -1;
         for (int l = 0; l < HEIGHT; l++) {
@@ -339,7 +340,6 @@ static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t
             break;
           }
         }
-        #ifdef EAGER
         if (start_level == HEIGHT - 1){
           // リーフノードであるため、再暗号化処理を行う
           mac_req = reencryption(dram_addr, child_spm_offset );
@@ -506,10 +506,6 @@ AFTER_PATH_CHECK_EVICTION:
   for (long i = v_level-1;i>=load_start_index;i--){
     spm_offset_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     dma_id_t need_id = (i == 0) ? wait_dma_id[0] : wait_dma_id[i-1];
-    // lock_mac();
-  //     global_mac_req_id += 1;
-  // mac_req_id = global_mac_req_id;
-    // global_mac_req_id += ;
     mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
     // mac_req_id += 1;
   #ifdef DUMP
@@ -525,7 +521,6 @@ AFTER_PATH_CHECK_EVICTION:
   if (mac_req_id > 0){
     mac_wait(mac_req_id, hartid);
   }
-  // printf("[Evict] Verification done.\n");
   // 一時的なルートノードのアップデート
   if (load_start_index == 0){
     // rootノードの更新
@@ -556,20 +551,7 @@ AFTER_PATH_CHECK_EVICTION:
     uint64_t current_minor_val = current_val_raw & MINOR_COUNTER_MASK;
     // 4. 値の更新（インクリメントとオーバーフロー判定）
     if (current_minor_val == MINOR_COUNTER_MASK) {
-        // オーバーフロー時の処理
-        // printf("[Core FW] Minor counter overflow at level %llu for request_addr=%016llx\n", start_level, request_addr);
-        // // pathのdram_addrとインデックスを表示
-        // for (uint64_t lvl = start_level; lvl < HEIGHT; lvl++) {
-        //     printf("  Level %llu: dram_addr=%016llx, index=%llu\n", lvl, dram_addr_array[lvl], path_indecis[lvl]);
-        // }
-        // exit(1);
-        // if (start_level == HEIGHT - 1){
-        //   // リーフノードであるため、再暗号化処理を行う
-        //   tmp_id = reencrpytion(dram_addr_array[start_level], spm_offset_array[start_level], tmp_id);
-        // } else {
-        //   // tag再計算
-        //   tmp_id = recalc_tag(dram_addr_array[start_level], spm_offset_array[start_level], tmp_id, start_level, path_indecis[start_level]);
-        // }
+      // 何もしない
     } else {
         uint64_t new_minor_val = current_minor_val + 1;
         // 5. 書き戻し用データの作成と保存
@@ -599,11 +581,7 @@ AFTER_PATH_CHECK_EVICTION:
   for (uint64_t i=load_start_index;i<=v_level;i++){
     spm_offset_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     dma_id_t need_id = (i == 0) ? wait_dma_id[0] : wait_dma_id[i-1];
-    // lock_mac();
-    // global_mac_req_id += 1;
     mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
-    // global_mac_req_id += 1;
-    // mac_req_id = global_mac_req_id;
     #ifdef DUMP
     lock_print();
     printf("Core %d Update during eviction height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", hartid, i, spm_offset_array[i], parent_spm, path_indecis[i], need_id);
@@ -638,7 +616,6 @@ AFTER_PATH_CHECK_EVICTION:
       spm_write_back(temp_spm, dram_addr,  0);
       unlock_dma();
       long ret = push_temp_buffer(temp_spm);
-      // __sync_fetch_and_add(&push_count, 1);
       if (ret != 0){
         printf("Error: invalidate temp entry failed for addr=%016llx idx=%ld\n", dram_addr,idx);
         exit(1);
@@ -652,9 +629,6 @@ AFTER_PATH_CHECK_EVICTION:
     release_write_block(root_spm);
   }
   unlock_tree();
-  // lock_print();
-  // printf("Core %d Evicted node update done for addr=%016llx hartid=%d\n", hartid, old_addr, hartid);
-  // unlock_print();
   return;
 }
 
@@ -713,7 +687,6 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr,bool is_leaf,bool is_wr
           unlock_dma();
           invalidate_temp_entry_by_index(idx);
           ret = push_temp_buffer(old_spm);
-          // __sync_fetch_and_add(&push_count, 1);
         }
       } else {
         if (cache_dirty){
@@ -722,7 +695,6 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr,bool is_leaf,bool is_wr
           unlock_dma();
         }
         ret = push_temp_buffer(old_spm);
-        // __sync_fetch_and_add(&push_count, 1);
       }
       // swapする
       if (ret != 0){
@@ -754,7 +726,6 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr,bool is_leaf,bool is_wr
       }
       invalidate_temp_entry_by_index(idx);
       long ret = push_temp_buffer(temp_spm);
-      // __sync_fetch_and_add(&push_count, 1);
       if (ret != 0){
         printf("Error: push failed for  addr=%016llx idx=%ld\n", dram_addr,idx);
         exit(1);

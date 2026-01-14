@@ -60,14 +60,14 @@ typedef struct {
 // ctrl->dram_addr = ...;  // -> sd ..., 0(sX)
 // ctrl->spm_local_addr = ...; // -> sd ..., 8(sX)
 static inline void spm_copy_to_local(dram_addr_t dram_pa, spm_offset_t local_off, dma_id_t id) {
-  // if (id > 23000){
+  // if (id > 32000){
   // lock_print();
   // int hartid = -1;
   // asm volatile(
   //     "csrr %0, mhartid"
   //     : "=r"(hartid)
   // );
-  // printf("Co %d SPM c to l s da=%016llx l_o=%016llx s=%llu id=%llu\n", hartid, dram_pa, local_off, size, id);
+  // printf("Co %d SPM c to l s da=%016llx l_o=%016llx id=%llu\n", hartid, dram_pa, local_off, id);
   // unlock_print();
   // }
   SPM_DRAM_ADDRESS  = dram_pa;

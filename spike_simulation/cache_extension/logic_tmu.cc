@@ -6,6 +6,11 @@
 tmu_logic_t::tmu_logic_t() {}
 
 int get_idx(spm_offset_t spm_offset) {
+  if (spm_offset < CACHE_DATA_SPM_BASE || 
+      spm_offset >= CACHE_DATA_SPM_BASE + (TOTAL_SLOTS + TEMP_POOL_SIZE) * 64) {
+    std::cerr << "get_idx: invalid spm_offset " << std::hex << spm_offset << std::dec << std::endl;
+    return -1;
+  }
   int slot_idx = (spm_offset - CACHE_DATA_SPM_BASE) / 64;
   return slot_idx;
 }
@@ -153,7 +158,7 @@ int tmu_logic_t::check_idx(int slot_idx) const {
     // タグと状態の設定
     tmu_valid[slot_idx] = true;
     tmu_tag[slot_idx] = dram_addr;
-    tmu_dirty[slot_idx] = false;
+    // tmu_dirty[slot_idx] = false;
     return (reg_t)0;
   }
 
