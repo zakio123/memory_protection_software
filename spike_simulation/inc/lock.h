@@ -1,11 +1,13 @@
 #pragma once
+#include "config.h"
 int mac_lock = 0;
 int dma_lock = 0;
 int axim_lock = 0;
 int xor_lock = 0;
 int spm_lock = 0;
 int print_lock = 0;
-int tree_lock = 0;
+int tree_lock[] = 0;
+
 void lock_print() {
     while (__sync_lock_test_and_set(&print_lock, 1)) {
     }
@@ -22,7 +24,7 @@ void unlock_mac() {
 }
 static inline void lock_dma() {
     // 失敗したらノップを入れたい
-    int counter = 0;
+    // int counter = 0;
     while (__sync_lock_test_and_set(&dma_lock, 1)) {
         // for (int i = 0; i < 4; i++) {
         //     asm volatile("nop");
@@ -30,17 +32,17 @@ static inline void lock_dma() {
         // asm volatile("nop");
         // asm volatile("nop");
         // asm volatile("nop");
-        counter++;
-        if (counter % 1000 == 0) {
-            lock_print();
-            int hartid = -1;
-            asm volatile(
-                "csrr %0, mhartid"
-                : "=r"(hartid)
-            );
-            printf("DMA lock waiting... counter=%d hartid=%d\n", counter, hartid);
-            unlock_print();
-        }
+        // counter++;
+        // if (counter % 1000 == 0) {
+        //     lock_print();
+        //     int hartid = -1;
+        //     asm volatile(
+        //         "csrr %0, mhartid"
+        //         : "=r"(hartid)
+        //     );
+        //     printf("DMA lock waiting... counter=%d hartid=%d\n", counter, hartid);
+        //     unlock_print();
+        // }
     }
 }
 static inline void unlock_dma() {
@@ -60,40 +62,47 @@ void lock_xor() {
 void unlock_xor() {
     __sync_lock_release(&xor_lock);
 }
-void lock_spm() {
-    int counter = 0;
+static inline void lock_spm() {
+    // int counter = 0;
     while (__sync_lock_test_and_set(&spm_lock, 1)) {
-        counter ++;
-        if (counter % 1000 == 0) {
-            lock_print();
-            int hartid = -1;
-            asm volatile(
-                "csrr %0, mhartid"
-                : "=r"(hartid)
-            );
-            printf("SPM lock waiting... counter=%d hartid=%d\n", counter, hartid);
-            unlock_print();
-        }
+        // counter ++;
+        // if (counter % 1000 == 0) {
+        //     lock_print();
+        //     int hartid = -1;
+        //     asm volatile(
+        //         "csrr %0, mhartid"
+        //         : "=r"(hartid)
+        //     );
+        //     printf("SPM lock waiting... counter=%d hartid=%d\n", counter, hartid);
+        //     unlock_print();
+        // }
     }
 }
 void unlock_spm() {
     __sync_lock_release(&spm_lock);
 }
+#define ACQUIRE_DMA_LOCK_WITH_PROFILE(lock_f,counter_var)       \
+    do {                                                 \
+        unsigned long start_inst = read_instret();       \
+        lock_f;                                      \
+        unsigned long end_inst = read_instret();         \
+        (counter_var) += (end_inst - start_inst);        \
+    } while(0)
 
-void lock_tree(){
-    int counter = 0;
+static inline void lock_tree(){
+    // int counter = 0;
     while (__sync_lock_test_and_set(&tree_lock, 1)) {
-        counter ++;
-        if (counter % 1000 == 0) {
-            lock_print();
-            int hartid = -1;
-            asm volatile(
-                "csrr %0, mhartid"
-                : "=r"(hartid)
-            );
-            printf("SPM lock waiting... counter=%d hartid=%d\n", counter, hartid);
-            unlock_print();
-        }
+        // counter ++;
+        // if (counter % 1000 == 0) {
+        //     lock_print();
+        //     int hartid = -1;
+        //     asm volatile(
+        //         "csrr %0, mhartid"
+        //         : "=r"(hartid)
+        //     );
+        //     printf("SPM lock waiting... counter=%d hartid=%d\n", counter, hartid);
+        //     unlock_print();
+        // }
     }
 }
 void unlock_tree(){

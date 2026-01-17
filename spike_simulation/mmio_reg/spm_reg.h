@@ -18,8 +18,8 @@ static inline void spm_wait_idle(void) {
 static inline void spm_wait(uint64_t id){
   int counter = 0;
   while(1){
-    counter++;
     if (SPM_COMPLETE_ID >= id) break;
+    counter++;
     if (counter % 100000 == 0){
       lock_print();
       int hartid = -1;
@@ -44,21 +44,6 @@ static inline void spm_wait(uint64_t id){
 // #define SPM_REG_DESTINATION  (SPM_CTRL_BASE + 0x30ULL) /* 1:DRAM 2:MAC, 4:AXIManager (OR可) */
 // #define SPM_REG_ID           (SPM_CTRL_BASE + 0x38ULL)
 // #define SPM_REG_COMPLETE_ID  (SPM_CTRL_BASE + 0x40ULL)
-typedef struct {
-    volatile uint64_t dram_addr;
-    volatile uint64_t spm_local_addr;
-    volatile uint64_t size;
-    volatile uint64_t direction;
-    volatile uint64_t start;
-    volatile uint64_t status;
-    volatile uint64_t destination;
-    volatile uint64_t id;
-} spm_ctrl_t;
-
-// // 使い方は
-// spm_ctrl_t *ctrl = (spm_ctrl_t *)0x60020000;
-// ctrl->dram_addr = ...;  // -> sd ..., 0(sX)
-// ctrl->spm_local_addr = ...; // -> sd ..., 8(sX)
 static inline void spm_copy_to_local(dram_addr_t dram_pa, spm_offset_t local_off, dma_id_t id) {
   // if (id > 32000){
   // lock_print();
@@ -97,6 +82,46 @@ static inline void spm_write_back(spm_offset_t local_off, dram_addr_t dram_pa, d
   // SPM_DESTINATION   = 1;           /* DRAM */
   SPM_ID          = id;
   SPM_START         = 1;
+}
+
+static inline void spm_copy_to_local_id(dram_addr_t dram_pa, spm_offset_t local_off, dma_id_t id,int hartid) {
+  if (hartid == 0){
+    SPM_DRAM_ADDRESS  = dram_pa;
+    SPM_LOCAL_ADDRESS = local_off;   /* SPM_MEM_BASE からの相対(バイト) */
+    // SPM_SIZE_REG      = size;
+    SPM_DIRECTION     = 0;
+    // SPM_DESTINATION   = 1;           /* DRAM */
+    SPM_ID          = id;
+    SPM_START         = 1;           /* GO */
+  } else {
+    SPM_DRAM_ADDRESS_2  = dram_pa;
+    SPM_LOCAL_ADDRESS_2 = local_off;   /* SPM_MEM_BASE からの相対(バイト) */
+    SPM_DIRECTION_2     = 0;
+    // SPM_DESTINATION   = 1;           /* DRAM */
+    SPM_ID_2          = id;
+    SPM_START_2         = 1;           /* GO */
+  }
+}
+
+/* SPM -> DRAM */
+static inline void spm_write_back_id(spm_offset_t local_off, dram_addr_t dram_pa, dma_id_t id,int hartid) {
+  if (hartid == 0){
+    SPM_DRAM_ADDRESS  = dram_pa;
+    SPM_LOCAL_ADDRESS = local_off;
+    // SPM_SIZE_REG      = size;
+    SPM_DIRECTION     = 1;
+    // SPM_DESTINATION   = 1;           /* DRAM */
+    SPM_ID          = id;
+    SPM_START         = 1;
+  } else {
+    SPM_DRAM_ADDRESS_2  = dram_pa;
+    SPM_LOCAL_ADDRESS_2 = local_off;
+    // SPM_SIZE_REG      = size;
+    SPM_DIRECTION_2     = 1;
+    // SPM_DESTINATION   = 1;           /* DRAM */
+    SPM_ID_2          = id;
+    SPM_START_2         = 1;
+  }
 }
 
 /* データ窓の直接アクセス（必要なら 1/2/4 も追加） */

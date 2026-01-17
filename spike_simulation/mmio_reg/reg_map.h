@@ -27,6 +27,14 @@ extern "C" {
 #define SPM_REG_DESTINATION  (SPM_CTRL_BASE + 0x30ULL) /* 1:DRAM 2:MAC, 4:AXIManager (OR可) */
 #define SPM_REG_ID           (SPM_CTRL_BASE + 0x38ULL)
 #define SPM_REG_COMPLETE_ID  (SPM_CTRL_BASE + 0x40ULL)
+#define SPM_REG_DRAM_ADDR_2    (SPM_CTRL_BASE + 0x48ULL)
+#define SPM_REG_LOCAL_ADDR_2   (SPM_CTRL_BASE + 0x50ULL) /* SPMデータ窓先頭からのバイトオフセット */
+#define SPM_REG_SIZE_2         (SPM_CTRL_BASE + 0x58ULL)
+#define SPM_REG_DIRECTION_2    (SPM_CTRL_BASE + 0x60ULL) /* 0/1 */
+#define SPM_REG_START_2        (SPM_CTRL_BASE + 0x68ULL) /* write 1=start / read: busy */
+#define SPM_REG_STATUS_2       (SPM_CTRL_BASE + 0x70ULL)
+#define SPM_REG_DESTINATION_2  (SPM_CTRL_BASE + 0x78ULL) /* 1:DRAM 2:MAC, 4:AXIManager (OR可) */
+#define SPM_REG_ID_2           (SPM_CTRL_BASE + 0x80ULL)
 /* データ窓のベース */
 #define SPM_MEM_BASE   (SPM_BASE)
 /* --- MMIO アクセスヘルパ --- */
@@ -42,6 +50,14 @@ extern "C" {
 #define SPM_DESTINATION    SPM_REG64(SPM_REG_DESTINATION) /* 1:DRAM 2:MAC, 4:AXIManager (OR可) */
 #define SPM_ID             SPM_REG64(SPM_REG_ID)
 #define SPM_COMPLETE_ID    SPM_REG64(SPM_REG_COMPLETE_ID)
+#define SPM_DRAM_ADDRESS_2   SPM_REG64(SPM_REG_DRAM_ADDR_2)
+#define SPM_LOCAL_ADDRESS_2  SPM_REG64(SPM_REG_LOCAL_ADDR_2)
+#define SPM_SIZE_REG_2       SPM_REG64(SPM_REG_SIZE_2)
+#define SPM_DIRECTION_2      SPM_REG64(SPM_REG_DIRECTION_2)
+#define SPM_START_2          SPM_REG64(SPM_REG_START_2)
+#define SPM_STATUS_2         SPM_REG64(SPM_REG_STATUS_2)
+#define SPM_DESTINATION_2    SPM_REG64(SPM_REG_DESTINATION_2) /* 1:DRAM 2:MAC, 4:AXIManager (OR可) */
+#define SPM_ID_2             SPM_REG64(SPM_REG_ID_2)
 #endif // SPM_ADDRMAP_H
 
 #ifndef MAC_ADDRMAP_H

@@ -14,6 +14,22 @@
         : "i"(TMU_OPCODE), "i"(TMU_F3), "i"(funct7), "r"(rs1), "r"(rs2) \
     )
 #endif
+static const uint8_t TREE_UPDATE_AND[] = {
+    0xFC, // Way 0: Nodes 0,1 をクリア (Mask 0x03 の反転)
+    0xFC, // Way 1: Nodes 0,1 をクリア (Mask 0x03 の反転)
+    0xFA, // Way 2: Nodes 0,2 をクリア (Mask 0x05 の反転)
+    0xFA  // Way 3: Nodes 0,2 をクリア (Mask 0x05 の反転)
+};
+
+// パス上のビットに新しい値をセットするためのマスク
+static const uint8_t TREE_UPDATE_OR[] = {
+    0x03, // Way 0: Nodes 0=1, 1=1 (L->L なので R->R を指すように)
+    0x01, // Way 1: Nodes 0=1, 1=0 (L->R なので R->L を指すように)
+    0x04, // Way 2: Nodes 0=0, 2=1 (R->L なので L->R を指すように)
+    0x00  // Way 3: Nodes 0=0, 2=0 (R->R なので L->L を指すように)
+};
+
+
 static inline uint64_t read_instret_() {
     uint64_t val;
     asm volatile ("csrr %0, minstret" : "=r" (val));
@@ -63,21 +79,33 @@ bool loaded_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 uint32_t access_count_metadata[CACHE_SETS][CACHE_WAYS] = {0};
 uint8_t tree_lru_metadata[CACHE_SETS] = {0};
 
-// --- TREE LRU更新関数 ---
-static inline uint8_t update_tree_lru(uint8_t lru, long accessed_way){
-    // accessed_wayに基づいてcurrent_lruを更新
-    long node_index = 0; // ルートノードから開始
-    for (long level = 0; level < CACHE_WAYS_LOG2; ++level) {
-         long dir = (accessed_way >> (CACHE_WAYS_LOG2 - 1 - level)) & 1;
-        // dir=0(左をアクセス)なら、右をLRUにしたい => bit=1
-        // dir=1(右をアクセス)なら、左をLRUにしたい => bit=0
-        if (dir == 0) lru |=  (1u << node_index);
-        else          lru &= ~(1u << node_index);
+// // --- TREE LRU更新関数 ---
+// static inline uint8_t update_tree_lru(uint8_t lru, long accessed_way){
+//     // accessed_wayに基づいてcurrent_lruを更新
+//     long node_index = 0; // ルートノードから開始
+//     for (long level = 0; level < CACHE_WAYS_LOG2; ++level) {
+//          long dir = (accessed_way >> (CACHE_WAYS_LOG2 - 1 - level)) & 1;
+//         // dir=0(左をアクセス)なら、右をLRUにしたい => bit=1
+//         // dir=1(右をアクセス)なら、左をLRUにしたい => bit=0
+//         if (dir == 0) lru |=  (1u << node_index);
+//         else          lru &= ~(1u << node_index);
 
-        node_index = (dir == 0) ? (2*node_index + 1) : (2*node_index + 2);
-    }
-    return lru;
+//         node_index = (dir == 0) ? (2*node_index + 1) : (2*node_index + 2);
+//     }
+//     return lru;
+// }
+// 最適化された関数
+// static inline uint8_t update_tree_lru(uint8_t lru, long accessed_way){
+//     // 2回のメモリアクセスとビット演算のみで完了（分岐なし、ループなし）
+//     return (lru & TREE_UPDATE_AND[accessed_way]) | TREE_UPDATE_OR[accessed_way];
+// }
+
+static inline void update_lru_on_access(index_t set_index, index_t way_index){
+  uint8_t old_lru = tree_lru_metadata[set_index];
+  tree_lru_metadata[set_index] = (old_lru & TREE_UPDATE_AND[way_index]) | TREE_UPDATE_OR[way_index];
+  // tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], way_index);
 }
+
 // --- 置換way決定関数 ---
 static inline long select_victim_way(uint8_t current_lru){
     long node_index = 0; // ルートノードから開始
@@ -402,13 +430,15 @@ static inline dma_id_t ensureBlockInSpm(dram_addr_t required_dram_addr, struct I
     block_addr_metadata[set_index][tag_info.way] = required_dram_addr;
   #endif
   spm_copy_to_local(required_dram_addr, tag_info.spm_offset, read_id);
-  tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
+  update_lru_on_access(set_index, tag_info.way);
   clear_loaded(set_index, tag_info.way);
   return read_id;
 }
+
 static inline void swapp_temp_cache(dram_addr_t dram_addr,spm_offset_t spm_offset, bool temp_dirty, index_t way){
   index_t set_index = get_cache_set_index(dram_addr);
-  tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], way);
+  update_lru_on_access(set_index, way);
+  // tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], way);
   #ifdef ENABLE_TMU_HARDWARE
     long slot_idx = (set_index * CACHE_WAYS) + way;
     long ret;
@@ -453,7 +483,8 @@ static inline struct Info tag_check(dram_addr_t dram_addr){
       // TMU_INSN_R(F7_TMU_GET_TAG, ret, slot_idx, 0);
       // tag_info.block_addr = (dram_addr_t)ret;
       // ヒット時はaccess_count更新
-      tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
+      update_lru_on_access(set_index, tag_info.way);
+      // tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
       // for (int i = 0; i < CACHE_WAYS; ++i) {
       //   bool is_valid = is_block_valid(set_index, i);
       //   if (i != tag_info.way && is_valid) {
@@ -471,7 +502,8 @@ static inline struct Info tag_check(dram_addr_t dram_addr){
       // validを立てる
       set_block_valid(set_index, tag_info.way);
       clear_loaded(set_index, tag_info.way);
-      tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
+      update_lru_on_access(set_index, tag_info.way);
+      // tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], tag_info.way);
     } else {
       // uint32_t lru_counter_max = 0;
       // int8_t way_index = -1;
@@ -657,9 +689,6 @@ static inline struct Info tag_check(dram_addr_t dram_addr){
 
 static inline int get_victim_way(index_t set_index){
   return select_victim_way(tree_lru_metadata[set_index]);
-}
-static inline void update_lru_on_access(index_t set_index, index_t way_index){
-  tree_lru_metadata[set_index] = update_tree_lru(tree_lru_metadata[set_index], way_index);
 }
 // --- 軽量タグチェック (読み取り専用、ヒット/ミスのみ判定) ---
 // 高速化のため、ヒットしたかと、空いているwayの探索のみを行う and 追い出しても良さそうなwayの探索
