@@ -388,21 +388,17 @@ static inline void update_one_height(spm_offset_t child_spm_offset, spm_offset_t
   mac_buffer_set(child_spm_offset, dma_id,hart_id);
   mac_update(0, 447,hart_id);
   mac_input_core(dram_addr,hart_id);
-  // mac_buffer_set(dram_addr_offset, dma_id);
-  // mac_update(0,63);
   mac_digest(child_spm_offset + 56,dma_id,hart_id);
-  // return maq_req_id;
 }
 
 
 
 static inline void evicted_node_update(dram_addr_t old_addr, spm_offset_t old_spm) {
-    // printf("evict\n");
-    int hartid;
-    asm volatile(
-        "csrr %0, mhartid"
-        : "=r"(hartid)
-    );
+  int hartid;
+  asm volatile(
+      "csrr %0, mhartid"
+      : "=r"(hartid)
+  );
   int v_level = -1; // Victimのレベル (0=Root)
   dram_addr_t v_level_base_addr = 0;
   for (int l = 0; l < HEIGHT; l++) {
@@ -438,38 +434,36 @@ static inline void evicted_node_update(dram_addr_t old_addr, spm_offset_t old_sp
       path_indecis[i] = index;
       dram_addr_t dram_addr = index / MINOR_COUNTER_COUNT * 64 + level_base[i+1];
       dram_addr_array[i] = dram_addr;
+      long set_index = get_cache_tree_set_index(dram_addr);
       while(1){
-        lock_tree();
-        light_tag_info_t info = light_tag_check(dram_addr);
-        // uint64_t tmp_id = global_dma_id;
+        lock_tree(set_index);
+        light_tag_info_t info = light_tag_check_set(set_index, dram_addr);
         if (info.hit){
-          long set_index = get_cache_tree_set_index(dram_addr);
           way_index = info.way;
           spm_offset_t spm_offset = get_cache_block_spm_offset(set_index, way_index);
           if (acquire_write_block(spm_offset)){
             update_lru_on_access(set_index, way_index);
+            unlock_tree(set_index);
             clearParentUpdated(set_index, way_index);
             set_block_dirty(set_index, way_index);
-            unlock_tree();
             wait_dma_id[i] = __atomic_load_n(&global_dma_id, __ATOMIC_ACQUIRE);
             spm_offset_array[i] = spm_offset;
             load_start_index = i + 1;
             goto AFTER_PATH_CHECK_EVICTION;
           } else {
-            unlock_tree();
+            unlock_tree(set_index);
             for(int j = 0;j<20;j++){
               asm volatile("nop");
             }
           }
         } else {
           long idx = find_temp_entry(dram_addr);
-          spm_offset_t spm_offset;
           if (idx < 0){
-            spm_offset = pop_temp_buffer();
+            spm_offset_t spm_offset = pop_temp_buffer();
             idx = alloc_temp_entry(dram_addr, spm_offset);
             bool suc = acquire_write_block(spm_offset);
+            unlock_tree(set_index);
             dirty_temp_entry_by_index(idx);
-            unlock_tree();
             if (!suc){
               printf("Error: failed to acquire newly allocated temp entry addr=%016llx spm_offset=%016llx hartid=%d\n", dram_addr, spm_offset, hartid);
               exit(1);
@@ -481,15 +475,17 @@ static inline void evicted_node_update(dram_addr_t old_addr, spm_offset_t old_sp
             wait_dma_id[i] = tmp_id;
             break;
           } else {
-            spm_offset = get_temp_spm_offset(idx);
+            spm_offset_t spm_offset = get_temp_spm_offset(idx);
             bool suc = acquire_write_block(spm_offset);
             if (!suc){
-              unlock_tree();
-              for(int j = 0;j<20;j++){}
+              unlock_tree(set_index);
+              for(int j = 0;j<20;j++){
+                asm volatile("nop");
+              }
               continue;
             } else {
+              unlock_tree(set_index);
               dirty_temp_entry_by_index(idx);
-              unlock_tree();
               wait_dma_id[i] = __atomic_load_n(&global_dma_id, __ATOMIC_ACQUIRE);
               spm_offset_array[i] = spm_offset;
               break;
@@ -507,7 +503,6 @@ AFTER_PATH_CHECK_EVICTION:
     spm_offset_t parent_spm = (i == 0) ? 0 : spm_offset_array[i-1];
     dma_id_t need_id = (i == 0) ? wait_dma_id[0] : wait_dma_id[i-1];
     mac_req_id = __sync_fetch_and_add(&global_mac_req_id, 1);
-    // mac_req_id += 1;
   #ifdef DUMP
     lock_print();
     printf("Core %d Verification during eviction height %d spm_offset=%016llx parent_spm=%016llx path_index=%016llx need_id=%d\n", hartid, i, spm_offset_array[i], parent_spm, path_indecis[i], need_id);
@@ -527,7 +522,7 @@ AFTER_PATH_CHECK_EVICTION:
     root += 1;
     spm_sd64(0, root);
   } else {
-        uint64_t start_level = load_start_index - 1;
+    uint64_t start_level = load_start_index - 1;
     uint64_t minor_idx = path_indecis[start_level] % MINOR_COUNTER_COUNT; 
     uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
     uint64_t base_addr = spm_offset_array[start_level]; // または start_level
@@ -590,34 +585,30 @@ AFTER_PATH_CHECK_EVICTION:
     #endif
     if (i == v_level){
       // 最後はカウンター更新なし
-      update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], false,mac_req_id, wait_dma_id[i], dram_addr_array[i]);
+      update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], false,mac_req_id, need_id, dram_addr_array[i]);
     } else {
-      update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, wait_dma_id[i], dram_addr_array[i]);
+      update_one_height(spm_offset_array[i], (i==0)?0:spm_offset_array[i-1], path_indecis[i], true,mac_req_id, need_id, dram_addr_array[i]);
     }
   }
   if (mac_req_id > 0){
     mac_wait(mac_req_id, hartid);
   }
-  lock_tree();
   // temp領域の解放
   for (int i = v_level - 1;i>=load_start_index;i--){
     dram_addr_t dram_addr = dram_addr_array[i];
-    long idx = find_temp_entry(dram_addr);
-    if (idx == -1){
-        printf("Error: temp entry still exists for addr=%016llx\n", dram_addr);
-        exit(1);
-    }
-    spm_offset_t temp_spm = get_temp_spm_offset(idx);
-    release_write_block(temp_spm);
-    bool swappable_temp = swappable_block(temp_spm);
+    spm_offset_t spm_offset = spm_offset_array[i];
+    release_write_block(spm_offset);
+    long set_index = get_cache_tree_set_index(dram_addr);
+    lock_tree(set_index);
+    bool swappable_temp = swappable_block(spm_offset);
     if (swappable_temp && loaded[i]){
-      spm_write_back_id(temp_spm, dram_addr,  0, hartid);
-      long ret = push_temp_buffer(temp_spm);
-      if (ret != 0){
-        printf("Error: invalidate temp entry failed for addr=%016llx idx=%ld\n", dram_addr,idx);
-        exit(1);
-      }
+      long idx = find_temp_entry(dram_addr);
       invalidate_temp_entry_by_index(idx);
+      unlock_tree(set_index);
+      spm_write_back_id(spm_offset, dram_addr,  0, hartid);
+      push_temp_buffer(spm_offset);
+    } else {
+      unlock_tree(set_index);
     }
   }
   // キャッシュ領域の解放
@@ -625,7 +616,6 @@ AFTER_PATH_CHECK_EVICTION:
     spm_offset_t root_spm = spm_offset_array[load_start_index - 1];
     release_write_block(root_spm);
   }
-  unlock_tree();
   return;
 }
 
@@ -635,18 +625,18 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr,bool is_leaf,bool is_wr
         "csrr %0, mhartid"
         : "=r"(hartid)
     );
-  lock_tree();
+  long set_index = get_cache_tree_set_index(dram_addr);
+  lock_tree(set_index);
   long idx = find_temp_entry(dram_addr);
-  if (idx == -1){
-    unlock_tree();
+  if (idx < 0){
+    unlock_tree(set_index);
     return;
   }
   spm_offset_t temp_spm = get_temp_spm_offset(idx);
   bool swappable_temp = swappable_block(temp_spm);
   if (swappable_temp){
-    index_t set_index = get_cache_tree_set_index(dram_addr);
     light_tag_info_t light_info = light_tag_check_set(set_index, dram_addr);
-    if (light_info.way == -1){
+    if (light_info.way < 0){
         light_info.way = get_victim_way(set_index);
     } else {
         // valid化
@@ -654,9 +644,9 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr,bool is_leaf,bool is_wr
     }
     spm_offset_t old_spm = get_cache_block_spm_offset(set_index, light_info.way);
     bool swappable_cache = swappable_block(old_spm);
+    bool temp_dirty = is_dirty_temp_entry_by_index(idx);
     if (swappable_cache){
       bool mac_updated = is_mac_updated(set_index, light_info.way);
-      bool temp_dirty = is_dirty_temp_entry_by_index(idx);
       dram_addr_t old_dram_addr = get_block_addr(set_index, light_info.way);
       bool cache_dirty = is_block_dirty(set_index, light_info.way);
       swapp_temp_cache(dram_addr, temp_spm, temp_dirty, light_info.way);
@@ -674,16 +664,20 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr,bool is_leaf,bool is_wr
         }
         long idx = alloc_temp_entry(old_dram_addr, old_spm);
         dirty_temp_entry_by_index(idx);
-        unlock_tree();
+        unlock_tree(set_index);
         evicted_node_update(old_dram_addr, old_spm);
-        lock_tree();
         release_write_block(old_spm);
+        lock_tree(set_index);
         if (swappable_block(old_spm)){
-          spm_write_back_id(old_spm, old_dram_addr, 0, hartid);
           invalidate_temp_entry_by_index(idx);
+          unlock_tree(set_index);
+          spm_write_back_id(old_spm, old_dram_addr, 0, hartid);
           ret = push_temp_buffer(old_spm);
+        } else {
+          unlock_tree(set_index);
         }
       } else {
+        unlock_tree(set_index);
         if (cache_dirty){
           spm_write_back_id(old_spm, old_dram_addr,  0, hartid);
         }
@@ -705,7 +699,8 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr,bool is_leaf,bool is_wr
       printf("Core %d swapping cache block is non-swappable addr=%016llx spm_offset %lx S:%ld W:%ld\n", hartid, dram_addr, temp_spm, set_index, light_info.way);
       unlock_print();
       #endif
-      bool temp_dirty = is_dirty_temp_entry_by_index(idx);
+      invalidate_temp_entry_by_index(idx);
+      unlock_tree(set_index);
       if (temp_dirty && is_leaf){
         lock_print();
         printf("Error: leaf node dirty but non-swappable addr=%016llx spm_offset %lx S:%ld W:%ld\n", dram_addr, temp_spm, set_index, light_info.way);
@@ -715,14 +710,14 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr,bool is_leaf,bool is_wr
       if (temp_dirty){
         spm_write_back_id(temp_spm, dram_addr,  0, hartid);
       }
-      invalidate_temp_entry_by_index(idx);
       long ret = push_temp_buffer(temp_spm);
       if (ret != 0){
         printf("Error: push failed for  addr=%016llx idx=%ld\n", dram_addr,idx);
         exit(1);
       }
     }
+  } else {
+    unlock_tree(set_index);
   }
-  unlock_tree();
   return;
 }

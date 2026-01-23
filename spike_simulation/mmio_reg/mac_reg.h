@@ -20,7 +20,7 @@ void mac_init(uint64_t req_id, int hart_id, int is_write){
     // uint64_t cmd = ((uint64_t)req_id << 32) | 1;
     // MAC_COMMAND = cmd; // INIT
     // printf("MAC INIT called with req_id=%llu\n", req_id);
-    // if (req_id > 21000){
+    // if (req_id > 377000){
     //     lock_print();
     //     printf("MAC INIT called with req_id=%llu hart_id=%d is_dmac=%d\n", req_id, hart_id,is_write);
     //     unlock_print();
@@ -81,38 +81,38 @@ void mac_result_compare(spm_offset_t spm_offset, dma_id_t dma_id,int hart_id){
 }
 void mac_wait(uint64_t req_id, long hart_id){
     if (hart_id == 0){
-        int counter = 0;
+        // int counter = 0;
         while (1){
-            counter += 1;
+            // counter += 1;
             uint64_t complete_id = MAC_ID;
             if (req_id <= complete_id) break;
-            if (counter % 1000000 == 0){
-                lock_print();
-                printf("MAC WAIT: hart_id=0 waiting for req_id=%llu current_complete_id=%llu\n", req_id, complete_id);
-                uint64_t spm_id = SPM_COMPLETE_ID;
-                printf("  SPM COMPLETE ID=%llu\n", spm_id);
-                uint64_t a = MAC_ID_2;
-                printf("  MAC COMPLETE ID=%llu\n", a);
-                unlock_print();
-                exit(1);
-            }
+            // if (counter % 1000000 == 0){
+            //     lock_print();
+            //     printf("MAC WAIT: hart_id=0 waiting for req_id=%llu current_complete_id=%llu\n", req_id, complete_id);
+            //     uint64_t spm_id = SPM_COMPLETE_ID;
+            //     printf("  SPM COMPLETE ID=%llu\n", spm_id);
+            //     uint64_t a = MAC_ID_2;
+            //     printf("  MAC COMPLETE ID=%llu\n", a);
+            //     unlock_print();
+            //     exit(1);
+            // }
         }
     } else {
-        int counter = 0;
+        // int counter = 0;
         while (1){
-            counter += 1;
+            // counter += 1;
             uint64_t complete_id = MAC_ID_2;
             if (req_id <= complete_id) break;
-            if (counter % 1000000 == 0){
-                lock_print();
-                printf("WAIT: hart_id=1 waiting for req_id=%llu current_complete_id=%llu\n", req_id, complete_id);
-                uint64_t spm_id = SPM_COMPLETE_ID;
-                printf("  SPM COMPLETE ID=%llu\n", spm_id);
-                uint64_t a = MAC_ID;
-                printf(" anotje MAC COMPLETE ID=%llu\n", a);
-                unlock_print();
-                exit(1);
-            }
+            // if (counter % 1000000 == 0){
+            //     lock_print();
+            //     printf("WAIT: hart_id=1 waiting for req_id=%llu current_complete_id=%llu\n", req_id, complete_id);
+            //     uint64_t spm_id = SPM_COMPLETE_ID;
+            //     printf("  SPM COMPLETE ID=%llu\n", spm_id);
+            //     uint64_t a = MAC_ID;
+            //     printf(" anotje MAC COMPLETE ID=%llu\n", a);
+            //     unlock_print();
+            //     exit(1);
+            // }
         }
     }
 }

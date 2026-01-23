@@ -85,6 +85,11 @@ static inline void spm_write_back(spm_offset_t local_off, dram_addr_t dram_pa, d
 }
 
 static inline void spm_copy_to_local_id(dram_addr_t dram_pa, spm_offset_t local_off, dma_id_t id,int hartid) {
+  // if (id >= 1300){
+  //   lock_print();
+  //   printf("Core %d SPM write back id=%llu addr=%016llx\n", hartid, id, dram_pa);
+  //   unlock_print();
+  // }
   if (hartid == 0){
     SPM_DRAM_ADDRESS  = dram_pa;
     SPM_LOCAL_ADDRESS = local_off;   /* SPM_MEM_BASE からの相対(バイト) */
@@ -105,6 +110,7 @@ static inline void spm_copy_to_local_id(dram_addr_t dram_pa, spm_offset_t local_
 
 /* SPM -> DRAM */
 static inline void spm_write_back_id(spm_offset_t local_off, dram_addr_t dram_pa, dma_id_t id,int hartid) {
+  
   if (hartid == 0){
     SPM_DRAM_ADDRESS  = dram_pa;
     SPM_LOCAL_ADDRESS = local_off;

@@ -44,7 +44,7 @@ typedef long index_t;
 #define ENABLE_TMX_HARDWARE
 #define ENABLE_TMU_HARDWARE
 // #define DUMP
-#define EAGER
+// #define EAGER
 #define ENABLE_TMU_BIT_MANIPULATION
 #define LOADED_BIT_POS (0)
 #define MAC_UPDATED_BIT_POS (1)
