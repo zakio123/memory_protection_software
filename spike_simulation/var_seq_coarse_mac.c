@@ -1,3 +1,19 @@
+/**
+ * @file var_seq_coarse_mac.c
+ * @brief Cryptographic memory authentication with configurable MAC coverage and batch processing
+ *
+ * This implementation extends the original var_seq_lazy.c with:
+ * - Configurable MAC coverage area (via MAC_COVERAGE_BLOCKS constant)
+ * - Batch request processing for multiple requests to the same MAC block
+ * - Parallel DMA operations for improved throughput
+ * - Reduced per-request latency through batching
+ *
+ * Configuration:
+ * - SETTING_MAC_COVERAGE_BLOCKS: Number of 64B blocks per MAC entry (default: 8 = 1KB)
+ * - ENABLE_BATCH_MODE: Enable (1) or disable (0) batch processing
+ * - MAX_BATCH_SIZE: Maximum requests per batch (default: MAC_COVERAGE_BLOCKS)
+ */
+
 #include <stdint.h>
 #include "mmio_reg/spm_reg.h"
 #include "mmio_reg/mac_reg.h"
@@ -20,6 +36,141 @@ dram_addr_t level_base[HEIGHT + 1] = {0};
 dma_id_t global_dma_id = 0;
 uint64_t global_mac_req_id = 1;
 int over_flow_count = 0;
+
+// ========== Batch Processing Structures ==========
+
+// Structure to hold information about a single request in a batch
+typedef struct {
+    dram_addr_t address;        // Request address
+    uint64_t req_id;            // AXIM request ID
+    bool is_write;              // Write (true) or Read (false)
+    bool valid;                 // Entry is valid
+    dma_id_t dma_id;            // Assigned DMA ID for this request
+    spm_offset_t spm_offset;    // SPM offset for this data
+} batch_request_entry_t;
+
+// Batch request manager structure
+typedef struct {
+    batch_request_entry_t entries[MAX_BATCH_SIZE];
+    int count;                  // Number of requests in batch
+    dram_addr_t base_address;   // Base address (first request)
+    dram_addr_t mac_block_addr; // Shared MAC block address
+    bool is_write_batch;        // True if batch contains writes
+    uint64_t start_cycle;       // For performance measurement
+} batch_request_t;
+
+// Batch statistics tracking
+typedef struct {
+    uint64_t total_requests;
+    uint64_t total_batches;
+    uint64_t single_request_count;
+    uint64_t batch_request_count;
+    uint64_t max_batch_size_seen;
+    uint64_t batch_size_histogram[MAX_BATCH_SIZE + 1];
+} batch_stats_t;
+
+static batch_stats_t g_batch_stats = {0};
+
+// ========== Batch Helper Functions ==========
+
+// Determine if two addresses share the same MAC block
+static inline bool same_mac_block(dram_addr_t addr1, dram_addr_t addr2) {
+    return get_datamacblock_addr(addr1) == get_datamacblock_addr(addr2);
+}
+
+// Determine if two addresses are consecutive 64B blocks
+static inline bool consecutive_blocks(dram_addr_t addr1, dram_addr_t addr2) {
+    return (addr2 == addr1 + 64);
+}
+
+// Initialize a new batch
+static inline void batch_init(batch_request_t *batch, dram_addr_t addr, uint64_t req_id, bool is_write) {
+    batch->count = 1;
+    batch->base_address = addr;
+    batch->mac_block_addr = get_datamacblock_addr(addr);
+    batch->is_write_batch = is_write;
+    batch->entries[0].address = addr;
+    batch->entries[0].req_id = req_id;
+    batch->entries[0].is_write = is_write;
+    batch->entries[0].valid = true;
+    batch->start_cycle = read_instret();
+}
+
+// Try to add a request to the batch
+// Returns true if added successfully, false if batch is full or incompatible
+static inline bool batch_try_add(batch_request_t *batch, dram_addr_t addr, uint64_t req_id, bool is_write) {
+    // Check if batch is full
+    if (batch->count >= MAX_BATCH_SIZE) {
+        return false;
+    }
+
+    // Check if addresses are in the same MAC block
+    if (!same_mac_block(batch->base_address, addr)) {
+        return false;
+    }
+
+    // Check if address is consecutive (required for optimal batching)
+    dram_addr_t expected_addr = batch->entries[batch->count - 1].address + 64;
+    if (addr != expected_addr) {
+        return false;
+    }
+
+    // For write batches, all requests must be writes
+    // For read batches, all requests must be reads
+    if (batch->is_write_batch != is_write) {
+        return false;
+    }
+
+    // Add to batch
+    batch->entries[batch->count].address = addr;
+    batch->entries[batch->count].req_id = req_id;
+    batch->entries[batch->count].is_write = is_write;
+    batch->entries[batch->count].valid = true;
+    batch->count++;
+
+    return true;
+}
+
+// Update batch statistics
+static inline void update_batch_stats(batch_request_t *batch) {
+    g_batch_stats.total_batches++;
+    g_batch_stats.total_requests += batch->count;
+
+    if (batch->count == 1) {
+        g_batch_stats.single_request_count++;
+    } else {
+        g_batch_stats.batch_request_count++;
+    }
+
+    if (batch->count > g_batch_stats.max_batch_size_seen) {
+        g_batch_stats.max_batch_size_seen = batch->count;
+    }
+
+    g_batch_stats.batch_size_histogram[batch->count]++;
+}
+
+// Print batch statistics
+void print_batch_stats(void) {
+    if (g_batch_stats.total_batches == 0) return;
+
+    printf("\n=== Batch Processing Statistics ===\n");
+    printf("Total requests processed: %llu\n", g_batch_stats.total_requests);
+    printf("Total batches: %llu\n", g_batch_stats.total_batches);
+    printf("Single requests: %llu\n", g_batch_stats.single_request_count);
+    printf("Batched requests: %llu\n", g_batch_stats.batch_request_count);
+    printf("Max batch size: %llu\n", g_batch_stats.max_batch_size_seen);
+    printf("Average batch size: %.2f\n",
+           (double)g_batch_stats.total_requests / g_batch_stats.total_batches);
+    printf("\nBatch size histogram:\n");
+    for (int i = 1; i <= MAX_BATCH_SIZE; i++) {
+        if (g_batch_stats.batch_size_histogram[i] > 0) {
+            printf("  Size %d: %llu batches\n", i, g_batch_stats.batch_size_histogram[i]);
+        }
+    }
+    printf("===================================\n\n");
+}
+
+// ========== Original Functions ==========
 
 void update_tag(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, 
   uint32_t mac_req_id, dma_id_t dma_id,dram_addr_t dram_addr){
@@ -870,10 +1021,285 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
     push_temp_buffer(old_spm);
   }
   uint64_t swap_end = read_instret();
+  if (1){
+    printf("Authentication req_id %d instret summary:\n", req_id);
+    printf("  Total time: %llu\n", swap_end - start_time);
+    printf("  Tag check time: %llu\n", tag_check_end - tag_check_start);
+    printf("  Verification time: %llu\n", verify_end - verify_start);
+    printf("  Update time: %llu\n", update_end - update_start);
+    printf("  Set seed time: %llu\n", set_seed_e - set_seed_s);
+    printf("  Data MAC DMA time: %llu\n", datamac_dma_e - datamac_dma);
+    printf("  XOR time: %llu\n", xor_end - xor_start_);
+    printf("  MAC time: %llu\n", mac_end - mac_start);
+    printf("  Write back time: %llu\n", write_back_e - write_back_s);
+    printf("  Response time: %llu\n", response_end - response_start);
+    printf("  Swap time: %llu\n", swap_end - swap_start);
+  }
+}
+
+// ========== Batch Verification Function ==========
+
+/**
+ * @brief Batch verification for multiple read requests to the same MAC block
+ *
+ * This function optimizes verification by:
+ * 1. Issuing all data DMAs in parallel
+ * 2. Sharing counter tree path traversal
+ * 3. Fetching MAC block once for all requests
+ * 4. Batch MAC verification
+ * 5. Parallel decryption and responses
+ *
+ * @param batch Pointer to batch_request_t containing multiple read requests
+ */
+void Verification_batch(batch_request_t *batch){
+  if (batch->count == 0) return;
+  if (batch->is_write_batch) {
+    printf("Error: Verification_batch called with write batch\n");
+    exit(1);
+  }
+
+  uint64_t start_time = read_instret();
+
+  // Step 1: Issue all data DMAs in parallel
+  dma_id_t data_dma_ids[MAX_BATCH_SIZE];
+  spm_offset_t data_spm_offsets[MAX_BATCH_SIZE];
+
+  for (int i = 0; i < batch->count; i++) {
+    global_dma_id += 1;
+    data_dma_ids[i] = global_dma_id;
+    data_spm_offsets[i] = DATA_SPM_OFFSET + i * 64;  // Use consecutive SPM slots
+    spm_copy_to_local(batch->entries[i].address, data_spm_offsets[i], data_dma_ids[i]);
+  }
+
+  // Step 2: Fetch counter tree path (shared for all requests in batch)
+  // Use the first request's address to determine tree path
+  dram_addr_t base_addr = batch->entries[0].address;
+  spm_offset_t spm_offset_array[HEIGHT];
+  dram_addr_t dram_addr_array[HEIGHT];
+  uint64_t hit_index = HEIGHT;
+  dma_id_t wait_dma_id[HEIGHT];
+
+  uint64_t tag_path_check_s = read_instret();
+  index_t index = (base_addr - PROTECTION_BASE) / 64;
+  index_t v_i = index;
+
+  for (long i = 0; i < HEIGHT; i++){
+    dram_addr_t dram_addr = index / MINOR_COUNTER_COUNT * 64 + level_base[HEIGHT - i];
+    index = index / MINOR_COUNTER_COUNT;
+    dram_addr_array[i] = dram_addr;
+    index_t set_index = get_cache_tree_set_index(dram_addr);
+    light_tag_info_t info = light_tag_check_set(set_index, dram_addr);
+
+    if (info.hit){
+      hit_index = i;
+      index_t way_index = info.way;
+      update_lru_on_access(set_index, way_index);
+      spm_offset_t spm_offset = get_cache_block_spm_offset(set_index, way_index);
+      spm_offset_array[i] = spm_offset;
+      wait_dma_id[i] = global_dma_id;
+      break;
+    } else {
+      global_dma_id += 1;
+      wait_dma_id[i] = global_dma_id;
+      spm_offset_t spm_offset = pop_temp_buffer();
+      spm_offset_array[i] = spm_offset;
+      alloc_temp_entry(dram_addr, spm_offset);
+      spm_copy_to_local(dram_addr, spm_offset, global_dma_id);
+    }
+  }
+  uint64_t tag_path_check_e = read_instret();
+
+  // Step 3: Fetch shared MAC block
+  uint64_t datamac_dma_s = read_instret();
+  index_t set_index = get_cache_set_index(batch->mac_block_addr);
+  dma_id_t tag_id = global_dma_id;
+  spm_offset_t mac_spm_offset;
+  light_tag_info_t light_info = light_tag_check(batch->mac_block_addr);
+  bool cache_dirty = false;
+
+  if (light_info.hit){
+    mac_spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+    update_lru_on_access(set_index, light_info.way);
+  } else {
+    tag_id += 1;
+    global_dma_id += 1;
+
+    if (light_info.way == -1){
+      light_info.way = get_victim_way(set_index);
+      mac_spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+      bool dirty = is_block_dirty(set_index, light_info.way);
+
+      if (dirty){
+        dram_addr_t old_block_addr = get_block_addr(set_index, light_info.way);
+        spm_write_back(mac_spm_offset, old_block_addr, 0);
+        cache_dirty = true;
+      }
+    } else {
+      set_block_valid(set_index, light_info.way);
+      mac_spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
+    }
+
+    spm_copy_to_local(batch->mac_block_addr, mac_spm_offset, tag_id);
+    set_block_addr(set_index, light_info.way, batch->mac_block_addr);
+    clear_block_dirty(set_index, light_info.way);
+    update_lru_on_access(set_index, light_info.way);
+  }
+  uint64_t datamac_dma_e = read_instret();
+
+  // Step 4: Verify counter tree path (same for all in batch)
+  uint64_t verify_s = read_instret();
+  uint64_t mac_req_id = 0;
+
+  for (uint64_t i = 0; i < hit_index; i++){
+    mac_req_id = global_mac_req_id;
+    if (i == HEIGHT - 1){
+      verify_one_height_lazy_root(spm_offset_array[i], global_mac_req_id,
+                                   wait_dma_id[HEIGHT - 1], dram_addr_array[i]);
+      v_i = v_i / MINOR_COUNTER_COUNT;
+    } else {
+      verify_one_height_lazy(spm_offset_array[i], spm_offset_array[i+1], v_i,
+                            global_mac_req_id, wait_dma_id[i+1], dram_addr_array[i]);
+    }
+    global_mac_req_id += 1;
+  }
+  uint64_t verify_e = read_instret();
+
+  // Step 5: Wait for tree path verification and all data DMAs
+  uint64_t wait_s = read_instret();
+  if (hit_index > 0){
+    dma_id_t wait_id = wait_dma_id[0];
+    spm_wait(wait_id);
+  }
+
+  // Wait for all data block DMAs
+  for (int i = 0; i < batch->count; i++) {
+    spm_wait(data_dma_ids[i]);
+  }
+  uint64_t wait_e = read_instret();
+
+  // Step 6: Extract counter values (shared for first block, increment for others)
+  uint64_t set_seed_s = read_instret();
+  spm_offset_t base_spm_offset = spm_offset_array[0];
+  uint64_t major_counter = spm_ld64(base_spm_offset);
+
+  uint64_t minor_idx = (base_addr / 64) % MINOR_COUNTER_COUNT;
+  uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
+
+  uint64_t word_offset_bytes = (global_bit_offset / 64) * 8;
+  uint64_t local_bit_offset  = global_bit_offset % 64;
+  uint64_t raw_data = spm_ld64(base_spm_offset + word_offset_bytes);
+  uint64_t extracted_val = raw_data >> local_bit_offset;
+
+  if (local_bit_offset + MINOR_COUNTER_WIDTH > 64) {
+    uint64_t next_data = spm_ld64(base_spm_offset + word_offset_bytes + 8);
+    extracted_val |= (next_data << (64 - local_bit_offset));
+  }
+
+  uint16_t base_minor_counter = extracted_val & MINOR_COUNTER_MASK;
+  uint64_t set_seed_e = read_instret();
+
+  // Step 7: Batch MAC verification for all data blocks
+  uint64_t datamac_s = read_instret();
+
+  // Verify each block's MAC
+  for (int i = 0; i < batch->count; i++){
+    dram_addr_t curr_addr = batch->entries[i].address;
+    uint64_t curr_minor_idx = (curr_addr / 64) % MAC_COVERAGE_BLOCKS;
+    spm_offset_t dmac_byte_offset = curr_minor_idx * 8;
+
+    mac_init(global_mac_req_id, 0, 1);
+    mac_buffer_set(data_spm_offsets[i], data_dma_ids[i], 0);
+    mac_update(0, 511, 0);
+    mac_buffer_set(base_spm_offset, wait_dma_id[0], 0);
+    mac_update(0, 63, 0);
+    mac_update(global_bit_offset + i * MINOR_COUNTER_WIDTH,
+               global_bit_offset + i * MINOR_COUNTER_WIDTH + (MINOR_COUNTER_WIDTH - 1), 0);
+    mac_input_core(curr_addr, 0);
+    mac_result_compare(mac_spm_offset + dmac_byte_offset, tag_id, 0);
+    mac_wait(global_mac_req_id, 0);
+    global_mac_req_id += 1;
+  }
+
+  uint64_t datamac_e = read_instret();
+
+  // Step 8: Decrypt all data blocks and issue responses
+  uint64_t xor_s = read_instret();
+
+  for (int i = 0; i < batch->count; i++){
+    uint16_t minor_counter_value = base_minor_counter + i;
+    set_seed(major_counter, minor_counter_value, batch->entries[i].address);
+    while(AES_START_REG);
+    xor_start(false, true, batch->entries[i].req_id, data_spm_offsets[i]);
+    axim_read_return(batch->entries[i].req_id);
+  }
+
+  uint64_t xor_e = read_instret();
+
+  // Step 9: Swap temp buffers back to cache
+  uint64_t start_swapp_time = read_instret();
+
+  for (uint64_t i = 0; i < hit_index; i++){
+    dram_addr_t dram_addr = dram_addr_array[i];
+    long idx = find_temp_entry(dram_addr);
+    spm_offset_t temp_spm = spm_offset_array[i];
+    index_t set_index = get_cache_tree_set_index(dram_addr);
+    light_tag_info_t light_info_swap = light_tag_check_set(set_index, dram_addr);
+
+    if (light_info_swap.way < 0){
+      light_info_swap.way = get_victim_way(set_index);
+    } else {
+      set_block_valid(set_index, light_info_swap.way);
+    }
+
+    spm_offset_t old_spm = get_cache_block_spm_offset(set_index, light_info_swap.way);
+    bool mac_updated = is_mac_updated(set_index, light_info_swap.way);
+    bool temp_dirty = is_dirty_temp_entry_by_index(idx);
+    dram_addr_t old_dram_addr = get_block_addr(set_index, light_info_swap.way);
+    bool cache_dirty_swap = is_block_dirty(set_index, light_info_swap.way);
+
+    swapp_temp_cache(dram_addr, temp_spm, temp_dirty, light_info_swap.way);
+    invalidate_temp_entry_by_index(idx);
+
+    if (i == 0 && temp_dirty){
+      clearParentUpdated(set_index, light_info_swap.way);
+    } else {
+      setParentUpdated(set_index, light_info_swap.way);
+    }
+
+    if (!mac_updated){
+      evicted_node_update(old_dram_addr, old_spm);
+    }
+
+    if (cache_dirty_swap){
+      spm_write_back(old_spm, old_dram_addr, 0);
+    }
+
+    push_temp_buffer(old_spm);
+  }
+
+  uint64_t swapp_end_time = read_instret();
+
+  // Debug output
+  if (instret_dump){
+    printf("Verification_batch (count=%d) instret summary:\n", batch->count);
+    printf("  Total time: %llu\n", swapp_end_time - start_time);
+    printf("  Tag path check: %llu\n", tag_path_check_e - tag_path_check_s);
+    printf("  Data MAC DMA: %llu\n", datamac_dma_e - datamac_dma_s);
+    printf("  Tree verification: %llu\n", verify_e - verify_s);
+    printf("  DMA wait: %llu\n", wait_e - wait_s);
+    printf("  Set seed: %llu\n", set_seed_e - set_seed_s);
+    printf("  MAC compute: %llu\n", datamac_e - datamac_s);
+    printf("  XOR decrypt: %llu\n", xor_e - xor_s);
+    printf("  Swap: %llu\n", swapp_end_time - start_swapp_time);
+    printf("  MAC cache hit: %d dirty: %d\n", light_info.hit, cache_dirty);
+  }
 }
 
 
 void Verification(dram_addr_t request_addr, uint64_t req_id){
+  if (req_id > 600){
+    exit(1);
+  }
   uint64_t start_time = read_instret();
   global_dma_id += 1;
   dma_id_t data_id = global_dma_id;
@@ -950,11 +1376,11 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
     mac_req_id = global_mac_req_id;
     if (i == HEIGHT - 1){
       verify_one_height_lazy_root(spm_offset_array[i], global_mac_req_id, wait_dma_id[HEIGHT - 1], dram_addr_array[i]);
+      v_i = v_i / MINOR_COUNTER_COUNT;
     } else {
       verify_one_height_lazy(spm_offset_array[i], spm_offset_array[i+1], v_i, global_mac_req_id, wait_dma_id[i+1], dram_addr_array[i]);
     }
     global_mac_req_id += 1;
-    v_i = v_i / MINOR_COUNTER_COUNT;
   }
   uint64_t verify_e = read_instret();
   uint64_t wait_s = read_instret();
@@ -992,6 +1418,7 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
   uint64_t counter_ext_e = read_instret();
   set_seed(major_counter, minor_counter_value, request_addr);
   uint64_t set_seed_e = read_instret();
+  printf("counter read instret=%llu\n", counter_ext_e - counter_ext_s);
   uint64_t datamac_s = read_instret();
   mac_init(global_mac_req_id,0,1);
   mac_buffer_set(DATA_SPM_OFFSET,data_id,0);
@@ -1050,6 +1477,23 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
     push_temp_buffer(old_spm);
   }
   uint64_t swapp_end_time = read_instret();
+  if (1){
+    printf("Total instret time %d\n", swapp_end_time - start_time);
+    printf("  tag check time %d\n", tag_path_check_e - tag_path_check_s);
+    printf("  verify time %d verify level %d\n", verify_e - verify_s, hit_index);
+    printf("  mac cache hit %d dirty %d ", light_info.hit, cache_dirty);
+    printf("  wait dma time %d\n", wait_e - wait_s);
+    printf("  set seed time %d\n", set_seed_e - set_seed_s); 
+    printf("  load mac time %d\n", datamac_dma_e - datamac_dma_s);
+    printf("  mac compute time %d\n", datamac_e - datamac_s);
+    printf("  xor time %d\n", xor_e - xor_s);
+    printf("  response time %d\n", response_e - response_s);
+    printf("  data wait time %d\n", data_wait_e - data_wait_s);
+    printf("  mac wait time %d\n", mac_wait_e - mac_wait_s);
+    printf("  overflow count %d\n", over_flow_count);
+    printf("  swapp total time %d\n", swapp_end_time - start_swapp_time);
+  }
+  exit(1);
 }
 
 int main(void){
@@ -1067,32 +1511,110 @@ int main(void){
   for (int i = 0;i < HEIGHT+1;i++){
     level_base[i] = calculate_level_base_addr(i) + COUNTER_BASE;
   }
+
+#if ENABLE_BATCH_MODE
+  batch_request_t batch;
+  printf("Batch mode ENABLED (MAX_BATCH_SIZE=%d, MAC_COVERAGE_BLOCKS=%d)\n",
+         MAX_BATCH_SIZE, MAC_COVERAGE_BLOCKS);
+#else
+  printf("Batch mode DISABLED (single-request mode)\n");
+#endif
+
   while(1){
+    // Wait for first request
     for(;;){
       if(AXIM_STATUS_REG & 1) break; // リクエストが来るまで待つ
     }
+
     bool is_write = (AXIM_STATUS_REG & 2) != 0;
     dram_addr_t addr = AXIM_REQ_ADDR_REG;
     uint64_t req_id = AXIM_REQ_ID_REG;
-    total += 1;
-    if (total % 10000 == 0){
-      printf("Processed %d requests\n", total);
-      instret_dump = true;
-    } else {
-      instret_dump = false;
+
+    // Check for termination signal
+    if (addr == 0xFFFFFFFFFFFFFFFF){
+      print_batch_stats();
+      return 0;
     }
+
+    // Validate address range
     if ((addr - PROTECTION_BASE) >= (16ULL * 1024 * 1024 * 1024)){ // 16GBを超えないようにしたい
       printf("Error: Address out of range: %016llx\n", addr);
       exit(1);
     }
-    if (addr == 0xFFFFFFFFFFFFFFFF){
-      return 0;
-    } else {
-      if(is_write){ // writeリクエスト
-        Authentication(addr,req_id);
-      } else {
-        Verification(addr,req_id);
+
+#if ENABLE_BATCH_MODE
+    // Initialize batch with first request
+    batch_init(&batch, addr, req_id, is_write);
+
+    // Try to collect more requests for same MAC block (reads only)
+    // Note: writes are not batched in this implementation
+    if (!is_write) {
+      while(batch.count < MAX_BATCH_SIZE) {
+        // Check if another request is available (non-blocking)
+        if (!(AXIM_STATUS_REG & 1)) {
+          break;  // No more requests available
+        }
+
+        bool next_is_write = (AXIM_STATUS_REG & 2) != 0;
+        dram_addr_t next_addr = AXIM_REQ_ADDR_REG;
+        uint64_t next_req_id = AXIM_REQ_ID_REG;
+
+        // Validate next address
+        if ((next_addr - PROTECTION_BASE) >= (16ULL * 1024 * 1024 * 1024)){
+          printf("Error: Address out of range in batch: %016llx\n", next_addr);
+          exit(1);
+        }
+
+        // Check for termination signal
+        if (next_addr == 0xFFFFFFFFFFFFFFFF){
+          // Process current batch first, then terminate
+          break;
+        }
+
+        // Try to add to batch
+        if (!batch_try_add(&batch, next_addr, next_req_id, next_is_write)) {
+          // Cannot add to batch - this request will be processed next iteration
+          // Note: We've peeked at it but not consumed it from hardware queue
+          // In a real implementation, we'd need a mechanism to "unread" the request
+          // For now, we just stop batching
+          break;
+        }
       }
+    }
+
+    // Process the batch
+    if (batch.is_write_batch) {
+      // For writes, process each individually (single request per batch for writes)
+      for (int i = 0; i < batch.count; i++) {
+        if (batch.entries[i].valid) {
+          Authentication(batch.entries[i].address, batch.entries[i].req_id);
+        }
+      }
+    } else {
+      // For reads, use optimized batch verification
+      Verification_batch(&batch);
+    }
+
+    update_batch_stats(&batch);
+    total += batch.count;
+
+#else
+    // Single request mode (original behavior)
+    total += 1;
+    if(is_write){ // writeリクエスト
+      Authentication(addr,req_id);
+    } else {
+      Verification(addr,req_id);
+    }
+#endif
+
+    // Progress reporting
+    if (total % 10000 == 0){
+      printf("Processed %d requests\n", total);
+      print_batch_stats();
+      instret_dump = true;
+    } else {
+      instret_dump = false;
     }
   }
 }

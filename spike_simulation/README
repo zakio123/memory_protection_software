@@ -1,0 +1,12 @@
+./../tools/rv64gc/bin/riscv64-unknown-elf-gcc \
+-I/home/ozaki/rocket/rocket-chip/tools/rv64gc/src/rocket-tools/riscv-tests/build/../benchmarks/../env \
+-I/home/ozaki/rocket/rocket-chip/mmio_project/common \
+-DPREALLOCATE=1 -mcmodel=medany -static -std=gnu99 -O2 -ffast-math -fno-common -fno-builtin-printf \
+-fno-tree-loop-distribute-patterns -march=rv64gcv \
+/home/ozaki/rocket/rocket-chip/multicore_spike/init.S /home/ozaki/rocket/rocket-chip/multicore_spike/syscalls.c \
+-static -nostdlib -nostartfiles -lm -lgcc 
+-T/home/ozaki/rocket/rocket-chip/multicore_spike/link.ld 
+-I/home/ozaki/rocket/rocket-chip/mmio_project/spike_simulation/inc/ 
+-I/home/ozaki/rocket/rocket-chip/mmio_project/spike_simulation/cache_extension  
+-o ./seq_multi_dma_debug_leaf_modify_early_measure.elf 
+var_multi_core.c 

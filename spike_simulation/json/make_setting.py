@@ -16,6 +16,7 @@ def main():
     protection_base = int(cfg["PROTECTION_BASE"], 16)
     protection_size = int(cfg["PROTECTION_SIZE"])
     protection_uint = cfg["SIZE_UNIT"]
+    protection_size_grain = cfg.get("PROTECTION_SIZE_GRAIN", 64)  # デフォルト値を64に設定
     if protection_uint == "MB":
         protection_size *= 1024 * 1024
     elif protection_uint == "GB":
@@ -24,7 +25,7 @@ def main():
         protection_size *= 1024 * 1024 * 1024 * 1024
     else:
         raise ValueError(f"Unknown SIZE_UNIT: {protection_uint}")
-    tag_size = protection_size // 64 * 8
+    tag_size = protection_size // (protection_size_grain * 8)
     tag_base = protection_base + protection_size
     counter_base = tag_base + tag_size
     # マイナーカウンターの数が木の分木数に相当
@@ -37,7 +38,7 @@ def main():
     # exit(0)
     while(1):
         height += 1
-        if (mc_count ** (height)) * 64 >= protection_size:
+        if (mc_count ** (height)) * protection_size_grain >= protection_size:
             break
     # ★ここを変更: incディレクトリの下に作成する
     output_path = "inc/setting.h"
@@ -59,6 +60,7 @@ def main():
         f.write(f"#define SETTING_HEIGHT {height}\n")
         f.write(f"#define SETTING_PROTECTION_BASE 0x{protection_base:X}\n")
         f.write(f"#define SETTING_PROTECTION_SIZE 0x{protection_size:X}\n")
+        f.write(f"#define SETTING_PROTECTION_SIZE_GRAIN {protection_size_grain}\n")
         # キャッシュ関連
         cache_ways_log2 = cfg["CACHE_WAYS_LOG2"]
         f.write(f"#define SETTING_CACHE_WAYS_LOG2 {cache_ways_log2}\n")

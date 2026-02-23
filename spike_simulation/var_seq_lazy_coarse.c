@@ -13,12 +13,13 @@
 #include "config.h"
 #include "cache_controll.h"
 #include "addr_util.h"
-// #include "sec_operation.h"
-#define REENCRYPTION_SPM_OFFSET DATA_SPM_OFFSET + 64
+#include "aes_xor_async.h"
+#define REENCRYPTION_SPM_OFFSET DATA_SPM_OFFSET + 128
 bool instret_dump = false;
 dram_addr_t level_base[HEIGHT + 1] = {0};
 dma_id_t global_dma_id = 0;
 uint64_t global_mac_req_id = 1;
+uint32_t global_aes_id = 0;
 int over_flow_count = 0;
 
 void update_tag(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index, 
@@ -85,7 +86,8 @@ static inline void verify_one_height_lazy(spm_offset_t child_spm_offset, spm_off
 
 // マイナーカウンターがオーバーフローした時の復号化+再暗号化処理
 static inline uint64_t reencryption_lazy(dram_addr_t counter_block_addr,spm_offset_t counter_spm_offset){
-  dram_addr_t data_block_addr = PROTECTION_BASE + (counter_block_addr - level_base[HEIGHT]) / 64 * (MINOR_COUNTER_COUNT * 64);
+  dram_addr_t data_block_addr = PROTECTION_BASE + ((counter_block_addr - level_base[HEIGHT]) / 64) * (MINOR_COUNTER_COUNT * PROTECTION_SIZE_GRAIN);
+  printf("reencryption data block addr is %llx\n", data_block_addr);
   uint64_t old_major_counter = spm_ld64(counter_spm_offset);
   uint64_t new_major_counter = old_major_counter + 1;
   dma_id_t dma_id;
@@ -93,8 +95,8 @@ static inline uint64_t reencryption_lazy(dram_addr_t counter_block_addr,spm_offs
     // 必要なデータを読み出す。
     global_dma_id += 1;
     dma_id = global_dma_id;
-    dram_addr_t dram_addr = data_block_addr + i * 64;
-    spm_copy_to_local(dram_addr, REENCRYPTION_SPM_OFFSET, dma_id);
+    dram_addr_t dram_addr = data_block_addr + i * PROTECTION_SIZE_GRAIN;
+    spm_copy_to_local_size(dram_addr, REENCRYPTION_SPM_OFFSET, dma_id, PROTECTION_SIZE_GRAIN);
     // MACブロックの取得
     dram_addr_t datamacblock_addr = get_datamacblock_addr(dram_addr);
     index_t set_index = get_cache_mac_index(datamacblock_addr);
@@ -127,13 +129,15 @@ static inline uint64_t reencryption_lazy(dram_addr_t counter_block_addr,spm_offs
     spm_sd64(counter_spm_offset, old_major_counter);
     // dmacの比較
     mac_init(global_mac_req_id,0,1);
-    mac_buffer_set(REENCRYPTION_SPM_OFFSET, dma_id,0);
-    mac_update(0,511,0);
+    for (int i=0;i<PROTECTION_SIZE_GRAIN / 64;i++){
+      mac_buffer_set(REENCRYPTION_SPM_OFFSET + i * 64, dma_id,0);
+      mac_update(0,511,0);
+    }
     mac_buffer_set(counter_spm_offset, dma_id,0);
     mac_update(0,63,0);
     mac_update(global_bit_offset, global_bit_offset + MINOR_COUNTER_WIDTH - 1,0);
     mac_input_core(dram_addr,0);
-    spm_offset_t dmac_byte_offset = ((dram_addr - PROTECTION_BASE) / 64) % 8 * 8;
+    spm_offset_t dmac_byte_offset = ((dram_addr - PROTECTION_BASE) / PROTECTION_SIZE_GRAIN) % 8 * 8;
     mac_result_compare(spm_offset + dmac_byte_offset,dma_id,0);
     mac_wait(global_mac_req_id,0);
     global_mac_req_id += 1;
@@ -147,24 +151,27 @@ static inline uint64_t reencryption_lazy(dram_addr_t counter_block_addr,spm_offs
     // (開始位置 + データ幅 が 64 を超える場合、次のワードにデータがはみ出している)
     if (local_bit_offset + MINOR_COUNTER_WIDTH > 64) {
         uint64_t next_data = spm_ld64(counter_spm_offset + word_offset_bytes + 8);
-        // はみ出した分（上位ビット）を結合
-        // (64 - local_bit_offset) は、1つ目のワードに残っていたビット数
         extracted_val |= (next_data << (64 - local_bit_offset));
     }
     // 6. ビットマスクを生成して不要な上位ビットを切り落とす;
     uint16_t minor_counter_value = extracted_val & MINOR_COUNTER_MASK;
-    // 結果の使用
-    set_seed(old_major_counter, minor_counter_value, dram_addr);
-    while(AES_START_REG);
     // 復号化
-    spm_wait(dma_id);
-    xor_start(false,false,0,REENCRYPTION_SPM_OFFSET);
+    for (int i = 0;i < PROTECTION_SIZE_GRAIN / 64;i++){
+      aes_xor_async_submit64_with_reqid(old_major_counter, minor_counter_value, dram_addr + i * 64,
+        0, global_aes_id,
+        false, REENCRYPTION_SPM_OFFSET + i * 64, false, false, dma_id);
+      global_aes_id += 1;
+    }
     // 再暗号化
-    set_seed(new_major_counter, 0, dram_addr);
-    while(AES_START_REG);
-    xor_start(false,false,0,REENCRYPTION_SPM_OFFSET);
+    for (int i = 0;i < PROTECTION_SIZE_GRAIN / 64;i++){
+      aes_xor_async_submit64_with_reqid(new_major_counter, 0, dram_addr + i * 64,
+        0, global_aes_id,
+        false, REENCRYPTION_SPM_OFFSET + i * 64, false, false, dma_id);
+      global_aes_id += 1;
+    }
     // 書き戻し
-    spm_write_back(REENCRYPTION_SPM_OFFSET, dram_addr,  0);
+    while(!(aes_xor_async_is_done(global_aes_id - 1)));
+    spm_write_back_size(REENCRYPTION_SPM_OFFSET, dram_addr,0,PROTECTION_SIZE_GRAIN);
     // minorカウンターの更新
     uint64_t word1 = 0;
     uint64_t word2 = 0;
@@ -198,8 +205,10 @@ static inline uint64_t reencryption_lazy(dram_addr_t counter_block_addr,spm_offs
     }
     spm_sd64(counter_spm_offset, new_major_counter);
     mac_init(global_mac_req_id,0,1);
-    mac_buffer_set(REENCRYPTION_SPM_OFFSET, dma_id,0);
-    mac_update(0,511,0);
+    for (int i =0;i<PROTECTION_SIZE_GRAIN / 64;i++){
+      mac_buffer_set(REENCRYPTION_SPM_OFFSET + i * 64, dma_id,0);
+      mac_update(0,511,0);
+    }
     mac_buffer_set(counter_spm_offset, dma_id,0);
     mac_update(0,63,0);
     mac_update(global_bit_offset, global_bit_offset + MINOR_COUNTER_WIDTH - 1,0);
@@ -208,7 +217,6 @@ static inline uint64_t reencryption_lazy(dram_addr_t counter_block_addr,spm_offs
     mac_wait(global_mac_req_id,0);
     global_mac_req_id += 1;
   }
-  // majorカウンターをインクリメント
   spm_sd64(counter_spm_offset, new_major_counter);
   return global_mac_req_id;
 }
@@ -414,6 +422,7 @@ static inline void update_one_height_lazy(spm_offset_t child_spm_offset, spm_off
 }
 
 static inline void evicted_node_update(dram_addr_t old_addr, spm_offset_t old_spm) {
+  // printf("Eviction update called for addr=%016llx spm_offset=%016llx\n", old_addr, old_spm);
     int hartid;
     asm volatile(
         "csrr %0, mhartid"
@@ -421,7 +430,6 @@ static inline void evicted_node_update(dram_addr_t old_addr, spm_offset_t old_sp
     );
   int v_level = -1; // Victimのレベル (0=Root)
   dram_addr_t v_level_base_addr = 0;
-
   for (int l = 0; l < HEIGHT; l++) {
     dram_addr_t base = level_base[l+1];
     if (l < HEIGHT - 1){
@@ -437,7 +445,7 @@ static inline void evicted_node_update(dram_addr_t old_addr, spm_offset_t old_sp
     }
   }
   // 何個めのブロックか
-  dram_addr_t v_index = (old_addr - (v_level_base_addr))/ 64 * MINOR_COUNTER_COUNT;
+  dram_addr_t v_index = (old_addr - (v_level_base_addr)) / 64 * MINOR_COUNTER_COUNT;
   uint64_t path_indecis[HEIGHT] = {0};
   spm_offset_t spm_offset_array[HEIGHT] = {0};
   dram_addr_t dram_addr_array[HEIGHT] = {0};
@@ -657,7 +665,12 @@ static inline void swapp_dram_addr(dram_addr_t dram_addr,bool is_leaf){
 }
 
 
-void Authentication(dram_addr_t request_addr, uint32_t req_id){
+void Authentication_batch(dram_addr_t request_addr, uint32_t req_id,int start_offset, int end_offset){
+  // read and modify write
+  // printf("auth addr=%016llx req_id=%d s_o %d e_o %d\n", request_addr, req_id, start_offset, end_offset);
+  global_dma_id += 1;
+  dma_id_t dma_id = global_dma_id;
+  spm_copy_to_local_size(request_addr, DATA_SPM_OFFSET, dma_id, PROTECTION_SIZE_GRAIN);
   // データのコピー
   uint64_t start_time = read_instret();
   // HEIGHT-1がリーフ、0が高さ1
@@ -669,7 +682,7 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
   index_t way_index = 0;
   // パス上のノードのタグチェックを行う
   uint64_t tag_check_start = read_instret();
-  uint64_t index = (request_addr - PROTECTION_BASE) / 64;
+  uint64_t index = (request_addr - PROTECTION_BASE) / PROTECTION_SIZE_GRAIN;
   for(uint64_t i=0; i<HEIGHT; ++i){
       path_indecis[i] = index;
       dram_addr_t dram_addr = index / MINOR_COUNTER_COUNT * 64 + level_base[HEIGHT - i];
@@ -741,7 +754,9 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
   uint64_t current_minor_val = current_val_raw & MINOR_COUNTER_MASK;
   uint16_t minor_counter_value = current_minor_val;
   // 4. 値の更新（インクリメントとオーバーフロー判定）
+  bool reencrypted = false;
   if (current_minor_val == MINOR_COUNTER_MASK) {
+    reencrypted = true;
       reencryption_lazy(dram_addr_array[0], spm_offset_array[0]);
       over_flow_count += 1;
       major_counter += 1;
@@ -772,9 +787,6 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
       }
   }
   uint64_t update_end = read_instret();
-  uint64_t set_seed_s = read_instret();
-  set_seed(major_counter, minor_counter_value, request_addr);
-  uint64_t set_seed_e = read_instret();
   uint64_t datamac_dma = read_instret();
   dram_addr_t datamacblock_addr = get_datamacblock_addr(request_addr);
   index_t set_index = get_cache_mac_index(datamacblock_addr);
@@ -808,35 +820,70 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
     update_lru_on_access(set_index, light_info.way);
   }
   uint64_t datamac_dma_e = read_instret();
-  uint64_t xor_start_ = read_instret();
-  while(AES_START_REG);
-  xor_start(true, false,req_id,DATA_SPM_OFFSET);
-  uint64_t xor_end = read_instret();
+  uint64_t set_seed_s = read_instret();
+  for (int i = 0;i<(PROTECTION_SIZE_GRAIN / 64);i++){
+    if ((i < start_offset || i > end_offset) && !reencrypted){
+      aes_xor_async_submit64_with_reqid(
+        major_counter, minor_counter_value - 1, request_addr + i * 64, 
+        0,global_aes_id,
+        0,DATA_SPM_OFFSET + i * 64, false, false,dma_id);
+      // set_seed(major_counter, minor_counter_value - 1, request_addr + i * 64);
+      // while(AES_START_REG);
+      // xor_start(false,false,0,DATA_SPM_OFFSET + i * 64);
+      global_aes_id += 1;
+      aes_xor_async_submit64_with_reqid(
+        major_counter, minor_counter_value, request_addr + i * 64, 
+        0,global_aes_id,
+        false, DATA_SPM_OFFSET + i * 64, false, false,dma_id
+      );
+      global_aes_id += 1;
+      // set_seed(major_counter, minor_counter_value, request_addr + i * 64);
+      // while(AES_START_REG);
+      // xor_start(false, false,0,DATA_SPM_OFFSET + i * 64);
+    } else {
+      // set_seed(major_counter, minor_counter_value, request_addr + i * 64);
+      // while(AES_START_REG);
+      // xor_start(true, false,req_id + i - start_offset,DATA_SPM_OFFSET + i * 64);
+      aes_xor_async_submit64_with_reqid(
+        major_counter, minor_counter_value, request_addr + i * 64, 
+        req_id + i - start_offset,global_aes_id,
+        false, DATA_SPM_OFFSET + i * 64, true, false,dma_id);
+      global_aes_id += 1;
+    }
+    // if (0x00000001dc259d00 == request_addr + i * 64){
+    //     printf("debug\n");
+    //     printf("  major_counter=%llu minor_counter_value=%u\n", major_counter, minor_counter_value);
+    //     printf("  s_o %d, e_o %d, i %d\n", start_offset, end_offset, i);
+    // }
+
+  }
+  uint64_t set_seed_e = read_instret();
+  while(!aes_xor_async_is_done(global_aes_id - 1));
   // --- 手順3: MAC計算 ---
   uint64_t mac_start = read_instret();
   mac_init(global_mac_req_id,0,1);
-  mac_buffer_set(DATA_SPM_OFFSET, tag_id,0); 
-  mac_update(0, 511,0);
+  for (int i = 0;i<(PROTECTION_SIZE_GRAIN / 64);i++){
+    mac_buffer_set(DATA_SPM_OFFSET + i * 64, dma_id,0); 
+    mac_update(0,511,0);
+  }
   mac_buffer_set(spm_offset_array[0], tag_id,0);
   mac_update(0,63,0);
   mac_update(global_bit_offset, global_bit_offset + (MINOR_COUNTER_WIDTH - 1),0);
+  // dram_addr_t tmp_addr = request_addr / PROTECTION_SIZE_GRAIN * PROTECTION_SIZE_GRAIN;
   mac_input_core(request_addr,0);
-  mac_digest(spm_offset + ((request_addr - PROTECTION_BASE) / 64) % 8 * 8, tag_id,0);
+  mac_digest(spm_offset + ((request_addr - PROTECTION_BASE) / PROTECTION_SIZE_GRAIN) % 8 * 8, tag_id,0);
   uint64_t mac_end = read_instret();
   uint64_t write_back_s = read_instret();
-  spm_write_back(DATA_SPM_OFFSET, request_addr, 0);
+  spm_write_back_size(DATA_SPM_OFFSET, request_addr, 0, PROTECTION_SIZE_GRAIN);
   uint64_t write_back_e = read_instret();
   uint64_t response_start = read_instret();
-  axim_write_return(req_id);
+  for (int i = start_offset;i<=end_offset;i++){
+    uint32_t id = (req_id + i - start_offset);
+    axim_write_return(id);
+  }
   mac_wait(global_mac_req_id,0);
   global_mac_req_id += 1;
   uint64_t response_end = read_instret();
-    // スワップ
-  // for (long i = 0;i<hit_index;i++){
-  //   dram_addr_t dram_addr = dram_addr_array[i];
-  //   bool is_leaf = (i == 0);
-  //   swapp_dram_addr(dram_addr,is_leaf);
-  // }
   uint64_t swap_start = read_instret();
   for (uint64_t i = 0;i<hit_index;i++){
     dram_addr_t dram_addr = dram_addr_array[i];
@@ -865,26 +912,41 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
       evicted_node_update(old_dram_addr, old_spm);
     } 
     if (cache_dirty){
-      spm_write_back(old_spm, old_dram_addr,  0);
+      spm_write_back(old_spm, old_dram_addr,0);
     }
     push_temp_buffer(old_spm);
   }
   uint64_t swap_end = read_instret();
+  if (instret_dump){
+    printf("Authentication req_id %d instret summary:\n", req_id);
+    printf("  Total time: %llu\n", swap_end - start_time);
+    printf("  Tag check time: %llu\n", tag_check_end - tag_check_start);
+    printf("  Verification time: %llu\n", verify_end - verify_start);
+    printf("  Update time: %llu\n", update_end - update_start);
+    printf("  Set seed time: %llu\n", set_seed_e - set_seed_s);
+    printf("  Data MAC DMA time: %llu\n", datamac_dma_e - datamac_dma);
+    printf("  MAC time: %llu\n", mac_end - mac_start);
+    printf("  Write back time: %llu\n", write_back_e - write_back_s);
+    printf("  Response time: %llu\n", response_end - response_start);
+    printf("  Swap time: %llu\n", swap_end - swap_start);
+  }
+  // printf("authen finish\n");
 }
 
 
-void Verification(dram_addr_t request_addr, uint64_t req_id){
+void Verification_batch(dram_addr_t request_addr, uint64_t req_id, int start_offset, int end_offset){
+  // printf("ver addr=%016llx req_id=%llu s_o %d e_o %d\n", request_addr, req_id,start_offset,end_offset);
   uint64_t start_time = read_instret();
   global_dma_id += 1;
   dma_id_t data_id = global_dma_id;
-  spm_copy_to_local(request_addr, DATA_SPM_OFFSET, data_id);
+  spm_copy_to_local_size(request_addr, DATA_SPM_OFFSET, data_id,PROTECTION_SIZE_GRAIN);
   // HEIGHT-1がリーフ、0が高さ1
   spm_offset_t spm_offset_array[HEIGHT];
   dram_addr_t dram_addr_array[HEIGHT];
   uint64_t hit_index = HEIGHT;
   dma_id_t wait_dma_id[HEIGHT];
   uint64_t tag_path_check_s = read_instret();
-  index_t index = (request_addr - PROTECTION_BASE) / 64;
+  index_t index = (request_addr - PROTECTION_BASE) / PROTECTION_SIZE_GRAIN;
   index_t v_i = index;
   for (long i = 0;i<HEIGHT;i++){
     dram_addr_t dram_addr = index / MINOR_COUNTER_COUNT * 64 + level_base[HEIGHT - i];
@@ -953,8 +1015,8 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
     } else {
       verify_one_height_lazy(spm_offset_array[i], spm_offset_array[i+1], v_i, global_mac_req_id, wait_dma_id[i+1], dram_addr_array[i]);
     }
-    global_mac_req_id += 1;
     v_i = v_i / MINOR_COUNTER_COUNT;
+    global_mac_req_id += 1;
   }
   uint64_t verify_e = read_instret();
   uint64_t wait_s = read_instret();
@@ -969,7 +1031,7 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
   uint64_t major_counter = spm_ld64(base_spm_offset);
   // 1. 対象となるマイナーカウンターのインデックスを計算
   uint64_t counter_ext_s = read_instret();
-  uint64_t minor_idx = (request_addr / 64) % MINOR_COUNTER_COUNT;
+  uint64_t minor_idx = (request_addr / PROTECTION_SIZE_GRAIN) % MINOR_COUNTER_COUNT;
   // 2. データの開始位置（ビット単位）を計算
   uint64_t global_bit_offset = 64 + (minor_idx * MINOR_COUNTER_WIDTH);
   // 3. 読み出すべきアドレス（8Bアライン）と、その中でのビットオフセットを計算
@@ -980,7 +1042,7 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
   uint64_t raw_data = spm_ld64(base_spm_offset + word_offset_bytes);
   uint64_t extracted_val = raw_data >> local_bit_offset;
   // 5. カウンターが64bit境界をまたぐか判定し、必要なら2回目のロードを行う
-  //    (開始位置 + データ幅 が 64 を超える場合、次のワードにデータがはみ出している)
+  // (開始位置 + データ幅 が 64 を超える場合、次のワードにデータがはみ出している)
   if (local_bit_offset + MINOR_COUNTER_WIDTH > 64) {
       uint64_t next_data = spm_ld64(base_spm_offset + word_offset_bytes + 8);
       // はみ出した分（上位ビット）を結合
@@ -990,32 +1052,41 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
   // 6. ビットマスクを生成して不要な上位ビットを切り落とす;
   uint16_t minor_counter_value = extracted_val & MINOR_COUNTER_MASK;
   uint64_t counter_ext_e = read_instret();
-  set_seed(major_counter, minor_counter_value, request_addr);
-  uint64_t set_seed_e = read_instret();
+  for (int i = start_offset;i<=end_offset;i++){
+    aes_xor_async_submit64_with_reqid(
+      major_counter, minor_counter_value, request_addr + i * 64, 
+      req_id + i - start_offset, global_aes_id,
+      false, DATA_SPM_OFFSET + i * 64, false, true, data_id);
+    global_aes_id += 1;
+    if (req_id == 9900){
+      printf("verify counter major %llu minor %u for addr=%016llx\n",  major_counter, minor_counter_value, request_addr + i * 64);
+    }
+  }
   uint64_t datamac_s = read_instret();
   mac_init(global_mac_req_id,0,1);
-  mac_buffer_set(DATA_SPM_OFFSET,data_id,0);
-  mac_update(0, 511,0);
+  for (int i=0;i<PROTECTION_SIZE_GRAIN / 64;i++){
+    mac_buffer_set(DATA_SPM_OFFSET + i * 64, data_id,0);
+    mac_update(0,511,0);
+  }
   mac_buffer_set(base_spm_offset,wait_dma_id[0],0);
   mac_update(0,63,0);
   mac_update(global_bit_offset, global_bit_offset + (MINOR_COUNTER_WIDTH - 1),0);
-  mac_input_core(request_addr,0);
-  spm_offset_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / 64) % 8 * 8;
+  dram_addr_t tmp_addr = (request_addr / PROTECTION_SIZE_GRAIN) * PROTECTION_SIZE_GRAIN;
+  mac_input_core(tmp_addr,0);
+  spm_offset_t dmac_byte_offset = ((request_addr - PROTECTION_BASE) / PROTECTION_SIZE_GRAIN) % 8 * 8;
   mac_result_compare(spm_offset + dmac_byte_offset, tag_id,0);
   uint64_t datamac_e = read_instret();
-  uint64_t xor_s = read_instret();
-  while(AES_START_REG);
-  uint64_t data_wait_s = read_instret();
-  spm_wait(data_id);
-  uint64_t data_wait_e = read_instret();
-  xor_start(false, true,req_id,DATA_SPM_OFFSET);
-  uint64_t xor_e = read_instret();
-  uint64_t response_s = read_instret();
   uint64_t mac_wait_s = read_instret();
   mac_wait(global_mac_req_id,0);
   uint64_t mac_wait_e = read_instret();
+  uint64_t xor_s = read_instret();
+  while(!aes_xor_async_is_done(global_aes_id - 1));
+  for (int i = start_offset;i<=end_offset;i++){
+    axim_read_return(req_id + i - start_offset);
+  }
+  uint64_t xor_e = read_instret();
+  uint64_t response_s = read_instret();
   global_mac_req_id += 1;
-  axim_read_return(req_id);
   uint64_t response_e = read_instret();
   uint64_t start_swapp_time = read_instret();
   for (uint64_t i = 0;i<hit_index;i++){
@@ -1050,16 +1121,31 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
     push_temp_buffer(old_spm);
   }
   uint64_t swapp_end_time = read_instret();
+  if (instret_dump){
+    printf("Total instret time %d\n", swapp_end_time - start_time);
+    printf("  tag check time %d\n", tag_path_check_e - tag_path_check_s);
+    printf("  verify time %d verify level %d\n", verify_e - verify_s, hit_index);
+    printf("  mac cache hit %d dirty %d ", light_info.hit, cache_dirty);
+    printf("  wait dma time %d\n", wait_e - wait_s);
+    // printf("  set seed time %d\n", set_seed_e - set_seed_s); 
+    printf("  load mac time %d\n", datamac_dma_e - datamac_dma_s);
+    printf("  mac compute time %d\n", datamac_e - datamac_s);
+    printf("  xor time %d\n", xor_e - xor_s);
+    printf("  response time %d\n", response_e - response_s);
+    printf("  mac wait time %d\n", mac_wait_e - mac_wait_s);
+    printf("  overflow count %d\n", over_flow_count);
+    printf("  swapp total time %d\n", swapp_end_time - start_swapp_time);
+  }
+  
 }
 
 int main(void){
   // loadをいじる
-  SPM_SIZE_REG = 64;
   for (uint64_t i=0; i<512; i++){
     spm_sd64(i*8, 0); 
   }
   // rootノードの初期化
-  spm_sd64(0,1);
+  spm_sd64(0,0);
   init_cache_system();
   temp_system_init(CACHE_DATA_SPM_BASE + CACHE_SETS * CACHE_WAYS * 64);
   // dma_id_t dma_id = 0;
@@ -1067,32 +1153,79 @@ int main(void){
   for (int i = 0;i < HEIGHT+1;i++){
     level_base[i] = calculate_level_base_addr(i) + COUNTER_BASE;
   }
+  int batch_cap = PROTECTION_SIZE_GRAIN / 64;
   while(1){
-    for(;;){
+    int batch_size = 1;
+    // 1個目の取得
+    for (;;){
       if(AXIM_STATUS_REG & 1) break; // リクエストが来るまで待つ
     }
     bool is_write = (AXIM_STATUS_REG & 2) != 0;
     dram_addr_t addr = AXIM_REQ_ADDR_REG;
     uint64_t req_id = AXIM_REQ_ID_REG;
+    if (addr>= (16ULL * 1024 * 1024 * 1024 + PROTECTION_BASE)){ // 16GBを超えないようにしたい
+      printf("Error: Address out of range: %016llx\n", addr);
+      exit(1);
+    }
     total += 1;
+    uint64_t mac_index = (addr - PROTECTION_BASE) / PROTECTION_SIZE_GRAIN;
+    // 場合分け
+    // 1個目がreadの場合、MACアドレスが同じ場合、batch_sizeを+1。
+    // 2個目以降がwriteの場合、そこで終了
+    // 2個目以降がreadの場合、MACアドレスが違う場合、そこで終了
+    // 2個目以降を取得するときに、AXIM_STATUS_REGが0ならbreak
+    if (is_write){
+      int start_offset = (addr / 64) % batch_cap;
+      int end_offset = start_offset;
+      for (int i = start_offset + 1;i<batch_cap;i++){
+        if(AXIM_STATUS_REG == 0){
+          break;
+        }
+        bool next_is_write = (AXIM_STATUS_REG & 2) != 0;
+        dram_addr_t next_addr = AXIM_REQ_ADDR_REG;
+        uint64_t next_mac_index = (next_addr - PROTECTION_BASE) / PROTECTION_SIZE_GRAIN;
+        if (next_is_write && next_addr == addr + 64 * i && next_mac_index == mac_index){
+          batch_size += 1;
+          uint64_t next_req_id = AXIM_REQ_ID_REG;
+        } else {
+          break;
+        }
+        end_offset = i;
+      }
+      addr = (addr / PROTECTION_SIZE_GRAIN) * PROTECTION_SIZE_GRAIN;
+      Authentication_batch(addr,req_id, start_offset, end_offset);
+    } else {
+      int start_offset = (addr / 64) % batch_cap;
+      int end_offset = start_offset;
+      for (int i = start_offset + 1;i<batch_cap;i++){
+        if(AXIM_STATUS_REG == 0){
+          break;
+        }
+        bool is_write = (AXIM_STATUS_REG & 2) != 0;
+        if (is_write){
+          break;
+        } else {
+          dram_addr_t next_addr = AXIM_REQ_ADDR_REG;
+          uint64_t next_mac_index = (next_addr - PROTECTION_BASE) / PROTECTION_SIZE_GRAIN;
+          if (next_addr == addr + 64 * i && next_mac_index == mac_index){
+            // 続けて取得
+            batch_size += 1;
+            uint64_t next_req_id = AXIM_REQ_ID_REG;
+          } else {
+            break;
+          }
+        }
+        end_offset = i;
+      }
+      addr = (addr / PROTECTION_SIZE_GRAIN) * PROTECTION_SIZE_GRAIN;
+      Verification_batch(addr,req_id, start_offset, end_offset);
+    }
+    total += batch_size;
     if (total % 10000 == 0){
       printf("Processed %d requests\n", total);
       instret_dump = true;
     } else {
       instret_dump = false;
-    }
-    if ((addr - PROTECTION_BASE) >= (16ULL * 1024 * 1024 * 1024)){ // 16GBを超えないようにしたい
-      printf("Error: Address out of range: %016llx\n", addr);
-      exit(1);
-    }
-    if (addr == 0xFFFFFFFFFFFFFFFF){
-      return 0;
-    } else {
-      if(is_write){ // writeリクエスト
-        Authentication(addr,req_id);
-      } else {
-        Verification(addr,req_id);
-      }
     }
   }
 }
