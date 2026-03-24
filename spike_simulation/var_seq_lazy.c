@@ -238,15 +238,6 @@ static inline uint64_t recalc_tag_lazy(dram_addr_t node_dram_addr, spm_offset_t 
       if (!mac_updated){
         v_do = false;
       }
-      // if (!mac_updated){
-      //   child_spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
-      //   setParentUpdated(set_index, light_info.way);
-      // } else {
-      //   child_spm_offset = get_cache_block_spm_offset(set_index, light_info.way);
-      //   setParentUpdated(set_index, light_info.way);
-      //   set_block_dirty(set_index, light_info.way);
-      // }
-
     } else {
       // tempバッファを検索
       temp_idx = find_temp_entry(child_dram_addr);

@@ -39,16 +39,6 @@
 #define ZCC_NZ_START 192
 #define ZCC_NZ_BITS 256
 
-// MCR layout (paper-like 49+7+1+7+384+64 = 512 bits)
-#define MCR_MAJOR49_START 0
-#define MCR_MAJOR49_BITS 49
-#define MCR_BASE1_START 49
-#define MCR_BASE_BITS 7
-#define MCR_FORMAT_BIT 56
-#define MCR_BASE2_START 57
-#define MCR_MINORS_START 64
-#define MCR_MINOR_BITS 3
-
 bool instret_dump = false;
 dram_addr_t level_base[HEIGHT + 1] = {0};
 dma_id_t global_dma_id = 0;
@@ -126,64 +116,56 @@ static inline unsigned zcc_width_from_field(spm_offset_t base) {
 
 static inline unsigned zcc_width_from_nnz(unsigned nnz) {
   if (nnz == 0) return COUNTER_EFFECTIVE_BITS;
+  // ZCC-only policy: once non-zero entries reach 64+, force 2-bit deltas.
+  if (nnz >= 64) return 2;
   unsigned w = 256U / nnz;
   if (w == 0) w = 1;
   if (w > COUNTER_EFFECTIVE_BITS) w = COUNTER_EFFECTIVE_BITS;
   return w;
 }
 
-static inline void counter_decode_all_effective(spm_offset_t base, uint64_t out[MINOR_COUNTER_COUNT]) {
-  bool is_mcr = (read_bits_u64(base, ZCC_FORMAT_BIT, 1) != 0);
-  if (!is_mcr) {
-    uint64_t major = read_bits_u64(base, ZCC_MAJOR_START, ZCC_MAJOR_BITS) & COUNTER_EFFECTIVE_MASK;
-    uint64_t bv_lo = read_bits_u64(base, ZCC_BITVECTOR_START, 64);
-    uint64_t bv_hi = read_bits_u64(base, ZCC_BITVECTOR_START + 64, 64);
-    unsigned w = zcc_width_from_field(base);
-    unsigned pos = 0;
-    for (unsigned i = 0; i < MINOR_COUNTER_COUNT; i++) {
-      bool nz = (i < 64) ? ((bv_lo >> i) & 1ULL) : ((bv_hi >> (i - 64)) & 1ULL);
-      uint64_t delta = 0;
-      if (nz) {
-        delta = read_bits_u64(base, ZCC_NZ_START + (unsigned)(pos * w), w);
-        pos++;
-      }
-      out[i] = (major + delta) & COUNTER_EFFECTIVE_MASK;
-    }
-    return;
-  }
+typedef enum {
+  COUNTER_INC_OK = 0,
+  COUNTER_INC_TRUE_OVERFLOW = 1,
+  COUNTER_INC_PSEUDO_OVERFLOW = 2,
+} counter_inc_result_t;
 
-  uint64_t major49 = read_bits_u64(base, MCR_MAJOR49_START, MCR_MAJOR49_BITS);
-  uint64_t major_floor = (major49 << 7) & COUNTER_EFFECTIVE_MASK;
-  uint64_t base1 = read_bits_u64(base, MCR_BASE1_START, MCR_BASE_BITS);
-  uint64_t base2 = read_bits_u64(base, MCR_BASE2_START, MCR_BASE_BITS);
+static inline void counter_decode_all_effective(spm_offset_t base, uint64_t out[MINOR_COUNTER_COUNT]) {
+  if (read_bits_u64(base, ZCC_FORMAT_BIT, 1) != 0) {
+    printf("Error: MCR format is not supported in var_seq_zcc (ZCC-only mode).\n");
+    exit(1);
+  }
+  uint64_t major = read_bits_u64(base, ZCC_MAJOR_START, ZCC_MAJOR_BITS) & COUNTER_EFFECTIVE_MASK;
+  uint64_t bv_lo = read_bits_u64(base, ZCC_BITVECTOR_START, 64);
+  uint64_t bv_hi = read_bits_u64(base, ZCC_BITVECTOR_START + 64, 64);
+  unsigned w = zcc_width_from_field(base);
+  unsigned pos = 0;
   for (unsigned i = 0; i < MINOR_COUNTER_COUNT; i++) {
-    uint64_t minor3 = read_bits_u64(base, MCR_MINORS_START + i * MCR_MINOR_BITS, MCR_MINOR_BITS);
-    uint64_t grp_base = (i < 64) ? base1 : base2;
-    out[i] = (major_floor + grp_base + minor3) & COUNTER_EFFECTIVE_MASK;
+    bool nz = (i < 64) ? ((bv_lo >> i) & 1ULL) : ((bv_hi >> (i - 64)) & 1ULL);
+    uint64_t delta = 0;
+    if (nz) {
+      delta = read_bits_u64(base, ZCC_NZ_START + (unsigned)(pos * w), w);
+      pos++;
+    }
+    out[i] = (major + delta) & COUNTER_EFFECTIVE_MASK;
   }
 }
 
 static inline uint64_t counter_get_effective(spm_offset_t base, unsigned idx) {
   if (idx >= MINOR_COUNTER_COUNT) return 0;
-  bool is_mcr = (read_bits_u64(base, ZCC_FORMAT_BIT, 1) != 0);
-  if (!is_mcr) {
-    uint64_t major = read_bits_u64(base, ZCC_MAJOR_START, ZCC_MAJOR_BITS) & COUNTER_EFFECTIVE_MASK;
-    uint64_t bv_lo = read_bits_u64(base, ZCC_BITVECTOR_START, 64);
-    uint64_t bv_hi = read_bits_u64(base, ZCC_BITVECTOR_START + 64, 64);
-    bool nz = (idx < 64) ? ((bv_lo >> idx) & 1ULL) : ((bv_hi >> (idx - 64)) & 1ULL);
-    if (!nz) return major;
-    unsigned w = zcc_width_from_field(base);
-    unsigned pos = rank1_128(bv_lo, bv_hi, idx);
-    uint64_t delta = read_bits_u64(base, ZCC_NZ_START + (unsigned)(pos * w), w);
-    return (major + delta) & COUNTER_EFFECTIVE_MASK;
+  if (read_bits_u64(base, ZCC_FORMAT_BIT, 1) != 0) {
+    printf("Error: MCR format is not supported in var_seq_zcc (ZCC-only mode).\n");
+    exit(1);
   }
-
-  uint64_t major49 = read_bits_u64(base, MCR_MAJOR49_START, MCR_MAJOR49_BITS);
-  uint64_t major_floor = (major49 << 7) & COUNTER_EFFECTIVE_MASK;
-  uint64_t basev = (idx < 64) ? read_bits_u64(base, MCR_BASE1_START, MCR_BASE_BITS)
-                              : read_bits_u64(base, MCR_BASE2_START, MCR_BASE_BITS);
-  uint64_t minor3 = read_bits_u64(base, MCR_MINORS_START + idx * MCR_MINOR_BITS, MCR_MINOR_BITS);
-  return (major_floor + basev + minor3) & COUNTER_EFFECTIVE_MASK;
+  uint64_t major = read_bits_u64(base, ZCC_MAJOR_START, ZCC_MAJOR_BITS) & COUNTER_EFFECTIVE_MASK;
+  uint64_t bv_lo = read_bits_u64(base, ZCC_BITVECTOR_START, 64);
+  uint64_t bv_hi = read_bits_u64(base, ZCC_BITVECTOR_START + 64, 64);
+  bool nz = (idx < 64) ? ((bv_lo >> idx) & 1ULL) : ((bv_hi >> (idx - 64)) & 1ULL);
+  if (!nz) return major;
+  unsigned w = zcc_width_from_field(base);
+  unsigned pos = rank1_128(bv_lo, bv_hi, idx);
+  uint64_t delta = read_bits_u64(base, ZCC_NZ_START + (unsigned)(pos * w), w);
+  return (major + delta) & COUNTER_EFFECTIVE_MASK;
 }
 
 static inline bool counter_encode_zcc(spm_offset_t base, const uint64_t vals[MINOR_COUNTER_COUNT]) {
@@ -202,9 +184,9 @@ static inline bool counter_encode_zcc(spm_offset_t base, const uint64_t vals[MIN
     if (deltas[i] != 0) nnz++;
     if (deltas[i] > max_delta) max_delta = deltas[i];
   }
-  if (nnz > 64) return false;
 
   unsigned w = zcc_width_from_nnz(nnz);
+  if (((unsigned long long)nnz * (unsigned long long)w) > ZCC_NZ_BITS) return false;
   if (max_delta > mask_u64(w)) return false;
 
   for (unsigned i = 0; i < 7; i++) spm_sd64(base + (i * 8), 0);
@@ -228,65 +210,6 @@ static inline bool counter_encode_zcc(spm_offset_t base, const uint64_t vals[MIN
   return true;
 }
 
-static inline bool counter_encode_mcr(spm_offset_t base, const uint64_t vals[MINOR_COUNTER_COUNT]) {
-  uint64_t min1 = COUNTER_EFFECTIVE_MASK;
-  uint64_t min2 = COUNTER_EFFECTIVE_MASK;
-  uint64_t max1 = 0;
-  uint64_t max2 = 0;
-  for (unsigned i = 0; i < 64; i++) {
-    uint64_t v = vals[i] & COUNTER_EFFECTIVE_MASK;
-    if (v < min1) min1 = v;
-    if (v > max1) max1 = v;
-  }
-  for (unsigned i = 64; i < MINOR_COUNTER_COUNT; i++) {
-    uint64_t v = vals[i] & COUNTER_EFFECTIVE_MASK;
-    if (v < min2) min2 = v;
-    if (v > max2) max2 = v;
-  }
-  if ((max1 - min1) > 7 || (max2 - min2) > 7) return false;
-
-  uint64_t mins_max = (min1 > min2) ? min1 : min2;
-  uint64_t mins_min = (min1 < min2) ? min1 : min2;
-  uint64_t low = 0;
-  if (mins_max > 127) {
-    low = mins_max - 127;
-    low = (low + 127ULL) & ~127ULL;
-  }
-  uint64_t high = mins_min & ~127ULL;
-  if (low > high) return false;
-  uint64_t major_floor = high;
-  uint64_t major49 = major_floor >> 7;
-  if (major49 > mask_u64(MCR_MAJOR49_BITS)) return false;
-
-  uint64_t base1 = min1 - major_floor;
-  uint64_t base2 = min2 - major_floor;
-  if (base1 > 127 || base2 > 127) return false;
-
-  for (unsigned i = 0; i < MINOR_COUNTER_COUNT; i++) {
-    uint64_t grp_base = (i < 64) ? base1 : base2;
-    uint64_t rel = (vals[i] & COUNTER_EFFECTIVE_MASK) - major_floor - grp_base;
-    if (rel > 7) return false;
-  }
-
-  for (unsigned i = 0; i < 7; i++) spm_sd64(base + (i * 8), 0);
-  write_bits_u64(base, MCR_MAJOR49_START, MCR_MAJOR49_BITS, major49);
-  write_bits_u64(base, MCR_BASE1_START, MCR_BASE_BITS, base1);
-  write_bits_u64(base, MCR_FORMAT_BIT, 1, 1);
-  write_bits_u64(base, MCR_BASE2_START, MCR_BASE_BITS, base2);
-  for (unsigned i = 0; i < MINOR_COUNTER_COUNT; i++) {
-    uint64_t grp_base = (i < 64) ? base1 : base2;
-    uint64_t rel = (vals[i] & COUNTER_EFFECTIVE_MASK) - major_floor - grp_base;
-    write_bits_u64(base, MCR_MINORS_START + i * MCR_MINOR_BITS, MCR_MINOR_BITS, rel);
-  }
-  return true;
-}
-
-static inline bool counter_encode_auto(spm_offset_t base, const uint64_t vals[MINOR_COUNTER_COUNT]) {
-  if (counter_encode_zcc(base, vals)) return true;
-  if (counter_encode_mcr(base, vals)) return true;
-  return false;
-}
-
 static inline uint64_t counter_overflow_new_base(const uint64_t vals[MINOR_COUNTER_COUNT]) {
   uint64_t maxv = 0;
   for (unsigned i = 0; i < MINOR_COUNTER_COUNT; i++) {
@@ -308,15 +231,18 @@ static inline void counter_set_all_to_base_zcc(spm_offset_t base, uint64_t new_b
   write_bits_u64(base, ZCC_RESERVED_BIT, 1, 0);
 }
 
-static inline bool counter_try_increment(spm_offset_t base, unsigned idx, uint64_t *new_counter) {
-  if (idx >= MINOR_COUNTER_COUNT) return false;
+static inline counter_inc_result_t counter_try_increment(spm_offset_t base, unsigned idx, uint64_t *new_counter) {
+  if (idx >= MINOR_COUNTER_COUNT) {
+    printf("Error: counter_try_increment idx out of range (%u).\n", idx);
+    exit(1);
+  }
   uint64_t vals[MINOR_COUNTER_COUNT];
   counter_decode_all_effective(base, vals);
-  if (vals[idx] == COUNTER_EFFECTIVE_MASK) return false;
+  if (vals[idx] == COUNTER_EFFECTIVE_MASK) return COUNTER_INC_TRUE_OVERFLOW;
   vals[idx] += 1;
-  if (!counter_encode_auto(base, vals)) return false;
+  if (!counter_encode_zcc(base, vals)) return COUNTER_INC_PSEUDO_OVERFLOW;
   if (new_counter) *new_counter = vals[idx] & COUNTER_EFFECTIVE_MASK;
-  return true;
+  return COUNTER_INC_OK;
 }
 
 static inline unsigned parent_counter_slot(uint64_t node_index) {
@@ -350,18 +276,6 @@ static inline void verify_one_height_with_parent_counter(spm_offset_t child_spm_
   mac_update(0, 447, hart_id);
   mac_input_core(dram_addr, hart_id);
   mac_result_compare(child_spm_offset + 56, dma_id, hart_id);
-}
-
-void update_tag(spm_offset_t child_spm_offset, spm_offset_t parent_spm_offset, uint64_t node_index,
-  uint32_t mac_req_id, dma_id_t dma_id, dram_addr_t dram_addr) {
-  uint64_t parent_counter = 0;
-  spm_wait(dma_id);
-  if (parent_spm_offset == 0) {
-    parent_counter = spm_ld64(0) & COUNTER_EFFECTIVE_MASK;
-  } else {
-    parent_counter = counter_get_effective(parent_spm_offset, parent_counter_slot(node_index));
-  }
-  update_tag_with_parent_counter(child_spm_offset, parent_counter, mac_req_id, dma_id, dram_addr);
 }
 
 static inline void verify_one_height_lazy_root(spm_offset_t child_spm_offset,
@@ -431,17 +345,14 @@ static inline uint64_t reencryption_lazy(dram_addr_t counter_block_addr, spm_off
     mac_result_compare(spm_offset + dmac_byte_offset, dma_id, 0);
     mac_wait(global_mac_req_id, 0);
     global_mac_req_id += 1;
-
     set_seed(old_counter, 0, dram_addr);
     while (AES_START_REG);
     spm_wait(dma_id);
     xor_start(false, false, 0, REENCRYPTION_SPM_OFFSET);
-
     set_seed(new_base, 0, dram_addr);
     while (AES_START_REG);
     xor_start(false, false, 0, REENCRYPTION_SPM_OFFSET);
     spm_write_back(REENCRYPTION_SPM_OFFSET, dram_addr, 0);
-
     mac_init(global_mac_req_id, 0, 1);
     mac_buffer_set(REENCRYPTION_SPM_OFFSET, dma_id, 0);
     mac_update(0, 511, 0);
@@ -457,15 +368,14 @@ static inline uint64_t reencryption_lazy(dram_addr_t counter_block_addr, spm_off
 }
 
 // 中間ノードのマイナーカウンターがオーバーフローした時の再計算処理
+// 多分ここがおかしい。
 static inline uint64_t recalc_tag_lazy(dram_addr_t node_dram_addr, spm_offset_t node_spm_offset, int height, long index) {
   long block_idx = index / MINOR_COUNTER_COUNT;
   dram_addr_t child_base_addr = level_base[height + 2] + block_idx * MINOR_COUNTER_COUNT * 64;
   uint64_t old_vals[MINOR_COUNTER_COUNT];
   counter_decode_all_effective(node_spm_offset, old_vals);
   uint64_t new_base = counter_overflow_new_base(old_vals);
-
   for (long i = 0; i < MINOR_COUNTER_COUNT; i++) {
-    long child_index = (block_idx * MINOR_COUNTER_COUNT + i) * MINOR_COUNTER_COUNT;
     dram_addr_t child_dram_addr = child_base_addr + i * 64;
     light_tag_info_t light_info = light_tag_check(child_dram_addr);
     spm_offset_t child_spm_offset;
@@ -490,6 +400,11 @@ static inline uint64_t recalc_tag_lazy(dram_addr_t node_dram_addr, spm_offset_t 
         spm_copy_to_local(child_dram_addr, child_spm_offset, dma_id);
       }
     }
+    // if (child_dram_addr == 0x510000bc0){
+    //   printf("Debug: recalc_tag_lazy child_dram_addr=%016llx\n", child_dram_addr);
+    //   printf("  light_info: hit=%d way=%d\n", light_info.hit, light_info.way);
+    //   printf("  spm_offset=%u dma_id=%u temp_idx=%ld do_verify=%d\n", child_spm_offset, dma_id, temp_idx, do_verify);
+    // }
     spm_wait(dma_id);
     if (do_verify) {
       verify_one_height_with_parent_counter(child_spm_offset, old_vals[i], global_mac_req_id, dma_id, child_dram_addr);
@@ -505,7 +420,6 @@ static inline uint64_t recalc_tag_lazy(dram_addr_t node_dram_addr, spm_offset_t 
       else spm_write_back(child_spm_offset, child_dram_addr, 0);
     }
   }
-
   counter_set_all_to_base_zcc(node_spm_offset, new_base);
   return global_mac_req_id;
 }
@@ -522,7 +436,8 @@ static inline void update_one_height_lazy(spm_offset_t child_spm_offset, spm_off
   if (update_counter) {
     unsigned idx = (unsigned)(node_index % MINOR_COUNTER_COUNT);
     uint64_t new_counter = 0;
-    if (!counter_try_increment(child_spm_offset, idx, &new_counter)) {
+    counter_inc_result_t inc_result = counter_try_increment(child_spm_offset, idx, &new_counter);
+    if (inc_result != COUNTER_INC_OK) {
       int start_level = -1;
       for (int l = 0; l < HEIGHT; l++) {
         dram_addr_t base = level_base[l + 1];
@@ -563,7 +478,6 @@ static inline void evicted_node_update(dram_addr_t old_addr, spm_offset_t old_sp
     );
   int v_level = -1; // Victimのレベル (0=Root)
   dram_addr_t v_level_base_addr = 0;
-
   for (int l = 0; l < HEIGHT; l++) {
     dram_addr_t base = level_base[l+1];
     if (l < HEIGHT - 1){
@@ -660,7 +574,9 @@ AFTER_PATH_CHECK_EVICTION:
     uint64_t start_level = load_start_index - 1;
     unsigned minor_idx = (unsigned)(path_indecis[start_level] % MINOR_COUNTER_COUNT);
     uint64_t new_counter = 0;
-    if (!counter_try_increment(spm_offset_array[start_level], minor_idx, &new_counter)) {
+    counter_inc_result_t inc_result =
+      counter_try_increment(spm_offset_array[start_level], minor_idx, &new_counter);
+    if (inc_result != COUNTER_INC_OK) {
       if (start_level == HEIGHT - 1) {
         reencryption_lazy(dram_addr_array[start_level], spm_offset_array[start_level]);
       } else {
@@ -714,52 +630,52 @@ AFTER_PATH_CHECK_EVICTION:
   return;
 }
 
-static inline void swapp_dram_addr(dram_addr_t dram_addr,bool is_leaf){
-  int hartid;
-  asm volatile(
-      "csrr %0, mhartid"
-      : "=r"(hartid)
-  );
-  long idx = find_temp_entry(dram_addr);
-  if (idx < 0){
-    return;
-  }
-  spm_offset_t temp_spm = get_temp_spm_offset(idx);
-  index_t set_index = get_cache_tree_set_index(dram_addr);
-  light_tag_info_t light_info = light_tag_check_set(set_index, dram_addr);
-  if (light_info.way < 0){
-      light_info.way = get_victim_way(set_index);
-  } else {
-      set_block_valid(set_index, light_info.way);
-  }
-  spm_offset_t old_spm = get_cache_block_spm_offset(set_index, light_info.way);
-  bool mac_updated = is_mac_updated(set_index, light_info.way);
-  bool temp_dirty = is_dirty_temp_entry_by_index(idx);
-  dram_addr_t old_dram_addr = get_block_addr(set_index, light_info.way);
-  bool cache_dirty = is_block_dirty(set_index, light_info.way);
-  swapp_temp_cache(dram_addr, temp_spm, temp_dirty, light_info.way);
-  long ret = invalidate_temp_entry_by_index(idx);
-  if (is_leaf && temp_dirty){
-    clearParentUpdated(set_index, light_info.way);
-  } else {
-    setParentUpdated(set_index, light_info.way);
-  }
-  asm volatile("mac_update_tag:");
-  if (!mac_updated){
-    evicted_node_update(old_dram_addr, old_spm);
-    // spm_write_back(old_spm, old_dram_addr,  0);
-  } 
-  if (cache_dirty){
-    spm_write_back(old_spm, old_dram_addr,  0);
-  }
-  ret = push_temp_buffer(old_spm);
-  #ifdef DUMP
-  lock_print();
-  printf("Core %d swapping cache block addr=%016llx spm_offset %lx S:%ld W:%ld old spm %lx\n",hartid, dram_addr, temp_spm, set_index, light_info.way, old_spm);
-  unlock_print();
-  #endif
-  return;
-}
+// static inline void swapp_dram_addr(dram_addr_t dram_addr,bool is_leaf){
+//   int hartid;
+//   asm volatile(
+//       "csrr %0, mhartid"
+//       : "=r"(hartid)
+//   );
+//   long idx = find_temp_entry(dram_addr);
+//   if (idx < 0){
+//     return;
+//   }
+//   spm_offset_t temp_spm = get_temp_spm_offset(idx);
+//   index_t set_index = get_cache_tree_set_index(dram_addr);
+//   light_tag_info_t light_info = light_tag_check_set(set_index, dram_addr);
+//   if (light_info.way < 0){
+//       light_info.way = get_victim_way(set_index);
+//   } else {
+//       set_block_valid(set_index, light_info.way);
+//   }
+//   spm_offset_t old_spm = get_cache_block_spm_offset(set_index, light_info.way);
+//   bool mac_updated = is_mac_updated(set_index, light_info.way);
+//   bool temp_dirty = is_dirty_temp_entry_by_index(idx);
+//   dram_addr_t old_dram_addr = get_block_addr(set_index, light_info.way);
+//   bool cache_dirty = is_block_dirty(set_index, light_info.way);
+//   swapp_temp_cache(dram_addr, temp_spm, temp_dirty, light_info.way);
+//   long ret = invalidate_temp_entry_by_index(idx);
+//   if (is_leaf && temp_dirty){
+//     clearParentUpdated(set_index, light_info.way);
+//   } else {
+//     setParentUpdated(set_index, light_info.way);
+//   }
+//   asm volatile("mac_update_tag:");
+//   if (!mac_updated){
+//     evicted_node_update(old_dram_addr, old_spm);
+//     // spm_write_back(old_spm, old_dram_addr,  0);
+//   } 
+//   if (cache_dirty){
+//     spm_write_back(old_spm, old_dram_addr,  0);
+//   }
+//   ret = push_temp_buffer(old_spm);
+//   #ifdef DUMP
+//   lock_print();
+//   printf("Core %d swapping cache block addr=%016llx spm_offset %lx S:%ld W:%ld old spm %lx\n",hartid, dram_addr, temp_spm, set_index, light_info.way, old_spm);
+//   unlock_print();
+//   #endif
+//   return;
+// }
 
 
 void Authentication(dram_addr_t request_addr, uint32_t req_id){
@@ -825,7 +741,8 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
   // リーフのみを更新
   unsigned minor_idx = (unsigned)(path_indecis[0] % MINOR_COUNTER_COUNT);
   uint64_t effective_counter = 0;
-  if (!counter_try_increment(spm_offset_array[0], minor_idx, &effective_counter)) {
+  counter_inc_result_t inc_result = counter_try_increment(spm_offset_array[0], minor_idx, &effective_counter);
+  if (inc_result != COUNTER_INC_OK) {
     reencryption_lazy(dram_addr_array[0], spm_offset_array[0]);
     over_flow_count += 1;
     effective_counter = counter_get_effective(spm_offset_array[0], minor_idx);
@@ -888,12 +805,6 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
   mac_wait(global_mac_req_id,0);
   global_mac_req_id += 1;
   uint64_t response_end = read_instret();
-    // スワップ
-  // for (long i = 0;i<hit_index;i++){
-  //   dram_addr_t dram_addr = dram_addr_array[i];
-  //   bool is_leaf = (i == 0);
-  //   swapp_dram_addr(dram_addr,is_leaf);
-  // }
   uint64_t swap_start = read_instret();
   for (uint64_t i = 0;i<hit_index;i++){
     dram_addr_t dram_addr = dram_addr_array[i];
@@ -908,21 +819,21 @@ void Authentication(dram_addr_t request_addr, uint32_t req_id){
     }
     spm_offset_t old_spm = get_cache_block_spm_offset(set_index, light_info.way);
     bool mac_updated = is_mac_updated(set_index, light_info.way);
-    bool temp_dirty = is_dirty_temp_entry_by_index(idx);
     dram_addr_t old_dram_addr = get_block_addr(set_index, light_info.way);
+    if (!mac_updated){
+      evicted_node_update(old_dram_addr, old_spm);
+    } 
     bool cache_dirty = is_block_dirty(set_index, light_info.way);
+    if (cache_dirty){
+      spm_write_back(old_spm, old_dram_addr,  0);
+    }
+    bool temp_dirty = is_dirty_temp_entry_by_index(idx);
     swapp_temp_cache(dram_addr, temp_spm, temp_dirty, light_info.way);
     invalidate_temp_entry_by_index(idx);
     if (i == 0 && temp_dirty){
       clearParentUpdated(set_index, light_info.way);
     } else {
       setParentUpdated(set_index, light_info.way);
-    }
-    if (!mac_updated){
-      evicted_node_update(old_dram_addr, old_spm);
-    } 
-    if (cache_dirty){
-      spm_write_back(old_spm, old_dram_addr,  0);
     }
     push_temp_buffer(old_spm);
   }
@@ -1066,21 +977,28 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
     }
     spm_offset_t old_spm = get_cache_block_spm_offset(set_index, light_info.way);
     bool mac_updated = is_mac_updated(set_index, light_info.way);
-    bool temp_dirty = is_dirty_temp_entry_by_index(idx);
     dram_addr_t old_dram_addr = get_block_addr(set_index, light_info.way);
+    // if (old_dram_addr == 0x510000bc0){
+    //   printf("Debug: swap during veri and eviction height %d idx=%ld temp_dirty=%d mac_updated=%d cache_dirty=%d old_spm=%016llx\n", i, idx, temp_dirty, mac_updated,cache_dirty,old_spm);
+    //   for (int j = 0;j<8;j++){
+    //     uint64_t val = spm_ld64(old_spm + j * 8);
+    //     printf("  old_spm data[%d]=%016llx\n", j, val);
+    //   }
+    // }
+    if (!mac_updated){
+      evicted_node_update(old_dram_addr, old_spm);
+    } 
     bool cache_dirty = is_block_dirty(set_index, light_info.way);
+    if (cache_dirty){
+      spm_write_back(old_spm, old_dram_addr,  0);
+    }
+    bool temp_dirty = is_dirty_temp_entry_by_index(idx);
     swapp_temp_cache(dram_addr, temp_spm, temp_dirty, light_info.way);
     invalidate_temp_entry_by_index(idx);
     if (i == 0 && temp_dirty){
       clearParentUpdated(set_index, light_info.way);
     } else {
       setParentUpdated(set_index, light_info.way);
-    }
-    if (!mac_updated){
-      evicted_node_update(old_dram_addr, old_spm);
-    } 
-    if (cache_dirty){
-      spm_write_back(old_spm, old_dram_addr,  0);
     }
     push_temp_buffer(old_spm);
   }
@@ -1101,8 +1019,7 @@ int main(void){
   spm_sd64(0,1);
   init_cache_system();
   temp_system_init(CACHE_DATA_SPM_BASE + CACHE_SETS * CACHE_WAYS * 64);
-  // dma_id_t dma_id = 0;
-  int total = 0;
+  // int total = 0;
   for (int i = 0;i < HEIGHT+1;i++){
     level_base[i] = calculate_level_base_addr(i) + COUNTER_BASE;
   }
@@ -1113,25 +1030,21 @@ int main(void){
     bool is_write = (AXIM_STATUS_REG & 2) != 0;
     dram_addr_t addr = AXIM_REQ_ADDR_REG;
     uint64_t req_id = AXIM_REQ_ID_REG;
-    total += 1;
-    if (total % 10000 == 0){
-      printf("Processed %d requests\n", total);
-      instret_dump = true;
+    // total += 1;
+    // if (total % 100000 == 0){
+    //   printf("Processed %d requests\n", total);
+    //   instret_dump = true;
+    // } else {
+    //   instret_dump = false;
+    // }
+    // if ((addr - PROTECTION_BASE) >= (16ULL * 1024 * 1024 * 1024)){ // 16GBを超えないようにしたい
+    //   printf("Error: Address out of range: %016llx\n", addr);
+    //   exit(1);
+    // }
+    if(is_write){ // writeリクエスト
+      Authentication(addr,req_id);
     } else {
-      instret_dump = false;
-    }
-    if ((addr - PROTECTION_BASE) >= (16ULL * 1024 * 1024 * 1024)){ // 16GBを超えないようにしたい
-      printf("Error: Address out of range: %016llx\n", addr);
-      exit(1);
-    }
-    if (addr == 0xFFFFFFFFFFFFFFFF){
-      return 0;
-    } else {
-      if(is_write){ // writeリクエスト
-        Authentication(addr,req_id);
-      } else {
-        Verification(addr,req_id);
-      }
+      Verification(addr,req_id);
     }
   }
 }

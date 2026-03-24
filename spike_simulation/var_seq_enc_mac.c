@@ -394,17 +394,6 @@ void Verification(dram_addr_t request_addr, uint64_t req_id){
   axim_read_return(req_id);
   uint64_t response_e = read_instret();
   uint64_t swapp_end_time = read_instret();
-  // if (instret_dump){
-  //   printf("Total instret time %d\n", swapp_end_time - start_time);
-  //   printf("tag check time %d\n", tag_path_check_e - tag_path_check_s);
-  //   printf("wait dma time %d\n", wait_e - wait_s);
-  //   printf("set seed time %d\n", set_seed_e - set_seed_s); 
-  //   printf("load mac time %d\n", datamac_dma_e - datamac_dma_s);
-  //   printf("mac compute time %d\n", datamac_e - datamac_s);
-  //   printf("response time %d\n", response_e - response_s);
-  //   printf("data wait time %d\n", data_wait_e - data_wait_s);
-  //   printf("mac wait time %d\n", mac_wait_e - mac_wait_s);
-  // }
 }
 
 int main(void){

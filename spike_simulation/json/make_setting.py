@@ -17,6 +17,7 @@ def main():
     protection_size = int(cfg["PROTECTION_SIZE"])
     protection_uint = cfg["SIZE_UNIT"]
     protection_size_grain = cfg.get("PROTECTION_SIZE_GRAIN", 64)  # デフォルト値を64に設定
+
     if protection_uint == "MB":
         protection_size *= 1024 * 1024
     elif protection_uint == "GB":
@@ -61,6 +62,7 @@ def main():
         f.write(f"#define SETTING_PROTECTION_BASE 0x{protection_base:X}\n")
         f.write(f"#define SETTING_PROTECTION_SIZE 0x{protection_size:X}\n")
         f.write(f"#define SETTING_PROTECTION_SIZE_GRAIN {protection_size_grain}\n")
+        f.write(f"#define SETTING_MAC_COVERAGE_BLOCKS 8\n")
         # キャッシュ関連
         cache_ways_log2 = cfg["CACHE_WAYS_LOG2"]
         f.write(f"#define SETTING_CACHE_WAYS_LOG2 {cache_ways_log2}\n")

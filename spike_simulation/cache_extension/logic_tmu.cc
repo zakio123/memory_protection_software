@@ -158,7 +158,6 @@ int tmu_logic_t::check_idx(int slot_idx) const {
     // タグと状態の設定
     tmu_valid[slot_idx] = true;
     tmu_tag[slot_idx] = dram_addr;
-    // tmu_dirty[slot_idx] = false;
     return (reg_t)0;
   }
 
